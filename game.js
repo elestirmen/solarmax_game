@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    Stellar Conquest â€“ Complete Game (Plain JavaScript)
    No build tools needed. Open stellar_conquest.html directly.
    v2: Orbital warriors, fleet trails, enhanced visuals
@@ -567,7 +567,14 @@ function gameTick() {
 
         if (net.syncDrift !== undefined) {
             net.syncDrift += (G.speed - 1.0);
-            if (net.syncDrift > 3) G.speed = 0.85;
+
+            // Hard-catchup for background tabs or extreme lag
+            if (net.syncDrift > 30) G.speed = 0.1;
+            else if (net.syncDrift > 10) G.speed = 0.5;
+            else if (net.syncDrift > 3) G.speed = 0.85;
+            else if (net.syncDrift < -90) G.speed = 10.0;
+            else if (net.syncDrift < -30) G.speed = 4.0;
+            else if (net.syncDrift < -10) G.speed = 2.0;
             else if (net.syncDrift < -3) G.speed = 1.15;
             else G.speed = 1.0;
         }
@@ -997,12 +1004,12 @@ var $ = function (id) { return document.getElementById(id); };
 var mainMenu = $('mainMenu'), pauseOv = $('pauseOverlay'), goOv = $('gameOverOverlay'), hud = $('hud'), repBar = $('replayBar'), tunePanel = $('tuningPanel'), tuneOpen = $('tuneOpenBtn');
 var seedIn = $('seedInput'), rndSeedBtn = $('randomSeedBtn'), ncIn = $('nodeCountInput'), ncLbl = $('nodeCountLabel'), diffSel = $('difficultySelect');
 var startBtn = $('startBtn'), loadRepBtn = $('loadReplayBtn'), repFileIn = $('replayFileInput');
-var playerNameIn = $('playerNameInput'), setNickBtn = $('setNickBtn');
+var playerNameIn = $('playerNameInput');
 var startRoomBtn = $('startRoomBtn');
 var createRoomBtn = $('createRoomBtn');
 var joinRoomCodeInput = $('joinRoomCodeInput');
 var joinRoomBtn = $('joinRoomBtn');
-var hostControls = $('hostControls');
+var hostControls = $('hostControls'), leaveRoomBtn = $('leaveRoomBtn');
 var howToPlayBtn = $('howToPlayBtn');
 var howToPlayOv = $('howToPlayOverlay');
 var closeHowToPlayBtn = $('closeHowToPlayBtn');
@@ -1017,7 +1024,8 @@ if (closeHowToPlayBtn) {
         howToPlayOv.classList.add('hidden');
     });
 }
-var roomStatusEl = $('roomStatus'), roomPlayersEl = $('roomPlayers');
+var roomStatusEl = $('roomStatus'), roomPlayersEl = $('roomPlayers'), roomListEl = $('roomList');
+var tabSingle = $('tabSingle'), tabMulti = $('tabMulti'), panelSingle = $('panelSingle'), panelMulti = $('panelMulti');
 var resumeBtn = $('resumeBtn'), quitBtn = $('quitBtn');
 var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), repBtn = $('replayBtn'), expRepBtn = $('exportReplayBtn'), restartBtn = $('restartBtn');
 var hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
@@ -1032,8 +1040,32 @@ var tuningOpen = false, lastRepData = null;
 function resize() { cv.width = window.innerWidth; cv.height = window.innerHeight; }
 window.addEventListener('resize', resize); resize();
 roomButtonState();
-setRoomStatus('Sunucuya baglaninca nick secip odaya gir.', false);
+setRoomStatus('', false);
 ensureSocket();
+
+if (tabSingle && tabMulti && panelSingle && panelMulti) {
+    tabSingle.addEventListener('click', function () {
+        tabSingle.classList.add('active'); tabMulti.classList.remove('active');
+        panelSingle.classList.remove('hidden'); panelMulti.classList.add('hidden');
+    });
+    tabMulti.addEventListener('click', function () {
+        tabMulti.classList.add('active'); tabSingle.classList.remove('active');
+        panelMulti.classList.remove('hidden'); panelSingle.classList.add('hidden');
+        requestLobby();
+    });
+}
+
+if (roomListEl) {
+    roomListEl.addEventListener('click', function (e) {
+        var btn = e.target.closest('button[data-room-code]');
+        if (!btn || net.roomCode) return;
+        var code = btn.getAttribute('data-room-code');
+        if (code && joinRoomCodeInput) {
+            joinRoomCodeInput.value = code;
+            doJoinRoom();
+        }
+    });
+}
 
 function showUI(st) {
     mainMenu.classList.toggle('hidden', st !== 'mainMenu'); pauseOv.classList.toggle('hidden', st !== 'paused'); goOv.classList.toggle('hidden', st !== 'gameOver');
@@ -1065,10 +1097,28 @@ function renderRoomPlayers(players, hostId) {
 function roomButtonState() {
     var inRoom = !!net.roomCode;
     if (playerNameIn) playerNameIn.disabled = inRoom || net.online;
-    if (setNickBtn) setNickBtn.disabled = inRoom || net.online || !net.connected;
     if (startRoomBtn) {
         startRoomBtn.disabled = !inRoom || !net.connected || net.players.length < 2;
-        startRoomBtn.textContent = 'Online Baslat';
+        startRoomBtn.textContent = 'Oyunu Baslat';
+    }
+}
+
+function renderRoomList(rooms) {
+    if (!roomListEl) return;
+    roomListEl.innerHTML = '';
+    if (!rooms || rooms.length === 0) {
+        var empty = document.createElement('div');
+        empty.className = 'room-list-empty';
+        empty.textContent = net.connected ? 'Henuz oda yok.' : 'Sunucuya baglaniliyor...';
+        roomListEl.appendChild(empty);
+        return;
+    }
+    for (var i = 0; i < rooms.length; i++) {
+        var r = rooms[i];
+        var item = document.createElement('div');
+        item.className = 'room-item';
+        item.innerHTML = '<div class="room-item-main"><span class="room-item-code">' + r.code + '</span><span class="room-item-meta">' + (r.hostName || 'Host') + ' | ' + r.players + '/' + r.maxPlayers + ' | ' + (r.difficulty || 'normal') + '</span></div><button class="room-join-btn secondary-btn" data-room-code="' + r.code + '">Katil</button>';
+        roomListEl.appendChild(item);
     }
 }
 
@@ -1079,10 +1129,15 @@ function clearRoomState(message) {
     net.isHost = false;
     net.localPlayerIndex = 0;
     net.pendingCommands = [];
-    net.pendingJoin = false;
     renderRoomPlayers([], null);
     if (message) setRoomStatus(message, false);
     roomButtonState();
+    if (roomListEl) roomListEl.style.display = '';
+    if (createRoomBtn) createRoomBtn.style.display = '';
+    if (joinRoomCodeInput && joinRoomCodeInput.parentElement) joinRoomCodeInput.parentElement.style.display = '';
+    if (hostControls) hostControls.style.display = 'none';
+    if (leaveRoomBtn) leaveRoomBtn.style.display = 'none';
+    requestLobby();
 }
 
 function requestLobby() {
@@ -1099,14 +1154,14 @@ function doCreateRoom() {
     if (!chosen) { setRoomStatus('Önce nick seçmelisin.', true); return; }
     net.playerName = chosen;
 
-    net.pendingJoin = false;
     setRoomStatus('Oda kuruluyor...', false);
+    var multiSeed = $('multiSeedInput'), multiNode = $('multiNodeInput'), multiDiff = $('multiDiffSelect');
     net.socket.emit('createRoom', {
         action: 'create',
         playerName: net.playerName,
-        seed: seedIn.value || '42',
-        nodeCount: Number(ncIn.value || 16),
-        difficulty: diffSel.value || 'normal',
+        seed: (multiSeed && multiSeed.value) || seedIn.value || '42',
+        nodeCount: Number((multiNode && multiNode.value) || ncIn.value || 16),
+        difficulty: (multiDiff && multiDiff.value) || diffSel.value || 'normal',
         fogEnabled: menuFogCb ? !!menuFogCb.checked : false,
     });
 }
@@ -1122,7 +1177,7 @@ function doJoinRoom() {
     net.playerName = chosen;
 
     var code = (joinRoomCodeInput && joinRoomCodeInput.value.trim().toUpperCase()) || '';
-    if (!code || code.length !== 5) { setRoomStatus('Geçerli bir 5 haneli oda kodu girin.', true); return; }
+    if (!code || code.length < 4) { setRoomStatus('Gecerli bir oda kodu girin (4-6 hane).', true); return; }
 
     net.pendingJoin = false;
     setRoomStatus('Odaya bağlanıyor...', false);
@@ -1175,20 +1230,13 @@ function ensureSocket() {
 
     net.socket.on('lobbyState', function (payload) {
         var rooms = payload && Array.isArray(payload.rooms) ? payload.rooms : [];
-        if (net.roomCode || !net.playerName) return;
-        if (net.pendingJoin) {
-            joinMainRoom();
-            return;
-        }
+        if (net.roomCode) return; // Already in a room
+        renderRoomList(rooms);
         if (rooms.length === 0) {
-            setRoomStatus('Oda bekliyor. Online Baslat icin en az 2 oyuncu gerekiyor.', false);
-            return;
+            setRoomStatus('Henuz oda yok. Oda Kur ile yeni oda olustur veya arkadasindan oda kodu al.', false);
+        } else {
+            setRoomStatus(rooms.length + ' oda mevcut. Birine katil veya yeni oda kur.', false);
         }
-        var room = rooms[0];
-        var waiting = 'Oda bekliyor: ' + room.players + '/' + room.maxPlayers + ' oyuncu';
-        if (room.players < 2) waiting += ' | En az 2 oyuncu gerekli';
-        else waiting += ' | Online Baslat ile oyunu baslat';
-        setRoomStatus(waiting, false);
     });
 
     net.socket.on('roomState', function (state) {
@@ -1197,14 +1245,16 @@ function ensureSocket() {
         net.players = state.players || [];
         net.pendingJoin = false;
 
-        if (hostControls) {
-            hostControls.style.display = net.isHost ? 'flex' : 'none';
-        }
+        if (hostControls) hostControls.style.display = net.isHost ? 'flex' : 'none';
+        if (roomListEl) roomListEl.style.display = 'none';
+        if (createRoomBtn) createRoomBtn.style.display = 'none';
+        if (joinRoomCodeInput && joinRoomCodeInput.parentElement) joinRoomCodeInput.parentElement.style.display = 'none';
+        if (leaveRoomBtn) leaveRoomBtn.style.display = 'block';
 
         renderRoomPlayers(net.players, state.hostId);
-        var status = 'Oda: ' + state.code + ' | Oyuncu ' + net.players.length + '/' + state.maxPlayers;
+        var status = 'Oda: ' + state.code + ' | ' + net.players.length + '/' + state.maxPlayers + ' oyuncu';
         if (net.players.length < 2) status += ' | En az 2 oyuncu gerekli';
-        else status += (net.isHost ? ' | Oyunu başlatabilirsin' : ' | Hostun başlatması bekleniyor...');
+        else status += (net.isHost ? ' | Oyunu baslatabilirsin' : ' | Hostun baslatmasi bekleniyor...');
         setRoomStatus(status, false);
         roomButtonState();
     });
@@ -1304,6 +1354,8 @@ function startReplayFromData(raw) {
 }
 // Menu
 ncIn.addEventListener('input', function () { ncLbl.textContent = ncIn.value; });
+var multiNodeIn = $('multiNodeInput'), multiNodeLbl = $('multiNodeLabel');
+if (multiNodeIn && multiNodeLbl) multiNodeIn.addEventListener('input', function () { multiNodeLbl.textContent = multiNodeIn.value; });
 rndSeedBtn.addEventListener('click', function () { seedIn.value = '' + Math.floor(Math.random() * 100000); });
 startBtn.addEventListener('click', function () {
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
@@ -1318,22 +1370,6 @@ startBtn.addEventListener('click', function () {
     showUI('playing');
 });
 
-if (setNickBtn) {
-    setNickBtn.addEventListener('click', function () {
-        var chosen = (playerNameIn && playerNameIn.value.trim()) || '';
-        if (chosen) setRoomStatus('Nick onaylandı: ' + chosen, false);
-    });
-}
-
-if (playerNameIn) {
-    playerNameIn.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') {
-            var chosen = (playerNameIn && playerNameIn.value.trim()) || '';
-            if (chosen) setRoomStatus('Nick onaylandı: ' + chosen, false);
-        }
-    });
-}
-
 if (createRoomBtn) {
     createRoomBtn.addEventListener('click', function () {
         doCreateRoom();
@@ -1343,6 +1379,13 @@ if (createRoomBtn) {
 if (joinRoomBtn) {
     joinRoomBtn.addEventListener('click', function () {
         doJoinRoom();
+    });
+}
+
+if (leaveRoomBtn) {
+    leaveRoomBtn.addEventListener('click', function () {
+        if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
+        clearRoomState('Odadan ayrildin.');
     });
 }
 

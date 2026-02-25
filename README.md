@@ -13,23 +13,33 @@ Open `http://localhost:5173` (redirects to `stellar_conquest.html`).
 
 Direct file mode also works: open `stellar_conquest.html`.
 
-## Multiplayer Run (Single Room)
+## Game Modes
+
+- **Tek Oyunculu (Single Player):** Play against AI. Choose seed, node count, difficulty, and Fog of War.
+- **Çok Oyunculu (Multiplayer):** PvP against other players. Create a room or join with a 5-character code.
+
+## Multiplayer Run
 
 ```bash
 npm install
 npm run server
 ```
 
-Open `http://localhost:3000` on host and all remote players.
+Open `http://localhost:3000` on all players (host and remote).
 
-Important: all players must connect to the same server address.  
-For remote play, share host IP/domain (example: `http://192.168.1.20:3000`) instead of each player using their own `localhost`.
+For remote play, share host IP/domain (e.g. `http://192.168.1.20:3000`) instead of `localhost`.
 
-If you want Vite + HMR while testing multiplayer:
+**Flow:**
+1. Enter your nick
+2. **Oda Kur** – Create room (host sets seed, nodes, difficulty)
+3. **Oda Listesi** – See open rooms and click **Katil** to join
+4. Or enter **Oda Kodu** and click **Koda Katil**
+5. Host clicks **Oyunu Baslat** when 2+ players are ready
 
+If using Vite + HMR:
 1. Terminal A: `npm run server`
 2. Terminal B: `npm run dev`
-3. Open `http://localhost:5173` (socket endpoint is `localhost:3000`)
+3. Open `http://localhost:5173` (socket: `localhost:3000`)
 
 ## Controls
 

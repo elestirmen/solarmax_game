@@ -270,13 +270,42 @@
             color: #d6e4ff;
         }
 
-        .room-list-info {
-            margin: 0;
-            min-height: auto;
+        .menu-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 20px;
+        }
+
+        .menu-tab {
             flex: 1;
-            text-align: right;
-            font-size: .75rem;
+            padding: 10px 16px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius);
             color: var(--text-dim);
+            font-family: var(--font);
+            font-size: .95rem;
+            cursor: pointer;
+            transition: all .2s;
+        }
+
+        .menu-tab:hover {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text);
+        }
+
+        .menu-tab.active {
+            background: linear-gradient(135deg, rgba(74, 142, 255, 0.25), rgba(99, 102, 241, 0.2));
+            border-color: var(--accent);
+            color: #fff;
+        }
+
+        .menu-panel-content.hidden {
+            display: none !important;
+        }
+
+        .menu-panel-wide {
+            min-width: 420px;
         }
 
         .room-list {
@@ -705,52 +734,72 @@
 <body>
     <canvas id="gameCanvas"></canvas>
     <div id="mainMenu" class="overlay">
-        <div class="menu-panel">
+        <div class="menu-panel menu-panel-wide">
             <h1 class="game-title">Stellar Conquest</h1>
             <p class="tagline">Conquer the stars. Command the flow.</p>
-            <div class="menu-field"><label for="seedInput">Seed</label>
-                <div class="seed-row"><input type="text" id="seedInput" value="42" /><button id="randomSeedBtn"
-                        title="Random seed">🎲</button></div>
-            </div>
-            <div class="menu-field"><label for="nodeCountInput">Nodes</label><input type="range" id="nodeCountInput"
-                    min="8" max="30" value="16" /><span id="nodeCountLabel">16</span></div>
-            <div class="menu-field"><label for="difficultySelect">Difficulty</label><select id="difficultySelect">
-                    <option value="easy">Easy</option>
-                    <option value="normal" selected>Normal</option>
-                    <option value="hard">Hard</option>
-                </select></div>
-            <div class="menu-field"><label for="playerNameInput">Nick</label>
-                <div class="room-row">
-                    <input type="text" id="playerNameInput" value="" maxlength="20" placeholder="Nick sec" />
-                    <button id="setNickBtn" class="secondary-btn" style="margin:0">Niki Onayla</button>
-                </div>
-            </div>
-            <div class="tune-toggle" style="margin-top:4px"><label>Fog of War</label><label class="switch"><input
-                        type="checkbox" id="menuFogOfWar" /><span class="slider"></span></label></div>
-            <button id="startBtn" class="primary-btn">Start Conquest</button>
-            <div style="display: flex; gap: 8px; margin-top: 10px;">
-                <button id="howToPlayBtn" class="secondary-btn" style="margin-top: 0; flex: 1;">Nasıl Oynanır?</button>
-                <button id="loadReplayBtn" class="secondary-btn" style="margin-top: 0; flex: 1;">Load Replay</button>
-            </div>
-            <input type="file" id="replayFileInput" accept=".json" style="display:none;" />
 
-            <div class="menu-divider"></div>
-            <div class="menu-field">
-                <label>Online Lobi</label>
-                <div class="room-row">
-                    <button id="createRoomBtn" class="secondary-btn" style="margin:0; flex:1">Oda Kur</button>
+            <div class="menu-tabs">
+                <button id="tabSingle" class="menu-tab active">Tek Oyunculu</button>
+                <button id="tabMulti" class="menu-tab">Çok Oyunculu</button>
+            </div>
+
+            <div id="panelSingle" class="menu-panel-content">
+                <div class="menu-field"><label for="seedInput">Seed</label>
+                    <div class="seed-row"><input type="text" id="seedInput" value="42" /><button id="randomSeedBtn"
+                            title="Random seed">🎲</button></div>
                 </div>
-                <div class="room-row" style="margin-top:8px">
-                    <input type="text" id="joinRoomCodeInput" placeholder="Oda Kodu" maxlength="5"
-                        style="text-transform: uppercase;" />
-                    <button id="joinRoomBtn" class="secondary-btn" style="margin:0">Katıl</button>
+                <div class="menu-field"><label for="nodeCountInput">Nodes</label><input type="range" id="nodeCountInput"
+                        min="8" max="30" value="16" /><span id="nodeCountLabel">16</span></div>
+                <div class="menu-field"><label for="difficultySelect">Difficulty</label><select id="difficultySelect">
+                        <option value="easy">Easy</option>
+                        <option value="normal" selected>Normal</option>
+                        <option value="hard">Hard</option>
+                    </select></div>
+                <div class="tune-toggle" style="margin-top:4px"><label>Fog of War</label><label class="switch"><input
+                            type="checkbox" id="menuFogOfWar" /><span class="slider"></span></label></div>
+                <button id="startBtn" class="primary-btn">Oyuna Başla</button>
+            </div>
+
+            <div id="panelMulti" class="menu-panel-content hidden">
+                <div class="menu-field"><label for="playerNameInput">Nick</label>
+                    <div class="room-row">
+                        <input type="text" id="playerNameInput" value="" maxlength="20" placeholder="Nick sec" />
+                    </div>
+                </div>
+                <div class="menu-field" style="margin-bottom:8px"><label>Oda Ayarlari (Host)</label>
+                    <div class="room-row" style="gap:6px; flex-wrap:wrap">
+                        <input type="text" id="multiSeedInput" value="42" placeholder="Seed" style="flex:0 0 70px" />
+                        <input type="range" id="multiNodeInput" min="8" max="30" value="16" style="flex:1; min-width:80px" /><span id="multiNodeLabel" style="width:24px">16</span>
+                        <select id="multiDiffSelect" style="flex:0 0 80px"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select>
+                    </div>
+                </div>
+                <div class="menu-field">
+                    <label>Oda Listesi</label>
+                    <div id="roomList" class="room-list">
+                        <div class="room-list-empty">Sunucuya baglaniliyor...</div>
+                    </div>
+                </div>
+                <div class="room-row" style="gap:8px; margin-top:8px">
+                    <button id="createRoomBtn" class="primary-btn" style="margin:0; flex:1">Oda Kur</button>
+                    <div class="room-row" style="flex:1; margin:0">
+                        <input type="text" id="joinRoomCodeInput" placeholder="Oda Kodu (5 hane)" maxlength="6"
+                            style="text-transform: uppercase; flex:1" />
+                        <button id="joinRoomBtn" class="secondary-btn" style="margin:0">Koda Katıl</button>
+                    </div>
                 </div>
                 <div class="room-row" style="display:none; margin-top:12px" id="hostControls">
                     <button id="startRoomBtn" class="primary-btn" style="margin:0; flex:1">Oyunu Başlat (Host)</button>
                 </div>
+                <button id="leaveRoomBtn" class="secondary-btn" style="display:none; margin-top:8px">Odadan Ayrıl</button>
+                <p id="roomStatus" class="room-status"></p>
+                <div id="roomPlayers" class="room-players"></div>
             </div>
-            <p id="roomStatus" class="room-status"></p>
-            <div id="roomPlayers" class="room-players"></div>
+
+            <div style="display: flex; gap: 8px; margin-top: 16px; justify-content: center;">
+                <button id="howToPlayBtn" class="secondary-btn" style="margin: 0;">Nasıl Oynanır?</button>
+                <button id="loadReplayBtn" class="secondary-btn" style="margin: 0;">Replay Yükle</button>
+            </div>
+            <input type="file" id="replayFileInput" accept=".json" style="display:none;" />
         </div>
     </div>
     <div id="howToPlayOverlay" class="overlay hidden">
