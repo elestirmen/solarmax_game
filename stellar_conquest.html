@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
     <title>Stellar Conquest</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
@@ -728,6 +728,21 @@
         .color-relay {
             color: #7de3ff;
         }
+
+        .game-stats { margin: 12px 0; padding: 10px; background: rgba(255,255,255,0.05); border-radius: var(--radius); font-size: .9rem; }
+        .stats-row { margin: 4px 0; color: var(--text-dim); }
+        .minimap { position: fixed; top: 12px; right: 12px; width: 140px; height: 90px; border: 1px solid var(--panel-border); border-radius: var(--radius); overflow: hidden; z-index: 45; background: rgba(8,12,21,0.9); }
+        .minimap canvas { width: 100%; height: 100%; display: block; }
+        .ping-display { margin-left: 12px; font-size: .75rem; color: var(--text-dim); }
+        body.theme-light { --bg: #e8ecf4; --panel-bg: rgba(220,228,240,0.95); --panel-border: rgba(80,100,140,0.3); --text: #2a3548; --text-dim: #5a6a82; }
+        .chat-panel { position: fixed; bottom: 48px; left: 12px; width: 280px; max-height: 160px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: var(--radius); z-index: 48; display: flex; flex-direction: column; }
+        .chat-panel.hidden { display: none; }
+        #chatMessages { flex: 1; overflow-y: auto; padding: 8px; font-size: .8rem; max-height: 100px; }
+        .chat-input-row { display: flex; padding: 6px; gap: 4px; }
+        #chatInput { flex: 1; padding: 6px; border: 1px solid var(--panel-border); border-radius: 4px; background: rgba(255,255,255,0.05); color: var(--text); font-size: .85rem; }
+        .emote-bar { display: flex; gap: 2px; }
+        .emote-btn { padding: 4px 8px; font-size: .7rem; background: rgba(255,255,255,0.08); border: 1px solid var(--panel-border); border-radius: 4px; color: var(--text); cursor: pointer; }
+        .achievement-toast { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); padding: 12px 24px; background: linear-gradient(135deg, #4a8eff, #6366f1); border-radius: var(--radius); color: #fff; font-weight: 600; z-index: 200; animation: fadeIn .3s ease; }
     </style>
 </head>
 
@@ -758,6 +773,7 @@
                 <div class="tune-toggle" style="margin-top:4px"><label>Fog of War</label><label class="switch"><input
                             type="checkbox" id="menuFogOfWar" /><span class="slider"></span></label></div>
                 <button id="startBtn" class="primary-btn">Oyuna Başla</button>
+                <button id="campaignBtn" class="secondary-btn" style="margin-top:8px">Kampanya (3 Seviye)</button>
             </div>
 
             <div id="panelMulti" class="menu-panel-content hidden">
@@ -795,9 +811,13 @@
                 <div id="roomPlayers" class="room-players"></div>
             </div>
 
-            <div style="display: flex; gap: 8px; margin-top: 16px; justify-content: center;">
+            <div style="display: flex; gap: 8px; margin-top: 16px; justify-content: center; flex-wrap: wrap;">
                 <button id="howToPlayBtn" class="secondary-btn" style="margin: 0;">Nasıl Oynanır?</button>
                 <button id="loadReplayBtn" class="secondary-btn" style="margin: 0;">Replay Yükle</button>
+                <button id="leaderboardBtn" class="secondary-btn" style="margin: 0;">Liderlik</button>
+            </div>
+            <div id="leaderboardOverlay" class="overlay hidden">
+                <div class="menu-panel"><h3>Liderlik Tablosu</h3><div id="leaderboardList"></div><button id="leaderboardClose" class="secondary-btn">Kapat</button></div>
             </div>
             <input type="file" id="replayFileInput" accept=".json" style="display:none;" />
         </div>
@@ -840,6 +860,10 @@
                         <strong class="color-relay">R - Relay (Aktarım)</strong>
                         <p>Buradan çıkan filolar %35 daha hızlı seyahat eder. Genişleme (Flow) için kilit noktadır.</p>
                     </div>
+                    <div class="node-type-card">
+                        <strong style="color:#c9a0dc">N - Nexus</strong>
+                        <p>Hibrit gezegen. Tum yonlerde hafif bonus. Dengeli genisleme icin ideal.</p>
+                    </div>
                 </div>
             </div>
 
@@ -866,7 +890,10 @@
     <div id="gameOverOverlay" class="overlay hidden">
         <div class="menu-panel">
             <h2 id="gameOverTitle">Victory!</h2>
-            <p id="gameOverMsg"></p><button id="replayBtn" class="primary-btn">Watch Replay</button><button
+            <p id="gameOverMsg"></p>
+            <div id="gameOverStats" class="game-stats"></div>
+            <button id="rematchBtn" class="primary-btn" style="display:none">Tekrar Oyna</button>
+            <button id="replayBtn" class="primary-btn">Watch Replay</button><button
                 id="exportReplayBtn" class="secondary-btn">Export Replay</button><button id="restartBtn"
                 class="secondary-btn">New Game</button>
         </div>
@@ -874,11 +901,23 @@
     <div id="replayBar" class="hidden"><span id="replayLabel">REPLAY</span><button id="replaySlower">◀◀</button><button
             id="replayPause">⏸</button><button id="replayFaster">▶▶</button><span id="replaySpeedLabel">1x</span><span
             id="replayTickLabel">Tick: 0</span><button id="replayStop" class="secondary-btn">Exit Replay</button></div>
+    <div id="minimap" class="minimap hidden">
+        <canvas id="minimapCanvas"></canvas>
+    </div>
+    <div id="chatPanel" class="chat-panel hidden">
+        <div id="chatMessages"></div>
+        <div class="chat-input-row">
+            <input id="chatInput" type="text" placeholder="Mesaj..." maxlength="120" />
+            <div class="emote-bar">
+                <button class="emote-btn" data-emote="gg">GG</button><button class="emote-btn" data-emote="gl">GL</button><button class="emote-btn" data-emote="wp">WP</button><button class="emote-btn" data-emote="nice">Nice</button>
+            </div>
+        </div>
+    </div>
     <div id="hud" class="hidden">
         <div id="hudLeft"><span id="hudPercent">Send: 50%</span><input type="range" id="sendPercent" min="10" max="100"
                 value="50" step="5" /></div>
-        <div id="hudCenter"><span id="hudTick">Tick: 0</span></div>
-        <div id="hudRight"><button id="pauseBtn" title="Pause">⏸</button><button id="speedBtn" title="Speed">1x</button>
+        <div id="hudCenter"><span id="hudTick">Tick: 0</span><span id="pingDisplay" class="ping-display"></span></div>
+        <div id="hudRight"><button id="pauseBtn" title="Pause">⏸</button><button id="speedBtn" title="Speed">1x</button><button id="themeBtn" title="Tema">🌙</button><button id="chatToggle" title="Chat">💬</button>
         </div>
     </div>
     <div id="tuningPanel" class="hidden">
@@ -906,6 +945,7 @@
     </div>
     <button id="tuneOpenBtn" class="toggle-btn hidden">⚙</button>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
+    <script src="./assets/audio.js"></script>
     <script type="module" src="./game.js"></script>
 </body>
 

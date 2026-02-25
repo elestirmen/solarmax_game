@@ -28,6 +28,7 @@ var NODE_TYPE_DEFS = {
     forge: { label: 'Forge', prod: 1.35, def: 0.9, cap: 0.9, flow: 1.1, speed: 1.0, color: '#ffad66' },
     bulwark: { label: 'Bulwark', prod: 0.75, def: 1.45, cap: 1.25, flow: 0.9, speed: 0.95, color: '#b6c1d9' },
     relay: { label: 'Relay', prod: 0.95, def: 0.95, cap: 0.85, flow: 1.35, speed: 1.35, color: '#7de3ff' },
+    nexus: { label: 'Nexus', prod: 1.1, def: 1.1, cap: 1.1, flow: 1.15, speed: 1.1, color: '#c9a0dc' },
 };
 
 var AI_ARCHETYPES = [
@@ -113,7 +114,35 @@ var G = {
     rec: { events: [], seed: 0, nc: 0, diff: 'normal' },
     rep: null, aiTicks: [], flowId: 0, fleetSerial: 0,
     aiProfiles: [], mapFeature: { type: 'none' }, wormholes: [],
+    stats: { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0 },
+    particles: [], mapMode: 'random', campaignLevel: 0,
 };
+var ACHIEVEMENTS = [
+    { id: 'first_win', name: 'Ilk Zafer', check: function () { return G.winner === G.human; } },
+    { id: 'capture_10', name: '10 Gezegen Fethet', check: function () { return G.stats.nodesCaptured >= 10; } },
+    { id: 'upgrade_master', name: 'Upgrade Ustasi', check: function () { return G.stats.upgrades >= 5; } },
+    { id: 'fleet_lord', name: 'Filo Komutani', check: function () { return G.stats.fleetsSent >= 50; } },
+    { id: 'fast_win', name: 'Hizli Zafer', check: function () { return G.winner === G.human && G.tick < 500; } },
+];
+function checkAchievements() {
+    try {
+        var unlocked = JSON.parse(localStorage.getItem('stellar_achievements') || '[]');
+        for (var i = 0; i < ACHIEVEMENTS.length; i++) {
+            var a = ACHIEVEMENTS[i];
+            if (unlocked.indexOf(a.id) >= 0) continue;
+            if (a.check()) {
+                unlocked.push(a.id);
+                localStorage.setItem('stellar_achievements', JSON.stringify(unlocked));
+                if (typeof AudioFX !== 'undefined') AudioFX.achievement();
+                var toast = document.createElement('div');
+                toast.className = 'achievement-toast';
+                toast.textContent = 'Basarim: ' + a.name;
+                document.body.appendChild(toast);
+                setTimeout(function () { toast.remove(); }, 3000);
+            }
+        }
+    } catch (e) {}
+}
 function defaultTune() { return { prod: 1, fspeed: FLEET_SPEED, def: DEF_FACTOR, flowInt: 15, aiAgg: AI_AGG, aiBuf: AI_BUF, aiInt: AI_INTERVAL, fogEnabled: false, aiAssist: true }; }
 
 var net = {
@@ -166,9 +195,10 @@ function upgradeCost(node) {
 }
 function initNodeKind(node) {
     var roll = G.rng.next();
-    if (roll < 0.22) node.kind = 'forge';
-    else if (roll < 0.42) node.kind = 'bulwark';
-    else if (roll < 0.58) node.kind = 'relay';
+    if (roll < 0.18) node.kind = 'forge';
+    else if (roll < 0.36) node.kind = 'bulwark';
+    else if (roll < 0.52) node.kind = 'relay';
+    else if (roll < 0.65) node.kind = 'nexus';
     else node.kind = 'core';
     node.level = 1;
     node.maxUnits = nodeCapacity(node);
@@ -271,6 +301,8 @@ function initGame(seedStr, nc, diff, opts) {
     if (menuFog !== null) G.tune.fogEnabled = menuFog;
     G.flowId = 0;
     G.fleetSerial = 0;
+    G.stats = { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0 };
+    G.particles = [];
     for (var i = 0; i < pool.length; i++) { pool[i].active = false; pool[i].trail = []; }
     G.fleets = [];
     G.flows = [];
@@ -343,6 +375,8 @@ function genMap(nc) {
 // â”€â”€ DISPATCH â”€â”€
 function dispatch(owner, srcIds, tgtId, pct) {
     pct = clamp(typeof pct === 'number' ? pct : 0.5, 0.05, 1);
+    if (owner === G.human) G.stats.fleetsSent++;
+    if (owner === G.human && typeof AudioFX !== 'undefined') AudioFX.send();
     var tgt = G.nodes[tgtId]; if (!tgt) return;
     for (var si = 0; si < srcIds.length; si++) {
         var src = G.nodes[srcIds[si]]; if (!src || src.owner !== owner) continue;
@@ -373,16 +407,30 @@ function dispatch(owner, srcIds, tgtId, pct) {
 }
 
 // â”€â”€ COMBAT â”€â”€
+function spawnParticles(x, y, count, color, isCapture) {
+    for (var i = 0; i < count; i++) {
+        var a = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+        var spd = 2 + Math.random() * 4;
+        G.particles.push({ x: x, y: y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, life: 0.4 + Math.random() * 0.3, maxLife: 0.7, col: color || '#fff', r: isCapture ? 3 : 1.5 });
+    }
+    if (G.particles.length > 120) G.particles = G.particles.slice(-100);
+}
 function combat(fleet, tgt) {
     if (tgt.owner === fleet.owner) { tgt.units += fleet.count; return; }
     var defMult = (tgt.owner >= 0 ? G.tune.def : 1) * nodeTypeOf(tgt).def * nodeLevelDefMult(tgt);
     var atk = fleet.count, def = tgt.units * defMult;
+    var col = G.players[fleet.owner] ? G.players[fleet.owner].color : '#fff';
+    spawnParticles(tgt.pos.x, tgt.pos.y, 8 + Math.min(fleet.count, 12), col, false);
     if (atk > def) {
         tgt.owner = fleet.owner;
         tgt.units = Math.max(1, Math.floor(atk - def));
         G.flows = G.flows.filter(function (fl) { return !(fl.tgtId === tgt.id && fl.owner !== fleet.owner); });
+        spawnParticles(tgt.pos.x, tgt.pos.y, 12, col, true);
+        if (G.human === fleet.owner) { G.stats.nodesCaptured++; if (typeof AudioFX !== 'undefined') AudioFX.capture(); }
+        else if (typeof AudioFX !== 'undefined') AudioFX.combat();
     } else {
         tgt.units = Math.max(0, (def - atk) / defMult);
+        if (typeof AudioFX !== 'undefined') AudioFX.combat();
     }
     tgt.maxUnits = nodeCapacity(tgt);
 }
@@ -404,6 +452,7 @@ function upgradeNode(owner, nodeId) {
     node.level++;
     node.maxUnits = nodeCapacity(node);
     if (node.units > node.maxUnits) node.units = node.maxUnits;
+    if (owner === G.human) { G.stats.upgrades++; if (typeof AudioFX !== 'undefined') AudioFX.upgrade(); }
     return true;
 }
 
@@ -670,6 +719,12 @@ function gameTick() {
     }
     // fog
     for (var p = 0; p < G.players.length; p++)updateVis(G.fog, p, G.nodes, G.tick);
+    // particles
+    for (var pi = G.particles.length - 1; pi >= 0; pi--) {
+        var p = G.particles[pi];
+        p.x += p.vx; p.y += p.vy; p.life -= TICK_DT;
+        if (p.life <= 0) G.particles.splice(pi, 1);
+    }
     checkEnd(); G.tick++;
 }
 function checkEnd() {
@@ -909,7 +964,7 @@ function render(ctx, cv, tick) {
 
         if (vis || n.owner === G.human) {
             if (n.kind !== 'core') {
-                var icon = n.kind === 'forge' ? 'F' : (n.kind === 'bulwark' ? 'B' : 'R');
+                var icon = n.kind === 'forge' ? 'F' : (n.kind === 'bulwark' ? 'B' : (n.kind === 'relay' ? 'R' : 'N'));
                 ctx.font = 'bold 9px Outfit,sans-serif';
                 ctx.fillStyle = hexToRgba(nodeTypeOf(n).color, 0.95);
                 ctx.textAlign = 'center';
@@ -923,6 +978,15 @@ function render(ctx, cv, tick) {
         }
     }
 
+    // particles
+    for (var pi = 0; pi < G.particles.length; pi++) {
+        var p = G.particles[pi];
+        var alpha = p.life / p.maxLife;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba(p.col, alpha);
+        ctx.fill();
+    }
+
     // drag line
     if (inp.dragActive) {
         var ds = inp.dragStart, de = inp.dragEnd, dcp = bezCP(ds, de, BEZ_CURV * 0.7);
@@ -931,6 +995,25 @@ function render(ctx, cv, tick) {
         var pe = bezPt(ds, dcp, de, 0.9); drawArrow(ctx, pe, de, 'rgba(255,255,255,0.5)', 7);
     }
     ctx.restore();
+    // minimap
+    var mm = document.getElementById('minimapCanvas');
+    if (mm && mm.getContext && (G.state === 'playing' || G.state === 'replay') && G.nodes.length > 0) {
+        var mmCtx = mm.getContext('2d');
+        mm.width = 140; mm.height = 90;
+        var scale = Math.min(mm.width / MAP_W, mm.height / MAP_H);
+        var mx = mm.width / 2 - G.cam.x * scale, my = mm.height / 2 - G.cam.y * scale;
+        mmCtx.fillStyle = 'rgba(8,12,21,0.95)'; mmCtx.fillRect(0, 0, mm.width, mm.height);
+        mmCtx.save(); mmCtx.translate(mx, my); mmCtx.scale(scale, scale);
+        for (var mi = 0; mi < G.nodes.length; mi++) {
+            var mn = G.nodes[mi];
+            var mcol = mn.owner < 0 ? '#5a6272' : (G.players[mn.owner] ? G.players[mn.owner].color : '#888');
+            mmCtx.fillStyle = mcol; mmCtx.beginPath(); mmCtx.arc(mn.pos.x, mn.pos.y, 8, 0, Math.PI * 2); mmCtx.fill();
+        }
+        mmCtx.restore();
+        var vw = (cv.width / G.cam.zoom) * scale, vh = (cv.height / G.cam.zoom) * scale;
+        mmCtx.strokeStyle = 'rgba(255,255,255,0.6)'; mmCtx.strokeRect(mm.width / 2 - vw / 2, mm.height / 2 - vh / 2, vw, vh);
+        document.getElementById('minimap').classList.remove('hidden');
+    } else if (document.getElementById('minimap')) document.getElementById('minimap').classList.add('hidden');
     // marquee (screen space)
     if (inp.marqActive) {
         var mx = Math.min(inp.marqStart.x, inp.marqEnd.x), my = Math.min(inp.marqStart.y, inp.marqEnd.y),
@@ -1027,7 +1110,7 @@ if (closeHowToPlayBtn) {
 var roomStatusEl = $('roomStatus'), roomPlayersEl = $('roomPlayers'), roomListEl = $('roomList');
 var tabSingle = $('tabSingle'), tabMulti = $('tabMulti'), panelSingle = $('panelSingle'), panelMulti = $('panelMulti');
 var resumeBtn = $('resumeBtn'), quitBtn = $('quitBtn');
-var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), repBtn = $('replayBtn'), expRepBtn = $('exportReplayBtn'), restartBtn = $('restartBtn');
+var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameOverStats'), repBtn = $('replayBtn'), expRepBtn = $('exportReplayBtn'), restartBtn = $('restartBtn');
 var hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
 var repSlower = $('replaySlower'), repPauseBtn = $('replayPause'), repFaster = $('replayFaster'), repSpdLbl = $('replaySpeedLabel'), repTickLbl = $('replayTickLabel'), repStopBtn = $('replayStop');
 var tuneProd = $('tuneProduction'), tuneFSpd = $('tuneFleetSpeed'), tuneDef = $('tuneDefense'), tuneFlowInt = $('tuneFlowInterval');
@@ -1070,6 +1153,7 @@ if (roomListEl) {
 function showUI(st) {
     mainMenu.classList.toggle('hidden', st !== 'mainMenu'); pauseOv.classList.toggle('hidden', st !== 'paused'); goOv.classList.toggle('hidden', st !== 'gameOver');
     var ig = st === 'playing' || st === 'paused' || st === 'replay'; hud.classList.toggle('hidden', !ig || st === 'replay'); repBar.classList.toggle('hidden', st !== 'replay');
+    var cp = document.getElementById('chatPanel'); if (cp) cp.classList.toggle('hidden', !ig || !net.online);
     if (st === 'playing' && tuningOpen) { tunePanel.classList.remove('hidden'); tuneOpen.classList.add('hidden'); }
     else if (st === 'playing') { tunePanel.classList.add('hidden'); tuneOpen.classList.remove('hidden'); }
     else { tunePanel.classList.add('hidden'); tuneOpen.classList.add('hidden'); }
@@ -1286,8 +1370,8 @@ function ensureSocket() {
 
     net.socket.on('pongTick', function (payload) {
         if (!net.online) return;
-        var latencyMs = Date.now() - payload.clientTs;
-        var latencyTicks = latencyMs / 2 / 33.33;
+        net.lastPingMs = Date.now() - payload.clientTs;
+        var latencyTicks = net.lastPingMs / 2 / 33.33;
         var realServerTick = payload.serverTick + latencyTicks;
         net.syncDrift = G.tick - realServerTick;
     });
@@ -1318,12 +1402,39 @@ function ensureSocket() {
         tuneFogCb.checked = G.tune.fogEnabled;
         if (menuFogCb) menuFogCb.checked = G.tune.fogEnabled;
         setRoomStatus('Online match started. You are P' + (net.localPlayerIndex + 1) + '.', false);
+        if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
         showUI('playing');
     });
 
     net.socket.on('roomCommand', function (cmd) {
         if (!net.online) return;
         net.pendingCommands.push(cmd);
+    });
+
+    net.socket.on('chat', function (payload) {
+        var el = document.getElementById('chatMessages');
+        if (el) { var d = document.createElement('div'); d.textContent = (payload.name || '?') + ': ' + (payload.message || ''); el.appendChild(d); el.scrollTop = el.scrollHeight; }
+    });
+    net.socket.on('emote', function (payload) {
+        var el = document.getElementById('chatMessages');
+        if (el) { var d = document.createElement('div'); d.textContent = (payload.name || '?') + ': ' + (payload.emote || '').toUpperCase(); d.style.color = 'var(--accent)'; el.appendChild(d); el.scrollTop = el.scrollHeight; }
+    });
+    net.socket.on('rematchVote', function (payload) {
+        var el = document.getElementById('chatMessages');
+        if (el) { var d = document.createElement('div'); d.textContent = payload.name + ' tekrar oynamak istiyor (' + payload.count + '/' + payload.total + ')'; d.style.color = 'var(--success)'; el.appendChild(d); el.scrollTop = el.scrollHeight; }
+    });
+    net.socket.on('leaderboard', function (payload) {
+        var el = document.getElementById('leaderboardList');
+        if (!el) return;
+        el.innerHTML = '';
+        var list = payload.list || [];
+        for (var i = 0; i < list.length; i++) {
+            var r = document.createElement('div');
+            r.textContent = (i + 1) + '. ' + list[i].name + ' - ' + list[i].wins + ' galibiyet (' + list[i].games + ' mac)';
+            r.style.marginBottom = '6px';
+            el.appendChild(r);
+        }
+        if (list.length === 0) el.textContent = 'Henuz veri yok.';
     });
 }
 function normalizeReplay(raw) {
@@ -1357,6 +1468,20 @@ ncIn.addEventListener('input', function () { ncLbl.textContent = ncIn.value; });
 var multiNodeIn = $('multiNodeInput'), multiNodeLbl = $('multiNodeLabel');
 if (multiNodeIn && multiNodeLbl) multiNodeIn.addEventListener('input', function () { multiNodeLbl.textContent = multiNodeIn.value; });
 rndSeedBtn.addEventListener('click', function () { seedIn.value = '' + Math.floor(Math.random() * 100000); });
+var CAMPAIGN_LEVELS = [{ seed: 'camp1', nc: 12, diff: 'easy' }, { seed: 'camp2', nc: 16, diff: 'normal' }, { seed: 'camp3', nc: 20, diff: 'hard' }];
+var campaignBtn = $('campaignBtn');
+if (campaignBtn) campaignBtn.addEventListener('click', function () {
+    if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
+    clearRoomState('');
+    var lvl = CAMPAIGN_LEVELS[G.campaignLevel % 3];
+    initGame(lvl.seed, lvl.nc, lvl.diff, { fogEnabled: false, aiCount: 2 });
+    G.campaignLevel = (G.campaignLevel + 1) % 3;
+    inp.sel.clear();
+    for (var i = 0; i < G.nodes.length; i++) G.nodes[i].selected = false;
+    spIdx = 0; spdBtn.textContent = '1x';
+    if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
+    showUI('playing');
+});
 startBtn.addEventListener('click', function () {
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
     clearRoomState('');
@@ -1367,6 +1492,7 @@ startBtn.addEventListener('click', function () {
     spIdx = 0;
     spdBtn.textContent = '1x';
     tuneFogCb.checked = fogOn;
+    if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
     showUI('playing');
 });
 
@@ -1420,6 +1546,37 @@ quitBtn.addEventListener('click', function () {
 });
 var speeds = [1, 2, 4], spIdx = 0;
 spdBtn.addEventListener('click', function () { if (net.online) return; spIdx = (spIdx + 1) % 3; G.speed = speeds[spIdx]; spdBtn.textContent = G.speed + 'x'; recEvt('speed', { speed: G.speed }); });
+var themeBtn = $('themeBtn');
+if (themeBtn) themeBtn.addEventListener('click', function () {
+    document.body.classList.toggle('theme-light');
+    themeBtn.textContent = document.body.classList.contains('theme-light') ? '☀' : '🌙';
+});
+var chatPanel = $('chatPanel'), chatInput = $('chatInput'), chatToggle = $('chatToggle');
+if (chatToggle) chatToggle.addEventListener('click', function () {
+    if (chatPanel) chatPanel.classList.toggle('hidden');
+});
+if (chatInput) chatInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' && chatInput.value.trim()) {
+        if (net.socket && net.roomCode) net.socket.emit('chat', { message: chatInput.value.trim() });
+        chatInput.value = '';
+    }
+});
+document.querySelectorAll('.emote-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+        var em = btn.getAttribute('data-emote');
+        if (em && net.socket && net.roomCode) net.socket.emit('emote', { emote: em });
+    });
+});
+var rematchBtn = $('rematchBtn');
+if (rematchBtn) rematchBtn.addEventListener('click', function () {
+    if (net.socket && net.roomCode) net.socket.emit('requestRematch');
+});
+var leaderboardBtn = $('leaderboardBtn'), leaderboardOv = $('leaderboardOverlay'), leaderboardList = $('leaderboardList'), leaderboardClose = $('leaderboardClose');
+if (leaderboardBtn) leaderboardBtn.addEventListener('click', function () {
+    if (leaderboardOv) leaderboardOv.classList.remove('hidden');
+    if (net.socket && net.connected) net.socket.emit('requestLeaderboard');
+});
+if (leaderboardClose) leaderboardClose.addEventListener('click', function () { if (leaderboardOv) leaderboardOv.classList.add('hidden'); });
 sendPctIn.addEventListener('input', function () { inp.sendPct = parseInt(sendPctIn.value, 10); hudPct.textContent = 'Send: ' + inp.sendPct + '%'; });
 repBtn.addEventListener('click', function () { if (lastRepData) startReplayFromData(lastRepData); });
 expRepBtn.addEventListener('click', function () { if (!lastRepData) return; var b = new Blob([JSON.stringify(lastRepData, null, 2)], { type: 'application/json' }), u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = 'replay-' + lastRepData.seed + '.json'; a.click(); URL.revokeObjectURL(u); });
@@ -1478,7 +1635,7 @@ cv.addEventListener('mousedown', function (e) {
         e.preventDefault(); return;
     }
     var cn = hitNode(w); inp.shift = e.shiftKey;
-    if (cn && cn.owner === G.human) { if (!e.shiftKey) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); } cn.selected = true; inp.sel.add(cn.id); recEvt('select', { ids: Array.from(inp.sel), append: e.shiftKey }); }
+    if (cn && cn.owner === G.human) { if (!e.shiftKey) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); } cn.selected = true; inp.sel.add(cn.id); if (typeof AudioFX !== 'undefined') AudioFX.select(); recEvt('select', { ids: Array.from(inp.sel), append: e.shiftKey }); }
     else if (cn && inp.sel.size > 0) {
         var srcs = Array.from(inp.sel), pct = inp.sendPct / 100;
         var sendData = { sources: srcs, tgtId: cn.id, pct: pct };
@@ -1529,6 +1686,37 @@ cv.addEventListener('wheel', function (e) {
     var f = e.deltaY > 0 ? (1 - ZOOM_SPD) : (1 + ZOOM_SPD); G.cam.zoom *= f; G.cam.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, G.cam.zoom)); e.preventDefault();
 }, { passive: false });
 cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+cv.addEventListener('touchstart', function (e) {
+    if (e.touches.length === 1 && G.state === 'playing') {
+        var r = cv.getBoundingClientRect();
+        var pos = { x: (e.touches[0].clientX - r.left) * (cv.width / r.width), y: (e.touches[0].clientY - r.top) * (cv.height / r.height) };
+        inp.touchStart = pos;
+        var w = s2w(pos.x, pos.y); var cn = hitNode(w);
+        if (cn && cn.owner === G.human) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); cn.selected = true; inp.sel.add(cn.id); if (typeof AudioFX !== 'undefined') AudioFX.select(); }
+        else if (cn && inp.sel.size > 0) {
+            var sendData = { sources: Array.from(inp.sel), tgtId: cn.id, pct: inp.sendPct / 100 };
+            if (!issueOnlineCommand('send', sendData)) { applyPlayerCommand(G.human, 'send', sendData); recEvt('send', sendData); }
+        }
+        else { inp.marqActive = true; inp.marqStart = pos; inp.marqEnd = pos; }
+        e.preventDefault();
+    }
+}, { passive: false });
+cv.addEventListener('touchmove', function (e) {
+    if (e.touches.length === 1 && inp.marqActive) {
+        var r = cv.getBoundingClientRect();
+        inp.marqEnd = { x: (e.touches[0].clientX - r.left) * (cv.width / r.width), y: (e.touches[0].clientY - r.top) * (cv.height / r.height) };
+        e.preventDefault();
+    }
+}, { passive: false });
+cv.addEventListener('touchend', function (e) {
+    if (e.changedTouches.length === 1 && inp.marqActive) {
+        var r = cv.getBoundingClientRect();
+        var pos = { x: (e.changedTouches[0].clientX - r.left) * (cv.width / r.width), y: (e.changedTouches[0].clientY - r.top) * (cv.height / r.height) };
+        var sw = s2w(inp.marqStart.x, inp.marqStart.y), ew = s2w(pos.x, pos.y), ids = nodesInRect(sw, ew, G.human);
+        if (ids.length > 0) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); ids.forEach(function (id) { G.nodes[id].selected = true; inp.sel.add(id); }); }
+        inp.marqActive = false;
+    }
+}, { passive: false });
 window.addEventListener('keydown', function (e) {
     if (G.state === 'playing') {
         if (!net.online && (e.key === 'Escape' || e.key === 'p')) { G.state = 'paused'; showUI('paused'); }
@@ -1567,6 +1755,12 @@ function loop(ts) {
             if (prevSt === 'playing') lastRepData = JSON.parse(JSON.stringify(G.rec));
             goTitle.textContent = G.winner === G.human ? 'Victory!' : 'Defeat';
             goMsg.textContent = G.winner === G.human ? 'Conquered all stars in ' + G.tick + ' ticks!' : 'Eliminated at tick ' + G.tick + '.';
+            if (goStatsEl) goStatsEl.innerHTML = '<div class="stats-row">Fethedilen: ' + G.stats.nodesCaptured + '</div><div class="stats-row">Filo: ' + G.stats.fleetsSent + '</div><div class="stats-row">Upgrade: ' + G.stats.upgrades + '</div>';
+            if (typeof AudioFX !== 'undefined') { AudioFX.stopMusic(); G.winner === G.human ? AudioFX.victory() : AudioFX.defeat(); }
+            checkAchievements();
+            var rematchBtn = document.getElementById('rematchBtn');
+            if (rematchBtn) rematchBtn.style.display = net.online ? 'block' : 'none';
+            if (net.online && net.socket) net.socket.emit('reportResult', { winner: G.winner === G.human });
         } prevSt = G.state;
     }
     if (G.state === 'playing' || G.state === 'replay') {
@@ -1574,6 +1768,8 @@ function loop(ts) {
         while (acc >= TICK_DT) { gameTick(); acc -= TICK_DT; }
         var featureName = G.mapFeature.type === 'wormhole' ? 'Wormhole' : (G.mapFeature.type === 'gravity' ? 'Gravity' : 'Standard');
         hudTick.textContent = 'Tick: ' + G.tick + ' | ' + G.diff + ' | ' + featureName;
+        var pingEl = document.getElementById('pingDisplay');
+        if (pingEl) pingEl.textContent = net.online && net.lastPingMs !== undefined ? ('Ping: ' + Math.round(net.lastPingMs) + 'ms') : '';
         if (G.state === 'replay') repTickLbl.textContent = 'Tick: ' + G.tick;
     }
     if (G.state !== 'mainMenu') render(ctx, cv, G.tick);

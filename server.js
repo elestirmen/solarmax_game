@@ -27,6 +27,8 @@ const DEFAULT_ROOM_CONFIG = {
 
 const rooms = new Map();
 const socketToRoom = new Map();
+const leaderboard = [];
+const EMOTES = ['gg', 'gl', 'hf', 'wp', 'oops', 'nice', 'wait'];
 
 function nowTick(startEpochMs) {
     return Math.max(0, Math.floor((Date.now() - startEpochMs) / (1000 / TICK_RATE)));
@@ -335,6 +337,67 @@ io.on('connection', (socket) => {
             clientTs: payload.clientTs,
             serverTick: nowTick(room.startedAt)
         });
+    });
+
+    socket.on('chat', (payload = {}) => {
+        const code = socketToRoom.get(socket.id);
+        if (!code) return;
+        const room = rooms.get(code);
+        if (!room) return;
+        const player = room.players.find(p => p.socketId === socket.id);
+        const msg = String(payload.message || '').trim().slice(0, 120);
+        if (msg) io.to(code).emit('chat', { name: player ? player.name : '?', message: msg });
+    });
+
+    socket.on('emote', (payload = {}) => {
+        const code = socketToRoom.get(socket.id);
+        if (!code) return;
+        const em = String(payload.emote || '').toLowerCase();
+        if (EMOTES.includes(em)) {
+            const room = rooms.get(code);
+            const player = room ? room.players.find(p => p.socketId === socket.id) : null;
+            io.to(code).emit('emote', { name: player ? player.name : '?', emote: em });
+        }
+    });
+
+    socket.on('requestRematch', () => {
+        const code = socketToRoom.get(socket.id);
+        if (!code) return;
+        const room = rooms.get(code);
+        if (!room || !room.started) return;
+        room.rematchVotes = room.rematchVotes || new Set();
+        const player = room.players.find(p => p.socketId === socket.id);
+        if (player) room.rematchVotes.add(socket.id);
+        if (room.rematchVotes.size >= room.players.length && room.players.length >= 2) {
+            room.started = false;
+            room.startedAt = 0;
+            room.rematchVotes = new Set();
+            startRoomMatch(room);
+        } else if (room.players.length >= 2) {
+            io.to(code).emit('rematchVote', { name: player ? player.name : '?', count: room.rematchVotes.size, total: room.players.length });
+        }
+    });
+
+    socket.on('reportResult', (payload = {}) => {
+        const code = socketToRoom.get(socket.id);
+        if (!code) return;
+        const room = rooms.get(code);
+        const player = room ? room.players.find(p => p.socketId === socket.id) : null;
+        if (player && payload.winner !== undefined) {
+            leaderboard.push({ name: player.name, wins: payload.winner ? 1 : 0, games: 1, ts: Date.now() });
+            if (leaderboard.length > 100) leaderboard.shift();
+        }
+    });
+
+    socket.on('requestLeaderboard', () => {
+        const byName = {};
+        leaderboard.forEach(e => {
+            if (!byName[e.name]) byName[e.name] = { name: e.name, wins: 0, games: 0 };
+            byName[e.name].wins += e.wins;
+            byName[e.name].games += e.games;
+        });
+        const list = Object.values(byName).sort((a, b) => b.wins - a.wins).slice(0, 10);
+        socket.emit('leaderboard', { list });
     });
 
     socket.on('disconnect', () => {
