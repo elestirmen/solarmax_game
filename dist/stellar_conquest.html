@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <title>Stellar Conquest</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
+
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0
+        }
+
+        :root {
+            --bg: #0a0e17;
+            --panel-bg: rgba(12, 18, 34, 0.92);
+            --panel-border: rgba(80, 140, 255, 0.2);
+            --accent: #4a8eff;
+            --accent-glow: rgba(74, 142, 255, 0.35);
+            --text: #c8d6e5;
+            --text-dim: #6b7d96;
+            --success: #27ae60;
+            --danger: #e74c3c;
+            --font: 'Outfit', system-ui, sans-serif;
+            --radius: 8px
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: var(--font);
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            cursor: crosshair
+        }
+
+        .overlay {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(4, 6, 14, 0.85);
+            backdrop-filter: blur(8px);
+            z-index: 100;
+            animation: fadeIn .3s ease
+        }
+
+        .overlay.hidden {
+            display: none
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0
+            }
+
+            to {
+                opacity: 1
+            }
+        }
+
+        .menu-panel {
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 40px 48px;
+            min-width: 340px;
+            max-height: min(92vh, 900px);
+            overflow-y: auto;
+            text-align: center;
+            box-shadow: 0 0 60px rgba(74, 142, 255, 0.08)
+        }
+
+        .game-title {
+            font-size: 2.4rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #4a8eff, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 4px
+        }
+
+        .tagline {
+            font-size: .85rem;
+            color: var(--text-dim);
+            margin-bottom: 28px
+        }
+
+        .menu-field {
+            margin-bottom: 16px;
+            text-align: left
+        }
+
+        .menu-field label {
+            display: block;
+            font-size: .78rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            color: var(--text-dim);
+            margin-bottom: 6px
+        }
+
+        .menu-field input[type="text"],
+        .menu-field select {
+            width: 100%;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-family: var(--font);
+            font-size: .95rem;
+            outline: none;
+            transition: border-color .2s
+        }
+
+        .menu-field input[type="text"]:focus,
+        .menu-field select:focus {
+            border-color: var(--accent)
+        }
+
+        .seed-row {
+            display: flex;
+            gap: 8px
+        }
+
+        .seed-row input {
+            flex: 1
+        }
+
+        .seed-row button {
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius);
+            color: var(--text);
+            cursor: pointer;
+            font-size: 1.1rem;
+            transition: background .2s
+        }
+
+        .seed-row button:hover {
+            background: rgba(255, 255, 255, 0.12)
+        }
+
+        .menu-field input[type="range"] {
+            width: calc(100% - 36px);
+            vertical-align: middle
+        }
+
+        .menu-field span {
+            display: inline-block;
+            width: 30px;
+            text-align: right;
+            font-size: .9rem;
+            color: var(--accent)
+        }
+
+        select option {
+            background: #0d1220
+        }
+
+        .primary-btn {
+            display: block;
+            width: 100%;
+            padding: 12px;
+            margin-top: 20px;
+            background: linear-gradient(135deg, #4a8eff, #6366f1);
+            border: none;
+            border-radius: var(--radius);
+            color: #fff;
+            font-family: var(--font);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform .15s, box-shadow .2s
+        }
+
+        .primary-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 20px var(--accent-glow)
+        }
+
+        .secondary-btn {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            margin-top: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius);
+            color: var(--text);
+            font-family: var(--font);
+            font-size: .9rem;
+            cursor: pointer;
+            transition: background .2s
+        }
+
+        .secondary-btn:hover {
+            background: rgba(255, 255, 255, 0.1)
+        }
+
+        .menu-divider {
+            margin: 14px 0 10px;
+            border-top: 1px solid var(--panel-border);
+            opacity: 0.85;
+        }
+
+        .room-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .room-row input,
+        .room-row select {
+            flex: 1;
+        }
+
+        .room-row button {
+            white-space: nowrap;
+        }
+
+        .room-status {
+            min-height: 18px;
+            margin-top: 8px;
+            font-size: .78rem;
+            color: var(--text-dim);
+            text-align: left;
+        }
+
+        .room-players {
+            margin-top: 8px;
+            text-align: left;
+            font-size: .78rem;
+            color: var(--text);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+        }
+
+        .room-player {
+            padding: 3px 7px;
+            border: 1px solid var(--panel-border);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.04);
+        }
+
+        .room-player.host {
+            border-color: var(--accent);
+            color: #d6e4ff;
+        }
+
+        .room-list-info {
+            margin: 0;
+            min-height: auto;
+            flex: 1;
+            text-align: right;
+            font-size: .75rem;
+            color: var(--text-dim);
+        }
+
+        .room-list {
+            margin-top: 8px;
+            max-height: 168px;
+            overflow-y: auto;
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .room-list-empty {
+            padding: 10px;
+            text-align: center;
+            font-size: .78rem;
+            color: var(--text-dim);
+        }
+
+        .room-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .room-item:last-child {
+            border-bottom: none;
+        }
+
+        .room-item-main {
+            flex: 1;
+            text-align: left;
+            min-width: 0;
+        }
+
+        .room-item-code {
+            font-size: .86rem;
+            font-weight: 700;
+            letter-spacing: .06em;
+            color: #d6e4ff;
+        }
+
+        .room-item-meta {
+            font-size: .73rem;
+            color: var(--text-dim);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .room-join-btn {
+            width: auto;
+            margin: 0;
+            padding: 7px 10px;
+            font-size: .78rem;
+        }
+
+        #hud {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 16px;
+            background: var(--panel-bg);
+            border-top: 1px solid var(--panel-border);
+            z-index: 50;
+            font-size: .85rem
+        }
+
+        #hud.hidden {
+            display: none
+        }
+
+        #hudLeft {
+            display: flex;
+            align-items: center;
+            gap: 8px
+        }
+
+        #hudLeft input[type="range"] {
+            width: 100px
+        }
+
+        #hudRight {
+            display: flex;
+            gap: 8px
+        }
+
+        #hudRight button {
+            padding: 6px 14px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius);
+            color: var(--text);
+            cursor: pointer;
+            font-size: .9rem
+        }
+
+        #hudRight button:hover {
+            background: rgba(255, 255, 255, 0.12)
+        }
+
+        #replayBar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 16px;
+            background: rgba(230, 60, 60, 0.15);
+            border-bottom: 1px solid rgba(230, 60, 60, 0.3);
+            z-index: 55;
+            font-size: .85rem
+        }
+
+        #replayBar.hidden {
+            display: none
+        }
+
+        #replayLabel {
+            font-weight: 700;
+            color: var(--danger);
+            letter-spacing: .08em
+        }
+
+        #replayBar button {
+            padding: 4px 10px;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius);
+            color: var(--text);
+            cursor: pointer;
+            font-size: .85rem
+        }
+
+        #replayBar button:hover {
+            background: rgba(255, 255, 255, 0.12)
+        }
+
+        #replayBar .secondary-btn {
+            display: inline;
+            width: auto;
+            margin: 0;
+            margin-left: auto
+        }
+
+        #tuningPanel {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 240px;
+            height: 100vh;
+            background: var(--panel-bg);
+            border-left: 1px solid var(--panel-border);
+            padding: 16px;
+            overflow-y: auto;
+            z-index: 60;
+            transition: transform .25s ease
+        }
+
+        #tuningPanel.hidden {
+            transform: translateX(100%);
+            display: none
+        }
+
+        #tuningPanel h3 {
+            font-size: .95rem;
+            margin-bottom: 16px;
+            color: var(--accent)
+        }
+
+        .tune-field {
+            margin-bottom: 12px
+        }
+
+        .tune-field label {
+            display: block;
+            font-size: .72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: var(--text-dim);
+            margin-bottom: 2px
+        }
+
+        .tune-field input[type="range"] {
+            width: calc(100% - 40px);
+            vertical-align: middle
+        }
+
+        .tune-field span {
+            display: inline-block;
+            width: 36px;
+            text-align: right;
+            font-size: .82rem;
+            color: var(--accent)
+        }
+
+        .tune-toggle {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            padding: 6px 0;
+        }
+
+        .tune-toggle label {
+            font-size: .72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: .05em;
+            color: var(--text-dim);
+        }
+
+        .switch {
+            position: relative;
+            width: 36px;
+            height: 20px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .switch .slider {
+            position: absolute;
+            inset: 0;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: background .2s;
+        }
+
+        .switch .slider::before {
+            content: '';
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            left: 2px;
+            bottom: 2px;
+            background: var(--text-dim);
+            border-radius: 50%;
+            transition: transform .2s, background .2s;
+        }
+
+        .switch input:checked+.slider {
+            background: var(--accent);
+        }
+
+        .switch input:checked+.slider::before {
+            transform: translateX(16px);
+            background: #fff;
+        }
+
+        .toggle-btn {
+            position: absolute;
+            top: 50%;
+            left: -28px;
+            transform: translateY(-50%);
+            width: 28px;
+            height: 48px;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-right: none;
+            border-radius: var(--radius) 0 0 var(--radius);
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: .8rem;
+            display: flex;
+            align-items: center;
+            justify-content: center
+        }
+
+        .toggle-btn:hover {
+            color: var(--accent)
+        }
+
+        #tuneOpenBtn {
+            position: fixed;
+            top: 50%;
+            right: 0;
+            transform: translateY(-50%);
+            width: 32px;
+            height: 48px;
+            background: var(--panel-bg);
+            border: 1px solid var(--panel-border);
+            border-right: none;
+            border-radius: var(--radius) 0 0 var(--radius);
+            color: var(--text-dim);
+            cursor: pointer;
+            font-size: 1.1rem;
+            z-index: 59;
+            display: flex;
+            align-items: center;
+            justify-content: center
+        }
+
+        #tuneOpenBtn.hidden {
+            display: none
+        }
+
+        #tuneOpenBtn:hover {
+            color: var(--accent)
+        }
+
+        ::-webkit-scrollbar {
+            width: 4px
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--panel-border);
+            border-radius: 2px
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 2px;
+            outline: none
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: var(--accent);
+            cursor: pointer;
+            border: 2px solid var(--bg)
+        }
+    </style>
+  <script type="module" crossorigin src="./assets/game-DetzP7Dv.js"></script>
+</head>
+
+<body>
+    <canvas id="gameCanvas"></canvas>
+    <div id="mainMenu" class="overlay">
+        <div class="menu-panel">
+            <h1 class="game-title">Stellar Conquest</h1>
+            <p class="tagline">Conquer the stars. Command the flow.</p>
+            <div class="menu-field"><label for="seedInput">Seed</label>
+                <div class="seed-row"><input type="text" id="seedInput" value="42" /><button id="randomSeedBtn"
+                        title="Random seed">🎲</button></div>
+            </div>
+            <div class="menu-field"><label for="nodeCountInput">Nodes</label><input type="range" id="nodeCountInput"
+                    min="8" max="30" value="16" /><span id="nodeCountLabel">16</span></div>
+            <div class="menu-field"><label for="difficultySelect">Difficulty</label><select id="difficultySelect">
+                    <option value="easy">Easy</option>
+                    <option value="normal" selected>Normal</option>
+                    <option value="hard">Hard</option>
+                </select></div>
+            <div class="menu-field"><label for="playerNameInput">Player Name</label><input type="text" id="playerNameInput"
+                    value="Commander" maxlength="20" /></div>
+            <div class="tune-toggle" style="margin-top:4px"><label>Fog of War</label><label class="switch"><input
+                        type="checkbox" id="menuFogOfWar" /><span class="slider"></span></label></div>
+            <button id="startBtn" class="primary-btn">Start Conquest</button>
+            <button id="loadReplayBtn" class="secondary-btn">Load Replay</button>
+            <input type="file" id="replayFileInput" accept=".json" style="display:none;" />
+
+            <div class="menu-divider"></div>
+            <div class="menu-field">
+                <label>Admin Access</label>
+                <div class="room-row">
+                    <input type="password" id="adminPasswordInput" placeholder="Admin password" value="solarmax" />
+                    <button id="adminLoginBtn" class="secondary-btn" style="margin:0">Admin Login</button>
+                </div>
+            </div>
+            <div class="menu-field"><label>Online Room</label>
+                <div class="room-row">
+                    <select id="roomMaxPlayers">
+                        <option value="2">2 Players</option>
+                        <option value="3">3 Players</option>
+                        <option value="4" selected>4 Players</option>
+                        <option value="5">5 Players</option>
+                        <option value="6">6 Players</option>
+                    </select>
+                    <button id="createRoomBtn" class="secondary-btn" style="margin:0">Create (Admin)</button>
+                </div>
+            </div>
+            <div class="menu-field">
+                <div class="room-row">
+                    <input type="text" id="roomCodeInput" placeholder="Room Code" maxlength="8" />
+                    <button id="joinRoomBtn" class="secondary-btn" style="margin:0">Join</button>
+                </div>
+            </div>
+            <div class="room-row" style="margin-top:4px">
+                <button id="refreshRoomsBtn" class="secondary-btn" style="margin:0; width:auto; padding:8px 10px">Refresh
+                    Rooms</button>
+                <p id="roomListInfo" class="room-list-info">No open rooms yet.</p>
+            </div>
+            <div id="roomList" class="room-list">
+                <div class="room-list-empty">Connecting to server...</div>
+            </div>
+            <div class="room-row" style="margin-top:4px">
+                <button id="startRoomBtn" class="secondary-btn" style="margin:0;flex:1">I am Ready</button>
+                <button id="leaveRoomBtn" class="secondary-btn" style="margin:0;flex:1">Leave Room</button>
+            </div>
+            <button id="copyRoomCodeBtn" class="secondary-btn" style="margin-top:8px">Copy Room Code</button>
+            <p id="roomStatus" class="room-status"></p>
+            <div id="roomPlayers" class="room-players"></div>
+        </div>
+    </div>
+    <div id="pauseOverlay" class="overlay hidden">
+        <div class="menu-panel">
+            <h2>Paused</h2><button id="resumeBtn" class="primary-btn">Resume</button><button id="quitBtn"
+                class="secondary-btn">Quit to Menu</button>
+        </div>
+    </div>
+    <div id="gameOverOverlay" class="overlay hidden">
+        <div class="menu-panel">
+            <h2 id="gameOverTitle">Victory!</h2>
+            <p id="gameOverMsg"></p><button id="replayBtn" class="primary-btn">Watch Replay</button><button
+                id="exportReplayBtn" class="secondary-btn">Export Replay</button><button id="restartBtn"
+                class="secondary-btn">New Game</button>
+        </div>
+    </div>
+    <div id="replayBar" class="hidden"><span id="replayLabel">REPLAY</span><button id="replaySlower">◀◀</button><button
+            id="replayPause">⏸</button><button id="replayFaster">▶▶</button><span id="replaySpeedLabel">1x</span><span
+            id="replayTickLabel">Tick: 0</span><button id="replayStop" class="secondary-btn">Exit Replay</button></div>
+    <div id="hud" class="hidden">
+        <div id="hudLeft"><span id="hudPercent">Send: 50%</span><input type="range" id="sendPercent" min="10" max="100"
+                value="50" step="5" /></div>
+        <div id="hudCenter"><span id="hudTick">Tick: 0</span></div>
+        <div id="hudRight"><button id="pauseBtn" title="Pause">⏸</button><button id="speedBtn" title="Speed">1x</button>
+        </div>
+    </div>
+    <div id="tuningPanel" class="hidden">
+        <h3>⚙ Tuning</h3>
+        <div class="tune-field"><label>Production ×</label><input type="range" id="tuneProduction" min="0.1" max="5"
+                step="0.1" value="1" /><span id="tuneProductionVal">1.0</span></div>
+        <div class="tune-field"><label>Fleet Speed</label><input type="range" id="tuneFleetSpeed" min="20" max="300"
+                step="10" value="80" /><span id="tuneFleetSpeedVal">80</span></div>
+        <div class="tune-field"><label>Defense Factor</label><input type="range" id="tuneDefense" min="0.5" max="3"
+                step="0.1" value="1.2" /><span id="tuneDefenseVal">1.2</span></div>
+        <div class="tune-field"><label>Flow Interval</label><input type="range" id="tuneFlowInterval" min="5" max="60"
+                step="1" value="15" /><span id="tuneFlowIntervalVal">15</span></div>
+        <div class="tune-field"><label>AI Aggression</label><input type="range" id="tuneAIAggression" min="0.1" max="3"
+                step="0.1" value="1" /><span id="tuneAIAggressionVal">1.0</span></div>
+        <div class="tune-field"><label>AI Buffer</label><input type="range" id="tuneAIBuffer" min="0" max="20" step="1"
+                value="5" /><span id="tuneAIBufferVal">5</span></div>
+        <div class="tune-field"><label>AI Decision</label><input type="range" id="tuneAIDecision" min="10" max="120"
+                step="5" value="30" /><span id="tuneAIDecisionVal">30</span></div>
+        <div class="tune-toggle"><label>Adaptive AI</label><label class="switch"><input type="checkbox"
+                    id="tuneAiAssist" checked /><span class="slider"></span></label></div>
+        <div class="tune-toggle"><label>Fog of War</label><label class="switch"><input type="checkbox" id="tuneFogOfWar" /><span
+                    class="slider"></span></label></div>
+        <button id="tuneResetBtn" class="secondary-btn">Reset Defaults</button>
+        <button id="tuneToggleBtn" class="toggle-btn">◀</button>
+    </div>
+    <button id="tuneOpenBtn" class="toggle-btn hidden">⚙</button>
+    <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
+</body>
+
+</html>
