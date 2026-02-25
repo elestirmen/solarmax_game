@@ -225,15 +225,19 @@
             display: flex;
             gap: 8px;
             align-items: center;
+            width: 100%;
         }
 
         .room-row input,
         .room-row select {
             flex: 1;
+            min-width: 0;
         }
 
         .room-row button {
             white-space: nowrap;
+            width: auto;
+            flex: 0 0 auto;
         }
 
         .room-status {
@@ -617,6 +621,84 @@
             cursor: pointer;
             border: 2px solid var(--bg)
         }
+
+        /* How to Play Modal Styles */
+        .tutorial-modal {
+            max-width: 600px;
+            text-align: left;
+            padding: 30px;
+        }
+
+        .tutorial-modal h2 {
+            font-size: 1.8rem;
+            color: var(--accent);
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .tutorial-section {
+            margin-bottom: 24px;
+        }
+
+        .tutorial-section h3 {
+            font-size: 1.1rem;
+            color: #fff;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tutorial-section p,
+        .tutorial-section ul {
+            font-size: 0.9rem;
+            color: var(--text-dim);
+            line-height: 1.5;
+        }
+
+        .tutorial-section ul {
+            padding-left: 20px;
+            margin-top: 8px;
+        }
+
+        .tutorial-section li {
+            margin-bottom: 6px;
+        }
+
+        .node-types {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 12px;
+        }
+
+        .node-type-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius);
+            padding: 10px;
+        }
+
+        .node-type-card strong {
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .color-core {
+            color: #8db3ff;
+        }
+
+        .color-forge {
+            color: #ffad66;
+        }
+
+        .color-bulwark {
+            color: #b6c1d9;
+        }
+
+        .color-relay {
+            color: #7de3ff;
+        }
     </style>
 </head>
 
@@ -637,55 +719,93 @@
                     <option value="normal" selected>Normal</option>
                     <option value="hard">Hard</option>
                 </select></div>
-            <div class="menu-field"><label for="playerNameInput">Player Name</label><input type="text" id="playerNameInput"
-                    value="Commander" maxlength="20" /></div>
+            <div class="menu-field"><label for="playerNameInput">Nick</label>
+                <div class="room-row">
+                    <input type="text" id="playerNameInput" value="" maxlength="20" placeholder="Nick sec" />
+                    <button id="setNickBtn" class="secondary-btn" style="margin:0">Niki Onayla</button>
+                </div>
+            </div>
             <div class="tune-toggle" style="margin-top:4px"><label>Fog of War</label><label class="switch"><input
                         type="checkbox" id="menuFogOfWar" /><span class="slider"></span></label></div>
             <button id="startBtn" class="primary-btn">Start Conquest</button>
-            <button id="loadReplayBtn" class="secondary-btn">Load Replay</button>
+            <div style="display: flex; gap: 8px; margin-top: 10px;">
+                <button id="howToPlayBtn" class="secondary-btn" style="margin-top: 0; flex: 1;">Nasıl Oynanır?</button>
+                <button id="loadReplayBtn" class="secondary-btn" style="margin-top: 0; flex: 1;">Load Replay</button>
+            </div>
             <input type="file" id="replayFileInput" accept=".json" style="display:none;" />
 
             <div class="menu-divider"></div>
             <div class="menu-field">
-                <label>Admin Access</label>
+                <label>Online Lobi</label>
                 <div class="room-row">
-                    <input type="password" id="adminPasswordInput" placeholder="Admin password" value="solarmax" />
-                    <button id="adminLoginBtn" class="secondary-btn" style="margin:0">Admin Login</button>
+                    <button id="createRoomBtn" class="secondary-btn" style="margin:0; flex:1">Oda Kur</button>
+                </div>
+                <div class="room-row" style="margin-top:8px">
+                    <input type="text" id="joinRoomCodeInput" placeholder="Oda Kodu" maxlength="5"
+                        style="text-transform: uppercase;" />
+                    <button id="joinRoomBtn" class="secondary-btn" style="margin:0">Katıl</button>
+                </div>
+                <div class="room-row" style="display:none; margin-top:12px" id="hostControls">
+                    <button id="startRoomBtn" class="primary-btn" style="margin:0; flex:1">Oyunu Başlat (Host)</button>
                 </div>
             </div>
-            <div class="menu-field"><label>Online Room</label>
-                <div class="room-row">
-                    <select id="roomMaxPlayers">
-                        <option value="2">2 Players</option>
-                        <option value="3">3 Players</option>
-                        <option value="4" selected>4 Players</option>
-                        <option value="5">5 Players</option>
-                        <option value="6">6 Players</option>
-                    </select>
-                    <button id="createRoomBtn" class="secondary-btn" style="margin:0">Create (Admin)</button>
-                </div>
-            </div>
-            <div class="menu-field">
-                <div class="room-row">
-                    <input type="text" id="roomCodeInput" placeholder="Room Code" maxlength="8" />
-                    <button id="joinRoomBtn" class="secondary-btn" style="margin:0">Join</button>
-                </div>
-            </div>
-            <div class="room-row" style="margin-top:4px">
-                <button id="refreshRoomsBtn" class="secondary-btn" style="margin:0; width:auto; padding:8px 10px">Refresh
-                    Rooms</button>
-                <p id="roomListInfo" class="room-list-info">No open rooms yet.</p>
-            </div>
-            <div id="roomList" class="room-list">
-                <div class="room-list-empty">Connecting to server...</div>
-            </div>
-            <div class="room-row" style="margin-top:4px">
-                <button id="startRoomBtn" class="secondary-btn" style="margin:0;flex:1">I am Ready</button>
-                <button id="leaveRoomBtn" class="secondary-btn" style="margin:0;flex:1">Leave Room</button>
-            </div>
-            <button id="copyRoomCodeBtn" class="secondary-btn" style="margin-top:8px">Copy Room Code</button>
             <p id="roomStatus" class="room-status"></p>
             <div id="roomPlayers" class="room-players"></div>
+        </div>
+    </div>
+    <div id="howToPlayOverlay" class="overlay hidden">
+        <div class="menu-panel tutorial-modal">
+            <h2>Stellar Conquest Rehberi</h2>
+
+            <div class="tutorial-section">
+                <h3>🎮 Temel Kontroller</h3>
+                <ul>
+                    <li><b>Sol Tık:</b> Kendi gezegenini seç. (Çoklu seçim için <b>Shift + Sol Tık</b>)</li>
+                    <li><b>Sürükle (Boşlukta):</b> Kutu içine aldığın tüm gezegenlerini seç.</li>
+                    <li><b>Sağ Tık (Kendi gezegenin seçiliyken, hedefe):</b> Sürekli asker akışı (Flow) başlatır.</li>
+                    <li><b>Düşman/Tarafsız Gezegene Sol Tık (Seçiliysen):</b> Seçili gezegeninden hedefe filonu
+                        (belirtilen yüzdeyle) saldırıya/desteğe gönder.</li>
+                    <li><b>U Tuşu:</b> Seçili gezegenlerine seviye atlatır (Upgrade). Yeterli asker feda edilir.</li>
+                    <li><b>Sayı Tuşları (1-0):</b> Filo gönderim yüzdesini %10 ile %100 arası ayarlar.</li>
+                </ul>
+            </div>
+
+            <div class="tutorial-section">
+                <h3>🪐 Gezegen Sınıfları (Node Classes)</h3>
+                <div class="node-types">
+                    <div class="node-type-card">
+                        <strong class="color-core">C - Core (Çekirdek)</strong>
+                        <p>Standart gezegen. Her yönüyle dengelidir. Yeni fethedilen sistemler genelde Core olarak
+                            başlar.</p>
+                    </div>
+                    <div class="node-type-card">
+                        <strong class="color-forge">F - Forge (Üretim)</strong>
+                        <p>Asker üretim hızı çok yüksek (+%35), ancak savunması %10 zayıftır. Cephe gerisi için ideal.
+                        </p>
+                    </div>
+                    <div class="node-type-card">
+                        <strong class="color-bulwark">B - Bulwark (Kale)</strong>
+                        <p>Müthiş bir savunma avantajı (%45 daha dayanıklı) sunar ancak çok yavaş asker üretir.</p>
+                    </div>
+                    <div class="node-type-card">
+                        <strong class="color-relay">R - Relay (Aktarım)</strong>
+                        <p>Buradan çıkan filolar %35 daha hızlı seyahat eder. Genişleme (Flow) için kilit noktadır.</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="tutorial-section">
+                <h3>🌀 Uzay Anomalileri</h3>
+                <p>Haritada bazen özel geçitler veya anormallikler bulunur:</p>
+                <ul>
+                    <li><b>Wormhole (Solucan Deliği - Çizgili Yollar):</b> İki Relay noktası arasında açılır. İçinden
+                        geçen filolar <b>%175</b> hızla menzile ulaşır.</li>
+                    <li><b>Gravity Sling (Yerçekimi Sapanı - Mor Halka):</b> Harita merkezindeki mor alan. Buradan geçen
+                        filolar "sapan etkisiyle" oldukça hızlanır.</li>
+                </ul>
+            </div>
+
+            <button id="closeHowToPlayBtn" class="primary-btn">Anladım</button>
         </div>
     </div>
     <div id="pauseOverlay" class="overlay hidden">
@@ -730,8 +850,8 @@
                 step="5" value="30" /><span id="tuneAIDecisionVal">30</span></div>
         <div class="tune-toggle"><label>Adaptive AI</label><label class="switch"><input type="checkbox"
                     id="tuneAiAssist" checked /><span class="slider"></span></label></div>
-        <div class="tune-toggle"><label>Fog of War</label><label class="switch"><input type="checkbox" id="tuneFogOfWar" /><span
-                    class="slider"></span></label></div>
+        <div class="tune-toggle"><label>Fog of War</label><label class="switch"><input type="checkbox"
+                    id="tuneFogOfWar" /><span class="slider"></span></label></div>
         <button id="tuneResetBtn" class="secondary-btn">Reset Defaults</button>
         <button id="tuneToggleBtn" class="toggle-btn">◀</button>
     </div>

@@ -122,12 +122,9 @@ var net = {
     online: false,
     roomCode: '',
     players: [],
-    lobbyRooms: [],
-    isAdmin: false,
-    adminOnline: false,
     isHost: false,
-    localReady: false,
-    readyCount: 0,
+    playerName: '',
+    pendingJoin: false,
     localPlayerIndex: 0,
     pendingCommands: [],
 };
@@ -560,19 +557,36 @@ function applyRep(evt) {
 // â”€â”€ TICK â”€â”€
 function gameTick() {
     if (G.state !== 'playing' && G.state !== 'replay') return;
-    if (net.online && net.pendingCommands.length > 0) {
-        net.pendingCommands.sort(function (a, b) { return a.tick - b.tick; });
-        var remaining = [];
-        for (var qi = 0; qi < net.pendingCommands.length; qi++) {
-            var cmd = net.pendingCommands[qi];
-            if ((cmd.tick || 0) <= G.tick + 1) {
-                applyPlayerCommand(cmd.playerIndex, cmd.type, cmd.data);
-            } else {
-                remaining.push(cmd);
-            }
+
+    // Lockstep determinism: Throttle simulation to stay synced with server ticks
+    if (net.online) {
+        if (!net.lastPingTick || G.tick - net.lastPingTick >= 45) {
+            net.lastPingTick = G.tick;
+            net.socket.emit('pingTick', { clientTs: Date.now() });
         }
-        net.pendingCommands = remaining;
+
+        if (net.syncDrift !== undefined) {
+            net.syncDrift += (G.speed - 1.0);
+            if (net.syncDrift > 3) G.speed = 0.85;
+            else if (net.syncDrift < -3) G.speed = 1.15;
+            else G.speed = 1.0;
+        }
+
+        if (net.pendingCommands.length > 0) {
+            net.pendingCommands.sort(function (a, b) { return a.tick - b.tick; });
+            var remaining = [];
+            for (var qi = 0; qi < net.pendingCommands.length; qi++) {
+                var cmd = net.pendingCommands[qi];
+                if ((cmd.tick || 0) <= G.tick + 1) { // Apply when due
+                    applyPlayerCommand(cmd.playerIndex, cmd.type, cmd.data);
+                } else {
+                    remaining.push(cmd);
+                }
+            }
+            net.pendingCommands = remaining;
+        }
     }
+
     if (G.rep && G.state === 'replay') {
         while (G.rep.idx < G.rep.events.length && G.rep.events[G.rep.idx].tick === G.tick) { applyRep(G.rep.events[G.rep.idx]); G.rep.idx++; }
         if (G.rep.idx >= G.rep.events.length && G.tick > ((G.rep.events.length ? G.rep.events[G.rep.events.length - 1].tick : 0) + 90)) { G.state = 'gameOver'; return; }
@@ -983,11 +997,27 @@ var $ = function (id) { return document.getElementById(id); };
 var mainMenu = $('mainMenu'), pauseOv = $('pauseOverlay'), goOv = $('gameOverOverlay'), hud = $('hud'), repBar = $('replayBar'), tunePanel = $('tuningPanel'), tuneOpen = $('tuneOpenBtn');
 var seedIn = $('seedInput'), rndSeedBtn = $('randomSeedBtn'), ncIn = $('nodeCountInput'), ncLbl = $('nodeCountLabel'), diffSel = $('difficultySelect');
 var startBtn = $('startBtn'), loadRepBtn = $('loadReplayBtn'), repFileIn = $('replayFileInput');
-var playerNameIn = $('playerNameInput'), roomCodeIn = $('roomCodeInput'), roomMaxPlayersSel = $('roomMaxPlayers');
-var adminPassIn = $('adminPasswordInput'), adminLoginBtn = $('adminLoginBtn');
-var createRoomBtn = $('createRoomBtn'), joinRoomBtn = $('joinRoomBtn'), leaveRoomBtn = $('leaveRoomBtn'), startRoomBtn = $('startRoomBtn');
-var refreshRoomsBtn = $('refreshRoomsBtn'), copyRoomCodeBtn = $('copyRoomCodeBtn');
-var roomStatusEl = $('roomStatus'), roomPlayersEl = $('roomPlayers'), roomListEl = $('roomList'), roomListInfoEl = $('roomListInfo');
+var playerNameIn = $('playerNameInput'), setNickBtn = $('setNickBtn');
+var startRoomBtn = $('startRoomBtn');
+var createRoomBtn = $('createRoomBtn');
+var joinRoomCodeInput = $('joinRoomCodeInput');
+var joinRoomBtn = $('joinRoomBtn');
+var hostControls = $('hostControls');
+var howToPlayBtn = $('howToPlayBtn');
+var howToPlayOv = $('howToPlayOverlay');
+var closeHowToPlayBtn = $('closeHowToPlayBtn');
+
+if (howToPlayBtn) {
+    howToPlayBtn.addEventListener('click', function () {
+        howToPlayOv.classList.remove('hidden');
+    });
+}
+if (closeHowToPlayBtn) {
+    closeHowToPlayBtn.addEventListener('click', function () {
+        howToPlayOv.classList.add('hidden');
+    });
+}
+var roomStatusEl = $('roomStatus'), roomPlayersEl = $('roomPlayers');
 var resumeBtn = $('resumeBtn'), quitBtn = $('quitBtn');
 var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), repBtn = $('replayBtn'), expRepBtn = $('exportReplayBtn'), restartBtn = $('restartBtn');
 var hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
@@ -1002,9 +1032,7 @@ var tuningOpen = false, lastRepData = null;
 function resize() { cv.width = window.innerWidth; cv.height = window.innerHeight; }
 window.addEventListener('resize', resize); resize();
 roomButtonState();
-setRoomStatus('Offline mode ready. Admin creates room, players join and press Ready.', false);
-setRoomListInfo('Connecting to lobby...');
-renderLobbyRooms([]);
+setRoomStatus('Sunucuya baglaninca nick secip odaya gir.', false);
 ensureSocket();
 
 function showUI(st) {
@@ -1021,68 +1049,6 @@ function setRoomStatus(msg, error) {
     roomStatusEl.style.color = error ? '#ff8f8f' : 'var(--text-dim)';
 }
 
-function setRoomListInfo(msg) {
-    if (!roomListInfoEl) return;
-    roomListInfoEl.textContent = msg || '';
-}
-
-function adminButtonState() {
-    if (!adminLoginBtn) return;
-    adminLoginBtn.disabled = !net.connected;
-    if (net.isAdmin) {
-        adminLoginBtn.textContent = 'Admin Logout';
-        if (adminPassIn) adminPassIn.disabled = true;
-    } else {
-        adminLoginBtn.textContent = 'Admin Login';
-        if (adminPassIn) adminPassIn.disabled = false;
-    }
-}
-
-function renderLobbyRooms(rooms) {
-    if (!roomListEl) return;
-    roomListEl.innerHTML = '';
-    if (!rooms || rooms.length === 0) {
-        var empty = document.createElement('div');
-        empty.className = 'room-list-empty';
-        if (!net.connected) empty.textContent = 'Lobby unavailable.';
-        else if (net.isAdmin) empty.textContent = 'No open rooms. Create one as admin.';
-        else empty.textContent = 'No open rooms. Wait for admin to create one.';
-        roomListEl.appendChild(empty);
-        roomButtonState();
-        return;
-    }
-    for (var i = 0; i < rooms.length; i++) {
-        var room = rooms[i];
-        var item = document.createElement('div');
-        item.className = 'room-item';
-
-        var main = document.createElement('div');
-        main.className = 'room-item-main';
-
-        var code = document.createElement('div');
-        code.className = 'room-item-code';
-        code.textContent = room.code;
-        main.appendChild(code);
-
-        var meta = document.createElement('div');
-        meta.className = 'room-item-meta';
-        var fogStr = room.fogEnabled ? 'Fog ON' : 'Fog OFF';
-        meta.textContent = room.players + '/' + room.maxPlayers + ' | Host: ' + room.hostName + ' | ' + room.difficulty + ' | ' + room.nodeCount + ' nodes | ' + fogStr;
-        main.appendChild(meta);
-
-        var btn = document.createElement('button');
-        btn.className = 'secondary-btn room-join-btn';
-        btn.textContent = 'Join';
-        btn.dataset.roomCode = room.code;
-        btn.disabled = !!net.roomCode || !net.connected;
-
-        item.appendChild(main);
-        item.appendChild(btn);
-        roomListEl.appendChild(item);
-    }
-    roomButtonState();
-}
-
 function renderRoomPlayers(players, hostId) {
     if (!roomPlayersEl) return;
     roomPlayersEl.innerHTML = '';
@@ -1091,28 +1057,19 @@ function renderRoomPlayers(players, hostId) {
         var p = players[i];
         var el = document.createElement('span');
         el.className = 'room-player' + (p.socketId === hostId ? ' host' : '');
-        var readyTag = p.ready ? ' Ready' : ' Not Ready';
-        el.textContent = p.name + (p.socketId === hostId ? ' (Host)' : '') + ' | ' + readyTag;
+        el.textContent = p.name + (p.socketId === hostId ? ' (Host)' : '');
         roomPlayersEl.appendChild(el);
     }
 }
 
 function roomButtonState() {
-    if (!createRoomBtn) return;
     var inRoom = !!net.roomCode;
-    createRoomBtn.disabled = inRoom || !net.connected || !net.isAdmin;
-    createRoomBtn.title = net.isAdmin ? '' : 'Only admin can create room';
-    joinRoomBtn.disabled = inRoom || !net.connected;
-    startRoomBtn.disabled = !inRoom || !net.connected;
-    startRoomBtn.textContent = net.localReady ? 'Cancel Ready' : 'I am Ready';
-    leaveRoomBtn.disabled = !inRoom;
-    if (refreshRoomsBtn) refreshRoomsBtn.disabled = !net.connected;
-    if (copyRoomCodeBtn) copyRoomCodeBtn.disabled = !inRoom;
-    if (roomListEl) {
-        var joinBtns = roomListEl.querySelectorAll('button[data-room-code]');
-        for (var i = 0; i < joinBtns.length; i++) joinBtns[i].disabled = inRoom || !net.connected;
+    if (playerNameIn) playerNameIn.disabled = inRoom || net.online;
+    if (setNickBtn) setNickBtn.disabled = inRoom || net.online || !net.connected;
+    if (startRoomBtn) {
+        startRoomBtn.disabled = !inRoom || !net.connected || net.players.length < 2;
+        startRoomBtn.textContent = 'Online Baslat';
     }
-    adminButtonState();
 }
 
 function clearRoomState(message) {
@@ -1120,11 +1077,9 @@ function clearRoomState(message) {
     net.roomCode = '';
     net.players = [];
     net.isHost = false;
-    net.localReady = false;
-    net.readyCount = 0;
     net.localPlayerIndex = 0;
     net.pendingCommands = [];
-    if (roomCodeIn) roomCodeIn.value = '';
+    net.pendingJoin = false;
     renderRoomPlayers([], null);
     if (message) setRoomStatus(message, false);
     roomButtonState();
@@ -1134,22 +1089,55 @@ function requestLobby() {
     if (net.socket && net.connected) net.socket.emit('requestLobby');
 }
 
-function joinRoomByCode(code) {
+function doCreateRoom() {
     ensureSocket();
     if (!net.socket) { setRoomStatus('Socket.IO yuklenemedi.', true); return; }
-    if (net.roomCode) { setRoomStatus('Already in a room. Leave first.', true); return; }
-    var clean = String(code || '').trim().toUpperCase();
-    if (!clean) { setRoomStatus('Room code girmen gerekiyor.', true); return; }
-    setRoomStatus('Joining room ' + clean + '...', false);
+    if (!net.connected) { setRoomStatus('Sunucuya baglaniyor...', false); return; }
+    if (net.roomCode) return;
+
+    var chosen = (playerNameIn && playerNameIn.value.trim()) || '';
+    if (!chosen) { setRoomStatus('Önce nick seçmelisin.', true); return; }
+    net.playerName = chosen;
+
+    net.pendingJoin = false;
+    setRoomStatus('Oda kuruluyor...', false);
+    net.socket.emit('createRoom', {
+        action: 'create',
+        playerName: net.playerName,
+        seed: seedIn.value || '42',
+        nodeCount: Number(ncIn.value || 16),
+        difficulty: diffSel.value || 'normal',
+        fogEnabled: menuFogCb ? !!menuFogCb.checked : false,
+    });
+}
+
+function doJoinRoom() {
+    ensureSocket();
+    if (!net.socket) { setRoomStatus('Socket.IO yuklenemedi.', true); return; }
+    if (!net.connected) { setRoomStatus('Sunucuya baglaniyor...', false); return; }
+    if (net.roomCode) return;
+
+    var chosen = (playerNameIn && playerNameIn.value.trim()) || '';
+    if (!chosen) { setRoomStatus('Önce nick seçmelisin.', true); return; }
+    net.playerName = chosen;
+
+    var code = (joinRoomCodeInput && joinRoomCodeInput.value.trim().toUpperCase()) || '';
+    if (!code || code.length !== 5) { setRoomStatus('Geçerli bir 5 haneli oda kodu girin.', true); return; }
+
+    net.pendingJoin = false;
+    setRoomStatus('Odaya bağlanıyor...', false);
     net.socket.emit('joinRoom', {
-        code: clean,
-        playerName: (playerNameIn && playerNameIn.value.trim()) || 'Commander',
+        action: 'join',
+        playerName: net.playerName,
+        roomCode: code
     });
 }
 
 function issueOnlineCommand(type, data) {
     if (net.online && net.socket && net.roomCode) {
-        net.socket.emit('playerCommand', { type: type, data: data || {}, tick: G.tick });
+        // İleri tarihli komut göndererek, ağ gecikmesine rağmen 
+        // iki oyuncuda da aynı tick'te eşzamanlı işletilmesini sağla (Command Delay)
+        net.socket.emit('playerCommand', { type: type, data: data || {}, tick: G.tick + 12 });
         return true;
     }
     return false;
@@ -1169,74 +1157,62 @@ function ensureSocket() {
 
     net.socket.on('connect', function () {
         net.connected = true;
-        setRoomStatus('Connected to multiplayer server.', false);
-        setRoomListInfo('Lobby connected.');
+        setRoomStatus('Bağlantı kuruldu. Oda Kur veya Katıl.', false);
         requestLobby();
         roomButtonState();
     });
 
     net.socket.on('connect_error', function () {
         net.connected = false;
-        net.isAdmin = false;
-        net.adminOnline = false;
         setRoomStatus('Cannot reach multiplayer server. Start it with "npm run server".', true);
-        setRoomListInfo('Lobby unavailable.');
         roomButtonState();
     });
 
     net.socket.on('disconnect', function () {
         net.connected = false;
-        net.isAdmin = false;
-        net.adminOnline = false;
-        net.lobbyRooms = [];
-        renderLobbyRooms([]);
-        setRoomListInfo('Lobby disconnected.');
         clearRoomState('Disconnected from multiplayer server.');
-    });
-
-    net.socket.on('adminState', function (payload) {
-        net.isAdmin = !!(payload && payload.isAdmin);
-        net.adminOnline = !!(payload && payload.adminOnline);
-        if (net.isAdmin) setRoomStatus('Admin mode active. You can create rooms.', false);
-        roomButtonState();
-    });
-
-    net.socket.on('adminError', function (err) {
-        setRoomStatus((err && err.message) || 'Admin authentication error', true);
-        roomButtonState();
-    });
-
-    net.socket.on('adminAuthOk', function (payload) {
-        setRoomStatus((payload && payload.message) || 'Admin authenticated.', false);
-        roomButtonState();
     });
 
     net.socket.on('lobbyState', function (payload) {
         var rooms = payload && Array.isArray(payload.rooms) ? payload.rooms : [];
-        net.adminOnline = !!(payload && payload.adminOnline);
-        net.lobbyRooms = rooms;
-        renderLobbyRooms(rooms);
-        if (rooms.length === 0) setRoomListInfo(net.adminOnline ? 'No open rooms right now.' : 'Admin is offline.');
-        else setRoomListInfo(rooms.length + (rooms.length === 1 ? ' open room' : ' open rooms'));
+        if (net.roomCode || !net.playerName) return;
+        if (net.pendingJoin) {
+            joinMainRoom();
+            return;
+        }
+        if (rooms.length === 0) {
+            setRoomStatus('Oda bekliyor. Online Baslat icin en az 2 oyuncu gerekiyor.', false);
+            return;
+        }
+        var room = rooms[0];
+        var waiting = 'Oda bekliyor: ' + room.players + '/' + room.maxPlayers + ' oyuncu';
+        if (room.players < 2) waiting += ' | En az 2 oyuncu gerekli';
+        else waiting += ' | Online Baslat ile oyunu baslat';
+        setRoomStatus(waiting, false);
     });
 
     net.socket.on('roomState', function (state) {
         net.roomCode = state.code;
         net.isHost = !!state.isHost;
         net.players = state.players || [];
-        net.readyCount = Number(state.readyCount || 0);
-        var me = net.players.find(function (p) { return p.socketId === net.socket.id; });
-        net.localReady = me ? !!me.ready : false;
-        if (roomCodeIn) roomCodeIn.value = state.code;
+        net.pendingJoin = false;
+
+        if (hostControls) {
+            hostControls.style.display = net.isHost ? 'flex' : 'none';
+        }
+
         renderRoomPlayers(net.players, state.hostId);
-        var status = 'Room ' + state.code + ' | Players ' + net.players.length + '/' + state.maxPlayers + ' | Ready ' + net.readyCount + '/' + net.players.length;
-        if (net.players.length < 2) status += ' | Need at least 2 players';
+        var status = 'Oda: ' + state.code + ' | Oyuncu ' + net.players.length + '/' + state.maxPlayers;
+        if (net.players.length < 2) status += ' | En az 2 oyuncu gerekli';
+        else status += (net.isHost ? ' | Oyunu başlatabilirsin' : ' | Hostun başlatması bekleniyor...');
         setRoomStatus(status, false);
         roomButtonState();
     });
 
     net.socket.on('roomError', function (err) {
+        net.pendingJoin = false;
         setRoomStatus((err && err.message) || 'Room error', true);
+        roomButtonState();
     });
 
     net.socket.on('roomClosed', function (payload) {
@@ -1248,15 +1224,34 @@ function ensureSocket() {
         }
     });
 
+    net.socket.on('playerLeft', function (payload) {
+        if (G.state === 'playing' && G.players && G.players[payload.index]) {
+            G.players[payload.index].isAI = true;
+            console.log(payload.name + ' ayrıldı. Yerine Yapay Zeka geçti.');
+        } else if (net.players) {
+            net.players = net.players.filter(function (p) { return p.index !== payload.index; });
+            renderRoomPlayers(net.players, net.isHost ? net.socket.id : null);
+        }
+    });
+
+    net.socket.on('pongTick', function (payload) {
+        if (!net.online) return;
+        var latencyMs = Date.now() - payload.clientTs;
+        var latencyTicks = latencyMs / 2 / 33.33;
+        var realServerTick = payload.serverTick + latencyTicks;
+        net.syncDrift = G.tick - realServerTick;
+    });
+
     net.socket.on('matchStarted', function (payload) {
         var players = payload.players || [];
         net.players = players;
-        net.localReady = false;
-        net.readyCount = 0;
+        net.pendingJoin = false;
         var self = players.find(function (p) { return p.socketId === net.socket.id; });
         net.localPlayerIndex = self ? self.index : 0;
         net.online = true;
         net.pendingCommands = [];
+        net.syncDrift = 0;
+        net.lastPingTick = 0;
 
         initGame(payload.seed || '42', Number(payload.nodeCount || 16), payload.difficulty || 'normal', {
             keepReplay: false,
@@ -1323,100 +1318,45 @@ startBtn.addEventListener('click', function () {
     showUI('playing');
 });
 
-if (adminLoginBtn) {
-    adminLoginBtn.addEventListener('click', function () {
-        ensureSocket();
-        if (!net.socket) { setRoomStatus('Socket.IO yuklenemedi.', true); return; }
-        if (net.isAdmin) {
-            net.socket.emit('adminLogout');
-            setRoomStatus('Admin logged out.', false);
+if (setNickBtn) {
+    setNickBtn.addEventListener('click', function () {
+        var chosen = (playerNameIn && playerNameIn.value.trim()) || '';
+        if (chosen) setRoomStatus('Nick onaylandı: ' + chosen, false);
+    });
+}
+
+if (playerNameIn) {
+    playerNameIn.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            var chosen = (playerNameIn && playerNameIn.value.trim()) || '';
+            if (chosen) setRoomStatus('Nick onaylandı: ' + chosen, false);
+        }
+    });
+}
+
+if (createRoomBtn) {
+    createRoomBtn.addEventListener('click', function () {
+        doCreateRoom();
+    });
+}
+
+if (joinRoomBtn) {
+    joinRoomBtn.addEventListener('click', function () {
+        doJoinRoom();
+    });
+}
+
+if (startRoomBtn) {
+    startRoomBtn.addEventListener('click', function () {
+        if (!net.socket || !net.roomCode) return;
+        if (net.players.length < 2) {
+            setRoomStatus('Online baslat icin en az 2 oyuncu gerekli.', true);
             return;
         }
-        var pwd = (adminPassIn && adminPassIn.value) || '';
-        net.socket.emit('adminLogin', { password: pwd });
+        setRoomStatus('Online mac baslatiliyor...', false);
+        net.socket.emit('startMatch');
     });
 }
-
-if (adminPassIn) {
-    adminPassIn.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter' && adminLoginBtn) adminLoginBtn.click();
-    });
-}
-
-createRoomBtn.addEventListener('click', function () {
-    ensureSocket();
-    if (!net.socket) { setRoomStatus('Socket.IO yüklenemedi.', true); return; }
-    if (!net.isAdmin) { setRoomStatus('Only admin can create rooms. Admin password: solarmax', true); return; }
-    setRoomStatus('Creating room...', false);
-    net.socket.emit('createRoom', {
-        playerName: (playerNameIn && playerNameIn.value.trim()) || 'Commander',
-        maxPlayers: Number(roomMaxPlayersSel ? roomMaxPlayersSel.value : 4),
-        seed: seedIn.value || '42',
-        nodeCount: Number(ncIn.value || 16),
-        difficulty: diffSel.value || 'normal',
-        fogEnabled: menuFogCb ? !!menuFogCb.checked : false,
-    });
-});
-
-joinRoomBtn.addEventListener('click', function () {
-    var code = (roomCodeIn && roomCodeIn.value.trim().toUpperCase()) || '';
-    joinRoomByCode(code);
-});
-
-if (roomCodeIn) {
-    roomCodeIn.addEventListener('input', function () {
-        roomCodeIn.value = roomCodeIn.value.toUpperCase();
-    });
-    roomCodeIn.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') joinRoomByCode(roomCodeIn.value);
-    });
-}
-
-if (roomListEl) {
-    roomListEl.addEventListener('click', function (e) {
-        var target = e.target;
-        if (!target || !target.dataset || !target.dataset.roomCode) return;
-        joinRoomByCode(target.dataset.roomCode);
-    });
-}
-
-if (refreshRoomsBtn) {
-    refreshRoomsBtn.addEventListener('click', function () {
-        requestLobby();
-    });
-}
-
-if (copyRoomCodeBtn) {
-    copyRoomCodeBtn.addEventListener('click', function () {
-        if (!net.roomCode) { setRoomStatus('Create or join a room first.', true); return; }
-        if (!navigator.clipboard || !navigator.clipboard.writeText) {
-            setRoomStatus('Clipboard not available on this browser.', true);
-            return;
-        }
-        navigator.clipboard.writeText(net.roomCode).then(function () {
-            setRoomStatus('Room code copied: ' + net.roomCode, false);
-        }).catch(function () {
-            setRoomStatus('Could not copy room code.', true);
-        });
-    });
-}
-
-leaveRoomBtn.addEventListener('click', function () {
-    if (!net.socket || !net.roomCode) return;
-    net.socket.emit('leaveRoom');
-    clearRoomState('Room left.');
-    requestLobby();
-    if (G.state === 'playing' || G.state === 'paused' || G.state === 'replay') {
-        G.state = 'mainMenu';
-        showUI('mainMenu');
-    }
-});
-
-startRoomBtn.addEventListener('click', function () {
-    if (!net.socket || !net.roomCode) return;
-    setRoomStatus(net.localReady ? 'Ready canceled.' : 'Ready sent. Waiting for others...', false);
-    net.socket.emit('setStartVote', { ready: !net.localReady });
-});
 
 loadRepBtn.addEventListener('click', function () { repFileIn.click(); });
 repFileIn.addEventListener('change', function () {

@@ -13,7 +13,7 @@ Open `http://localhost:5173` (redirects to `stellar_conquest.html`).
 
 Direct file mode also works: open `stellar_conquest.html`.
 
-## Multiplayer Run (Room System)
+## Multiplayer Run (Single Room)
 
 ```bash
 npm install
@@ -49,14 +49,9 @@ If you want Vite + HMR while testing multiplayer:
 
 Online menu:
 
-- `Admin Access`: login with password `solarmax`
-- Only one active admin session is allowed at a time
-- `Create (Admin)`: only admin can create room
-- `Join`: join with room code
-- `Refresh Rooms`: refresh open-room list
-- Click `Join` on any listed room: quick join without typing code
-- `Copy Room Code`: copy your current room code for sharing
-- `I am Ready`: every joined player must press ready; match starts automatically when all are ready (min 2 players)
+- `Nick`: every player enters and confirms nick first
+- Nick confirmed -> player is auto-joined to the single room
+- `Online Baslat`: starts match when room has at least 2 players
 
 ## Gameplay Systems
 

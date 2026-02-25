@@ -18,49 +18,92 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 const TICK_RATE = 30;
 const MAX_ROOM_PLAYERS = 6;
-const ADMIN_PASSWORD = 'solarmax';
+const DEFAULT_ROOM_CONFIG = {
+    seed: '42',
+    nodeCount: 16,
+    difficulty: 'normal',
+    fogEnabled: false,
+};
 
 const rooms = new Map();
 const socketToRoom = new Map();
-let adminSocketId = null;
 
 function nowTick(startEpochMs) {
     return Math.max(0, Math.floor((Date.now() - startEpochMs) / (1000 / TICK_RATE)));
 }
 
-function isAdmin(socketId) {
-    return adminSocketId === socketId;
+function normalizeDifficulty(raw) {
+    const value = String(raw || DEFAULT_ROOM_CONFIG.difficulty).toLowerCase();
+    if (value === 'easy' || value === 'normal' || value === 'hard') return value;
+    return DEFAULT_ROOM_CONFIG.difficulty;
 }
 
-function emitAdminState(socketId) {
-    io.to(socketId).emit('adminState', {
-        isAdmin: isAdmin(socketId),
-        adminOnline: !!adminSocketId,
-    });
+function normalizeNodeCount(raw) {
+    const value = Number(raw);
+    if (!Number.isFinite(value)) return DEFAULT_ROOM_CONFIG.nodeCount;
+    return Math.max(8, Math.min(30, Math.floor(value)));
 }
 
-function emitAdminStateAll() {
-    for (const [id] of io.of('/').sockets) {
-        emitAdminState(id);
-    }
+function normalizeRoomConfig(payload = {}) {
+    return {
+        seed: String(payload.seed || DEFAULT_ROOM_CONFIG.seed),
+        nodeCount: normalizeNodeCount(payload.nodeCount),
+        difficulty: normalizeDifficulty(payload.difficulty),
+        fogEnabled: payload.fogEnabled === true,
+    };
+}
+
+function sanitizePlayerName(name) {
+    return String(name || '').trim().slice(0, 20);
+}
+
+function generateRoomCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    let code;
+    do {
+        code = '';
+        for (let i = 0; i < 5; i++) {
+            code += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+    } while (rooms.has(code));
+    return code;
+}
+
+function createRoom(configPayload = {}) {
+    const code = generateRoomCode();
+    const room = {
+        code,
+        hostId: '',
+        createdAt: Date.now(),
+        maxPlayers: MAX_ROOM_PLAYERS,
+        started: false,
+        startedAt: 0,
+        players: [],
+        config: normalizeRoomConfig(configPayload),
+    };
+    rooms.set(code, room);
+    return room;
+}
+
+function getRoom(code) {
+    if (!code) return null;
+    return rooms.get(String(code).toUpperCase());
 }
 
 function roomSnapshot(room, socketId) {
-    const votes = room.startVotes || new Set();
-    const readyCount = room.players.reduce((sum, p) => sum + (votes.has(p.socketId) ? 1 : 0), 0);
     return {
         code: room.code,
         hostId: room.hostId,
         isHost: room.hostId === socketId,
         started: room.started,
         maxPlayers: room.maxPlayers,
-        readyCount,
-        allReady: room.players.length > 0 && readyCount === room.players.length,
+        readyCount: 0,
+        allReady: false,
         players: room.players.map(p => ({
             socketId: p.socketId,
             name: p.name,
             index: p.index,
-            ready: votes.has(p.socketId),
+            ready: false,
         })),
         config: room.config,
     };
@@ -74,49 +117,31 @@ function emitRoomState(room) {
 
 function publicRoomList() {
     const list = [];
-    for (const room of rooms.values()) {
-        if (room.started) continue;
-        if (room.players.length >= room.maxPlayers) continue;
-        const host = room.players.find(p => p.socketId === room.hostId);
-        list.push({
-            code: room.code,
-            hostName: host ? host.name : 'Host',
-            players: room.players.length,
-            maxPlayers: room.maxPlayers,
-            difficulty: String(room.config?.difficulty || 'normal'),
-            nodeCount: Number(room.config?.nodeCount || 16),
-            fogEnabled: !!room.config?.fogEnabled,
-            createdAt: Number(room.createdAt || 0),
-        });
+    for (const [code, room] of rooms.entries()) {
+        if (!room.started && room.players.length < room.maxPlayers) {
+            const host = room.players.find(p => p.socketId === room.hostId);
+            list.push({
+                code: room.code,
+                hostName: host ? host.name : 'Host',
+                players: room.players.length,
+                maxPlayers: room.maxPlayers,
+                difficulty: String(room.config?.difficulty || DEFAULT_ROOM_CONFIG.difficulty),
+                nodeCount: Number(room.config?.nodeCount || DEFAULT_ROOM_CONFIG.nodeCount),
+                fogEnabled: !!room.config?.fogEnabled,
+                createdAt: Number(room.createdAt || 0),
+            });
+        }
     }
-    list.sort((a, b) => (a.createdAt - b.createdAt) || a.code.localeCompare(b.code));
     return list;
 }
 
 function emitLobbyState(socketId) {
-    const payload = { rooms: publicRoomList(), adminOnline: !!adminSocketId };
+    const payload = { rooms: publicRoomList() };
     if (socketId) {
         io.to(socketId).emit('lobbyState', payload);
         return;
     }
     io.emit('lobbyState', payload);
-}
-
-function makeRoomCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let code = '';
-    for (let i = 0; i < 6; i++) {
-        code += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return code;
-}
-
-function createUniqueRoomCode() {
-    for (let i = 0; i < 20; i++) {
-        const code = makeRoomCode();
-        if (!rooms.has(code)) return code;
-    }
-    return `${Math.floor(Math.random() * 900000 + 100000)}`;
 }
 
 function startRoomMatch(room) {
@@ -140,11 +165,15 @@ function startRoomMatch(room) {
     emitLobbyState();
 }
 
-function maybeStartMatch(room) {
-    if (room.started) return;
-    if (room.players.length < 2) return;
-    for (const p of room.players) {
-        if (!room.startVotes?.has(p.socketId)) return;
+function requestStartMatch(socketId) {
+    const code = socketToRoom.get(socketId);
+    if (!code) return;
+    const room = rooms.get(code);
+    if (!room || room.started) return;
+    if (room.players.length < 2) {
+        io.to(socketId).emit('roomError', { message: 'En az 2 oyuncu olmadan baslatamazsin.' });
+        emitRoomState(room);
+        return;
     }
     startRoomMatch(room);
 }
@@ -154,9 +183,14 @@ function cleanupPlayer(socketId) {
     if (!code) return;
     const room = rooms.get(code);
     socketToRoom.delete(socketId);
+
+    const socket = io.of('/').sockets.get(socketId);
+    if (socket) socket.leave(code);
     if (!room) return;
 
-    if (room.startVotes) room.startVotes.delete(socketId);
+    // We kept their info before filtering
+    const leavingPlayer = room.players.find(p => p.socketId === socketId);
+
     room.players = room.players.filter(p => p.socketId !== socketId);
     if (room.players.length === 0) {
         rooms.delete(code);
@@ -169,17 +203,15 @@ function cleanupPlayer(socketId) {
     }
 
     if (room.started) {
-        io.to(code).emit('roomClosed', { message: 'A player disconnected. Room closed.' });
-        rooms.delete(code);
-        for (const p of room.players) socketToRoom.delete(p.socketId);
-        emitLobbyState();
+        if (leavingPlayer) {
+            io.to(code).emit('playerLeft', { index: leavingPlayer.index, name: leavingPlayer.name });
+        }
         return;
     }
 
     // Reassign contiguous indices.
     room.players.forEach((p, idx) => { p.index = idx; });
-    maybeStartMatch(room);
-    if (!room.started) emitRoomState(room);
+    emitRoomState(room);
     emitLobbyState();
 }
 
@@ -188,109 +220,66 @@ app.get('/healthz', (_req, res) => {
     res.json({ ok: true, rooms: rooms.size });
 });
 
-io.on('connection', (socket) => {
-    socket.emit('connected', { socketId: socket.id });
-    emitAdminState(socket.id);
-    emitLobbyState(socket.id);
+function joinSingleRoom(socket, payload = {}) {
+    cleanupPlayer(socket.id);
 
-    socket.on('adminLogin', (payload = {}) => {
-        const password = String(payload.password || '');
-        if (password !== ADMIN_PASSWORD) {
-            socket.emit('adminError', { message: 'Wrong admin password.' });
-            emitAdminState(socket.id);
-            return;
-        }
-        if (adminSocketId && adminSocketId !== socket.id) {
-            socket.emit('adminError', { message: 'Admin is already active on another connection.' });
-            emitAdminState(socket.id);
-            return;
-        }
-        adminSocketId = socket.id;
-        socket.emit('adminAuthOk', { message: 'Admin authenticated.' });
-        emitAdminStateAll();
-        emitLobbyState();
-    });
+    const playerName = sanitizePlayerName(payload.playerName);
+    if (!playerName) {
+        socket.emit('roomError', { message: 'Önce bir isim girin.' });
+        emitLobbyState(socket.id);
+        return;
+    }
 
-    socket.on('adminLogout', () => {
-        if (!isAdmin(socket.id)) return;
-        adminSocketId = null;
-        emitAdminStateAll();
-        emitLobbyState();
-    });
-
-    socket.on('createRoom', (payload = {}) => {
-        if (!isAdmin(socket.id)) {
-            socket.emit('roomError', { message: 'Only admin can create room.' });
+    let room = null;
+    if (payload.action === 'create') {
+        room = createRoom(payload);
+        room.hostId = socket.id;
+    } else if (payload.action === 'join') {
+        room = getRoom(payload.roomCode);
+        if (!room) {
+            socket.emit('roomError', { message: 'Oda bulunamadı veya kod hatalı.' });
             emitLobbyState(socket.id);
             return;
         }
-        cleanupPlayer(socket.id);
+    } else {
+        socket.emit('roomError', { message: 'Geçersiz oda işlemi.' });
+        emitLobbyState(socket.id);
+        return;
+    }
 
-        const maxPlayersRaw = Number(payload.maxPlayers);
-        const maxPlayers = Number.isFinite(maxPlayersRaw)
-            ? Math.max(2, Math.min(MAX_ROOM_PLAYERS, Math.floor(maxPlayersRaw)))
-            : 4;
+    if (room.started) {
+        socket.emit('roomError', { message: 'Bu odada oyun çoktan başlamış.' });
+        emitLobbyState(socket.id);
+        return;
+    }
+    if (room.players.length >= room.maxPlayers) {
+        socket.emit('roomError', { message: 'Oda dolu!' });
+        emitLobbyState(socket.id);
+        return;
+    }
 
-        const code = createUniqueRoomCode();
-        const room = {
-            code,
-            hostId: socket.id,
-            createdAt: Date.now(),
-            maxPlayers,
-            started: false,
-            startedAt: 0,
-            startVotes: new Set(),
-            players: [
-                {
-                    socketId: socket.id,
-                    name: String(payload.playerName || 'Player').slice(0, 20),
-                    index: 0,
-                },
-            ],
-            config: {
-                seed: String(payload.seed || '42'),
-                nodeCount: Number(payload.nodeCount || 16),
-                difficulty: String(payload.difficulty || 'normal'),
-                fogEnabled: payload.fogEnabled === true,
-            },
-        };
-        rooms.set(code, room);
-        socketToRoom.set(socket.id, code);
-        socket.join(code);
-        emitRoomState(room);
-        emitLobbyState();
+    room.players.push({
+        socketId: socket.id,
+        name: playerName,
+        index: room.players.length,
+    });
+
+    socketToRoom.set(socket.id, room.code);
+    socket.join(room.code);
+    emitRoomState(room);
+    emitLobbyState();
+}
+
+io.on('connection', (socket) => {
+    socket.emit('connected', { socketId: socket.id });
+    emitLobbyState(socket.id);
+
+    socket.on('createRoom', (payload = {}) => {
+        joinSingleRoom(socket, payload);
     });
 
     socket.on('joinRoom', (payload = {}) => {
-        cleanupPlayer(socket.id);
-
-        const code = String(payload.code || '').trim().toUpperCase();
-        const room = rooms.get(code);
-        if (!room) {
-            socket.emit('roomError', { message: 'Room not found.' });
-            return;
-        }
-        if (room.started) {
-            socket.emit('roomError', { message: 'Room already started.' });
-            return;
-        }
-        if (room.players.length >= room.maxPlayers) {
-            socket.emit('roomError', { message: 'Room is full.' });
-            return;
-        }
-
-        const player = {
-            socketId: socket.id,
-            name: String(payload.playerName || 'Player').slice(0, 20),
-            index: room.players.length,
-        };
-        room.players.push(player);
-        if (!room.startVotes) room.startVotes = new Set();
-        room.startVotes.delete(socket.id);
-        socketToRoom.set(socket.id, code);
-        socket.join(code);
-        emitRoomState(room);
-        emitLobbyState();
+        joinSingleRoom(socket, payload);
     });
 
     socket.on('leaveRoom', () => {
@@ -298,19 +287,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('setStartVote', (payload = {}) => {
-        const code = socketToRoom.get(socket.id);
-        if (!code) return;
-        const room = rooms.get(code);
-        if (!room || room.started) return;
-
-        if (!room.startVotes) room.startVotes = new Set();
-        const ready = payload.ready !== false;
-        if (ready) room.startVotes.add(socket.id);
-        else room.startVotes.delete(socket.id);
-
-        maybeStartMatch(room);
-        if (!room.started) emitRoomState(room);
-        emitLobbyState();
+        if (payload.ready === false) return;
+        requestStartMatch(socket.id);
     });
 
     socket.on('requestLobby', () => {
@@ -318,23 +296,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('startMatch', (payload = {}) => {
-        // Backward-compatible: treat as "ready" signal.
-        const code = socketToRoom.get(socket.id);
-        if (!code) return;
-        const room = rooms.get(code);
-        if (!room || room.started) return;
-
-        if (isAdmin(socket.id)) {
-            room.config.seed = String(payload.seed || room.config.seed || '42');
-            room.config.nodeCount = Number(payload.nodeCount || room.config.nodeCount || 16);
-            room.config.difficulty = String(payload.difficulty || room.config.difficulty || 'normal');
-            room.config.fogEnabled = payload.fogEnabled !== undefined ? !!payload.fogEnabled : room.config.fogEnabled;
-        }
-        if (!room.startVotes) room.startVotes = new Set();
-        room.startVotes.add(socket.id);
-        maybeStartMatch(room);
-        if (!room.started) emitRoomState(room);
-        emitLobbyState();
+        requestStartMatch(socket.id);
     });
 
     socket.on('playerCommand', (payload = {}) => {
@@ -347,23 +309,36 @@ io.on('connection', (socket) => {
 
         const type = String(payload.type || '');
         if (!type) return;
-        const tick = nowTick(room.startedAt);
+
+        let targetTick = Number(payload.tick);
+        const serverCurrentTick = nowTick(room.startedAt);
+        // İstemcinin ilettiği tick çok geçmişteyse sunucu anının 2 ilerisini kabul et
+        if (isNaN(targetTick) || targetTick < serverCurrentTick) {
+            targetTick = serverCurrentTick + 2;
+        }
+
         const command = {
             playerIndex: player.index,
-            tick,
+            tick: targetTick,
             type,
             data: payload.data || {},
         };
         io.to(code).emit('roomCommand', command);
     });
 
+    socket.on('pingTick', (payload = {}) => {
+        const code = socketToRoom.get(socket.id);
+        if (!code) return;
+        const room = rooms.get(code);
+        if (!room || !room.started) return;
+        socket.emit('pongTick', {
+            clientTs: payload.clientTs,
+            serverTick: nowTick(room.startedAt)
+        });
+    });
+
     socket.on('disconnect', () => {
         cleanupPlayer(socket.id);
-        if (isAdmin(socket.id)) {
-            adminSocketId = null;
-            emitAdminStateAll();
-            emitLobbyState();
-        }
     });
 });
 

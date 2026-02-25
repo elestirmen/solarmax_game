@@ -618,7 +618,7 @@
             border: 2px solid var(--bg)
         }
     </style>
-  <script type="module" crossorigin src="./assets/game-DetzP7Dv.js"></script>
+  <script type="module" crossorigin src="./assets/game-DZK7WsAg.js"></script>
 </head>
 
 <body>
@@ -638,8 +638,12 @@
                     <option value="normal" selected>Normal</option>
                     <option value="hard">Hard</option>
                 </select></div>
-            <div class="menu-field"><label for="playerNameInput">Player Name</label><input type="text" id="playerNameInput"
-                    value="Commander" maxlength="20" /></div>
+            <div class="menu-field"><label for="playerNameInput">Nick</label>
+                <div class="room-row">
+                    <input type="text" id="playerNameInput" value="" maxlength="20" placeholder="Nick sec" />
+                    <button id="setNickBtn" class="secondary-btn" style="margin:0">Niki Onayla</button>
+                </div>
+            </div>
             <div class="tune-toggle" style="margin-top:4px"><label>Fog of War</label><label class="switch"><input
                         type="checkbox" id="menuFogOfWar" /><span class="slider"></span></label></div>
             <button id="startBtn" class="primary-btn">Start Conquest</button>
@@ -647,44 +651,11 @@
             <input type="file" id="replayFileInput" accept=".json" style="display:none;" />
 
             <div class="menu-divider"></div>
-            <div class="menu-field">
-                <label>Admin Access</label>
-                <div class="room-row">
-                    <input type="password" id="adminPasswordInput" placeholder="Admin password" value="solarmax" />
-                    <button id="adminLoginBtn" class="secondary-btn" style="margin:0">Admin Login</button>
-                </div>
-            </div>
             <div class="menu-field"><label>Online Room</label>
                 <div class="room-row">
-                    <select id="roomMaxPlayers">
-                        <option value="2">2 Players</option>
-                        <option value="3">3 Players</option>
-                        <option value="4" selected>4 Players</option>
-                        <option value="5">5 Players</option>
-                        <option value="6">6 Players</option>
-                    </select>
-                    <button id="createRoomBtn" class="secondary-btn" style="margin:0">Create (Admin)</button>
+                    <button id="startRoomBtn" class="secondary-btn" style="margin:0;flex:1">Online Baslat</button>
                 </div>
             </div>
-            <div class="menu-field">
-                <div class="room-row">
-                    <input type="text" id="roomCodeInput" placeholder="Room Code" maxlength="8" />
-                    <button id="joinRoomBtn" class="secondary-btn" style="margin:0">Join</button>
-                </div>
-            </div>
-            <div class="room-row" style="margin-top:4px">
-                <button id="refreshRoomsBtn" class="secondary-btn" style="margin:0; width:auto; padding:8px 10px">Refresh
-                    Rooms</button>
-                <p id="roomListInfo" class="room-list-info">No open rooms yet.</p>
-            </div>
-            <div id="roomList" class="room-list">
-                <div class="room-list-empty">Connecting to server...</div>
-            </div>
-            <div class="room-row" style="margin-top:4px">
-                <button id="startRoomBtn" class="secondary-btn" style="margin:0;flex:1">I am Ready</button>
-                <button id="leaveRoomBtn" class="secondary-btn" style="margin:0;flex:1">Leave Room</button>
-            </div>
-            <button id="copyRoomCodeBtn" class="secondary-btn" style="margin-top:8px">Copy Room Code</button>
             <p id="roomStatus" class="room-status"></p>
             <div id="roomPlayers" class="room-players"></div>
         </div>
