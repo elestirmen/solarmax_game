@@ -21,7 +21,11 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     DDA_MAX_BOOST = 0.2,
     WORMHOLE_SPEED_MULT = 1.75,
     GRAVITY_RADIUS = 170,
-    GRAVITY_SPEED_MULT = 1.35;
+    GRAVITY_SPEED_MULT = 1.35,
+    SUPPLY_DIST = 220,
+    ISOLATED_PROD_PENALTY = 0.6,
+    DEFENSE_PROD_PENALTY = 0.75,
+    DEFENSE_BONUS = 1.25;
 
 var NODE_TYPE_DEFS = {
     core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#8db3ff' },
@@ -116,6 +120,7 @@ var G = {
     aiProfiles: [], mapFeature: { type: 'none' }, wormholes: [],
     stats: { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0 },
     particles: [], mapMode: 'random', campaignLevel: 0,
+    playerCapital: {}, strategicNodes: [],
 };
 var ACHIEVEMENTS = [
     { id: 'first_win', name: 'Ilk Zafer', check: function () { return G.winner === G.human; } },
@@ -205,6 +210,39 @@ function initNodeKind(node) {
 }
 function nodePowerValue(node) {
     return node.units + node.maxUnits * 0.06 + node.level * 6;
+}
+function getPlayerCapital(pi) {
+    var cap = G.playerCapital[pi];
+    if (cap !== undefined && G.nodes[cap] && G.nodes[cap].owner === pi) return cap;
+    var corners = [{ x: MAP_PAD, y: MAP_PAD }, { x: MAP_W - MAP_PAD, y: MAP_H - MAP_PAD }, { x: MAP_PAD, y: MAP_H - MAP_PAD }, { x: MAP_W - MAP_PAD, y: MAP_PAD }];
+    var c = corners[pi % 4], best = null, bd = Infinity;
+    for (var i = 0; i < G.nodes.length; i++) {
+        var n = G.nodes[i];
+        if (n.owner !== pi) continue;
+        var d = dist(n.pos, c);
+        if (d < bd) { bd = d; best = n.id; }
+    }
+    G.playerCapital[pi] = best;
+    return best;
+}
+function computeSupplyConnected(pi) {
+    var cap = getPlayerCapital(pi);
+    if (cap === null || cap === undefined) return new Set();
+    var connected = new Set([cap]);
+    var changed = true;
+    while (changed) {
+        changed = false;
+        for (var i = 0; i < G.nodes.length; i++) {
+            var n = G.nodes[i];
+            if (n.owner !== pi || connected.has(n.id)) continue;
+            for (var j = 0; j < G.nodes.length; j++) {
+                var o = G.nodes[j];
+                if (o.owner !== pi || !connected.has(o.id)) continue;
+                if (dist(n.pos, o.pos) <= SUPPLY_DIST) { connected.add(n.id); changed = true; break; }
+            }
+        }
+    }
+    return connected;
 }
 function computePowerByPlayer() {
     var power = {};
@@ -339,7 +377,7 @@ function genMap(nc) {
         var x = G.rng.nextFloat(MAP_PAD, MAP_W - MAP_PAD), y = G.rng.nextFloat(MAP_PAD, MAP_H - MAP_PAD), r = G.rng.nextFloat(NODE_RMIN, NODE_RMAX);
         var ok = true; for (var i = 0; i < G.nodes.length; i++)if (dist({ x: x, y: y }, G.nodes[i].pos) < minDist) { ok = false; break; }
         if (ok) {
-            var node = { id: placed, pos: { x: x, y: y }, radius: r, owner: -1, units: G.rng.nextInt(2, NEUTRAL_MAX), prodAcc: 0, maxUnits: MAX_UNITS, visionR: VISION_R + r * 2, selected: false, kind: 'core', level: 1 };
+            var node = { id: placed, pos: { x: x, y: y }, radius: r, owner: -1, units: G.rng.nextInt(2, NEUTRAL_MAX), prodAcc: 0, maxUnits: MAX_UNITS, visionR: VISION_R + r * 2, selected: false, kind: 'core', level: 1, defense: false, strategic: false };
             initNodeKind(node);
             node.maxUnits = nodeCapacity(node);
             node.units = Math.min(node.units, Math.max(2, Math.floor(node.maxUnits * 0.4)));
@@ -349,13 +387,14 @@ function genMap(nc) {
     }
     while (placed < nc) {
         var fx = G.rng.nextFloat(MAP_PAD, MAP_W - MAP_PAD), fy = G.rng.nextFloat(MAP_PAD, MAP_H - MAP_PAD), fr = G.rng.nextFloat(NODE_RMIN, NODE_RMAX);
-        var fn = { id: placed, pos: { x: fx, y: fy }, radius: fr, owner: -1, units: G.rng.nextInt(2, NEUTRAL_MAX), prodAcc: 0, maxUnits: MAX_UNITS, visionR: VISION_R + fr * 2, selected: false, kind: 'core', level: 1 };
+        var fn = { id: placed, pos: { x: fx, y: fy }, radius: fr, owner: -1, units: G.rng.nextInt(2, NEUTRAL_MAX), prodAcc: 0, maxUnits: MAX_UNITS, visionR: VISION_R + fr * 2, selected: false, kind: 'core', level: 1, defense: false, strategic: false };
         initNodeKind(fn);
         fn.maxUnits = nodeCapacity(fn);
         fn.units = Math.min(fn.units, Math.max(2, Math.floor(fn.maxUnits * 0.4)));
         G.nodes.push(fn); placed++;
     }
     var corners = [{ x: MAP_PAD, y: MAP_PAD }, { x: MAP_W - MAP_PAD, y: MAP_H - MAP_PAD }, { x: MAP_PAD, y: MAP_H - MAP_PAD }, { x: MAP_W - MAP_PAD, y: MAP_PAD }];
+    G.playerCapital = {};
     for (var p = 0; p < G.players.length; p++) {
         var c = corners[p % 4], best = null, bd = Infinity;
         for (var n = 0; n < G.nodes.length; n++) { var cand = G.nodes[n]; if (cand.owner !== -1) continue; var d = dist(cand.pos, c); if (d < bd) { bd = d; best = cand; } }
@@ -364,10 +403,25 @@ function genMap(nc) {
             best.kind = 'core';
             best.level = 2;
             best.maxUnits = nodeCapacity(best);
+            best.defense = false;
             var startBoost = p === 0 ? G.diffCfg.humanStartBoost : G.diffCfg.aiStartBoost;
             var baseUnits = p === 0 ? 20 : 18;
             best.units = Math.min(best.maxUnits - 2, Math.max(12, Math.floor(baseUnits * startBoost)));
             best.radius = Math.max(best.radius, 28);
+            G.playerCapital[p] = best.id;
+        }
+    }
+    for (var ni = 0; ni < G.nodes.length; ni++) {
+        if (!G.nodes[ni].defense) G.nodes[ni].defense = false;
+    }
+    G.strategicNodes = [];
+    var center = { x: MAP_W * 0.5, y: MAP_H * 0.5 };
+    for (var si = 0; si < G.nodes.length; si++) {
+        var nd = G.nodes[si];
+        if (dist(nd.pos, center) < MAP_W * 0.35 && nd.owner === -1) {
+            var neighborCount = 0;
+            for (var sj = 0; sj < G.nodes.length; sj++) if (sj !== si && dist(G.nodes[sj].pos, nd.pos) < SUPPLY_DIST * 1.2) neighborCount++;
+            if (neighborCount >= 3) { nd.strategic = true; G.strategicNodes.push(nd.id); }
         }
     }
 }
@@ -418,12 +472,14 @@ function spawnParticles(x, y, count, color, isCapture) {
 function combat(fleet, tgt) {
     if (tgt.owner === fleet.owner) { tgt.units += fleet.count; return; }
     var defMult = (tgt.owner >= 0 ? G.tune.def : 1) * nodeTypeOf(tgt).def * nodeLevelDefMult(tgt);
+    if (tgt.defense) defMult *= DEFENSE_BONUS;
     var atk = fleet.count, def = tgt.units * defMult;
     var col = G.players[fleet.owner] ? G.players[fleet.owner].color : '#fff';
     spawnParticles(tgt.pos.x, tgt.pos.y, 8 + Math.min(fleet.count, 12), col, false);
     if (atk > def) {
         tgt.owner = fleet.owner;
         tgt.units = Math.max(1, Math.floor(atk - def));
+        tgt.defense = false;
         G.flows = G.flows.filter(function (fl) { return !(fl.tgtId === tgt.id && fl.owner !== fleet.owner); });
         spawnParticles(tgt.pos.x, tgt.pos.y, 12, col, true);
         if (G.human === fleet.owner) { G.stats.nodesCaptured++; if (typeof AudioFX !== 'undefined') AudioFX.capture(); }
@@ -442,6 +498,12 @@ function addFlow(owner, srcId, tgtId) {
     G.flows.push({ id: G.flowId++, srcId: srcId, tgtId: tgtId, owner: owner, tickAcc: 0, active: true });
 }
 function rmFlow(owner, srcId, tgtId) { G.flows = G.flows.filter(function (f) { return !(f.srcId === srcId && f.tgtId === tgtId && f.owner === owner); }); }
+function toggleDefense(owner, nodeId) {
+    var node = G.nodes[nodeId];
+    if (!node || node.owner !== owner) return false;
+    node.defense = !node.defense;
+    return true;
+}
 function upgradeNode(owner, nodeId) {
     var node = G.nodes[nodeId];
     if (!node || node.owner !== owner) return false;
@@ -564,6 +626,12 @@ function applyPlayerCommand(playerIndex, type, data) {
         } else {
             upgradeNode(playerIndex, data.nodeId);
         }
+    } else if (type === 'toggleDefense') {
+        if (Array.isArray(data.nodeIds)) {
+            for (var i = 0; i < data.nodeIds.length; i++) toggleDefense(playerIndex, data.nodeIds[i]);
+        } else {
+            toggleDefense(playerIndex, data.nodeId);
+        }
     }
 }
 function applyRep(evt) {
@@ -574,6 +642,7 @@ function applyRep(evt) {
     else if (type === 'removeFlow') type = 'rmFlow';
     else if (type === 'speedChange') type = 'speed';
     else if (type === 'upgradeNode') type = 'upgrade';
+    else if (type === 'toggleDefense') { applyPlayerCommand(G.human, 'toggleDefense', d); return; }
 
     switch (type) {
         case 'select': {
@@ -648,7 +717,8 @@ function gameTick() {
         if (G.rep.idx >= G.rep.events.length && G.tick > ((G.rep.events.length ? G.rep.events[G.rep.events.length - 1].tick : 0) + 90)) { G.state = 'gameOver'; return; }
     }
     var power = computePowerByPlayer();
-    // production
+    var supplyByPlayer = {};
+    for (var sp = 0; sp < G.players.length; sp++) supplyByPlayer[sp] = computeSupplyConnected(sp);
     for (var i = 0; i < G.nodes.length; i++) {
         var n = G.nodes[i]; if (n.owner < 0) continue;
         n.maxUnits = nodeCapacity(n);
@@ -660,7 +730,10 @@ function gameTick() {
             ownerAssist = clamp(delta / 950, 0, DDA_MAX_BOOST);
         }
         var diffMult = n.owner === G.human ? G.diffCfg.humanProdMult : G.diffCfg.aiProdMult;
-        n.prodAcc += BASE_PROD * G.tune.prod * (n.radius / NODE_RMAX) * td.prod * nodeLevelProdMult(n) * (1 + ownerAssist) * diffMult;
+        var supplyMult = supplyByPlayer[n.owner] && supplyByPlayer[n.owner].has(n.id) ? 1 : ISOLATED_PROD_PENALTY;
+        var defenseMult = n.defense ? DEFENSE_PROD_PENALTY : 1;
+        n.supplied = supplyMult === 1;
+        n.prodAcc += BASE_PROD * G.tune.prod * (n.radius / NODE_RMAX) * td.prod * nodeLevelProdMult(n) * (1 + ownerAssist) * diffMult * supplyMult * defenseMult;
         if (n.prodAcc >= 1) { var a = Math.floor(n.prodAcc); n.units = Math.min(n.maxUnits, n.units + a); n.prodAcc -= a; }
     }
     // fleet movement with trail
@@ -829,6 +902,18 @@ function render(ctx, cv, tick) {
         }
 
         // â”€â”€ Precompute orbital data â”€â”€
+        if ((vis || n.owner === G.human) && n.owner >= 0 && n.supplied === false) {
+            ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, n.radius + 4, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,100,100,0.5)'; ctx.setLineDash([3, 4]); ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
+        }
+        if ((vis || n.owner === G.human) && n.defense) {
+            ctx.font = 'bold 10px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.textAlign = 'center';
+            ctx.fillText('\u26E8', n.pos.x, n.pos.y - n.radius - 4);
+        }
+        if ((vis || n.owner === G.human) && n.strategic) {
+            ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, n.radius + 6, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,215,0,0.4)'; ctx.lineWidth = 1; ctx.stroke();
+        }
         var hasOrbiters = (vis || n.owner === G.human) && n.owner >= 0;
         var orbData = [];
         if (hasOrbiters) {
@@ -1620,7 +1705,13 @@ cv.addEventListener('mousedown', function (e) {
     if (e.button === 1) { inp.panActive = true; inp.panLast = { x: e.offsetX, y: e.offsetY }; e.preventDefault(); return; }
     if (e.button === 2) {
         var nd = hitNode(w);
-        if (nd && inp.sel.size > 0 && nd.owner !== G.human) {
+        if (nd && nd.owner === G.human) {
+            var defIds = inp.sel.has(nd.id) && inp.sel.size > 0 ? Array.from(inp.sel) : [nd.id];
+            if (issueOnlineCommand('toggleDefense', { nodeIds: defIds })) { } else {
+                defIds.forEach(function (id) { toggleDefense(G.human, id); });
+                recEvt('toggleDefense', { nodeIds: defIds });
+            }
+        } else if (nd && inp.sel.size > 0 && nd.owner !== G.human) {
             inp.sel.forEach(function (sid) {
                 var sn = G.nodes[sid];
                 if (sn && sn.owner === G.human) {
@@ -1725,7 +1816,6 @@ window.addEventListener('keydown', function (e) {
             var targetIds = Array.from(inp.sel);
             if (targetIds.length > 0) {
                 if (issueOnlineCommand('upgrade', { nodeIds: targetIds })) {
-                    // applied when roomCommand is received
                 } else {
                     var upgraded = [];
                     inp.sel.forEach(function (id) { if (upgradeNode(G.human, id)) upgraded.push(id); });
@@ -1767,7 +1857,7 @@ function loop(ts) {
         var es = G.state === 'replay' && G.rep ? (G.rep.paused ? 0 : G.rep.speed) : G.speed; acc += rawDt * es;
         while (acc >= TICK_DT) { gameTick(); acc -= TICK_DT; }
         var featureName = G.mapFeature.type === 'wormhole' ? 'Wormhole' : (G.mapFeature.type === 'gravity' ? 'Gravity' : 'Standard');
-        hudTick.textContent = 'Tick: ' + G.tick + ' | ' + G.diff + ' | ' + featureName;
+        hudTick.textContent = 'Tick: ' + G.tick + ' | ' + G.diff;
         var pingEl = document.getElementById('pingDisplay');
         if (pingEl) pingEl.textContent = net.online && net.lastPingMs !== undefined ? ('Ping: ' + Math.round(net.lastPingMs) + 'ms') : '';
         if (G.state === 'replay') repTickLbl.textContent = 'Tick: ' + G.tick;
