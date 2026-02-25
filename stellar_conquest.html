@@ -729,6 +729,10 @@
             color: #7de3ff;
         }
 
+        .color-nexus {
+            color: #c9a0dc;
+        }
+
         .game-stats { margin: 12px 0; padding: 10px; background: rgba(255,255,255,0.05); border-radius: var(--radius); font-size: .9rem; }
         .stats-row { margin: 4px 0; color: var(--text-dim); }
         .minimap { position: fixed; top: 12px; right: 12px; width: 140px; height: 90px; border: 1px solid var(--panel-border); border-radius: var(--radius); overflow: hidden; z-index: 45; background: rgba(8,12,21,0.9); }
@@ -862,7 +866,7 @@
                         <p>Buradan çıkan filolar %35 daha hızlı seyahat eder. Genişleme (Flow) için kilit noktadır.</p>
                     </div>
                     <div class="node-type-card">
-                        <strong style="color:#c9a0dc">N - Nexus</strong>
+                        <strong class="color-nexus">N - Nexus</strong>
                         <p>Hibrit gezegen. Tum yonlerde hafif bonus. Dengeli genisleme icin ideal.</p>
                     </div>
                 </div>
@@ -954,7 +958,7 @@
     </div>
     <button id="tuneOpenBtn" class="toggle-btn hidden">⚙</button>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
-    <script src="./assets/audio.js"></script>
+    <script type="module" src="./assets/audio.js"></script>
     <script type="module" src="./game.js"></script>
 </body>
 

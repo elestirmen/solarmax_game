@@ -1,0 +1,13 @@
+node_modules/
+dist/
+
+# Vite cache
+node_modules/.vite/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
