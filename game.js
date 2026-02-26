@@ -159,7 +159,7 @@ function bezLen(p0, cp, p2) {
 function mkFleet() {
     return {
         active: false, owner: -1, count: 0, srcId: -1, tgtId: -1, t: 0, speed: 0, arcLen: 1, cpx: 0, cpy: 0, x: 0, y: 0,
-        trail: [], offsetL: 0, spdVar: 1, routeSpeedMult: 1, dmgAcc: 0
+        trail: [], offsetL: 0, spdVar: 1, routeSpeedMult: 1, dmgAcc: 0, launchT: 0
     };
 }  // trail: array of {x,y}, offsetL: perpendicular spread, spdVar: speed variation
 var pool = [];
@@ -669,11 +669,14 @@ function dispatch(owner, srcIds, tgtId, pct) {
         var f = acquireFleet(); f.active = true; f.owner = owner; f.count = cnt; f.srcId = srcIds[si]; f.tgtId = tgtId;
         var jitter = hashMix(G.seed, src.id, tgtId, G.fleetSerial++);
         f.t = 0;
-        f.speed = FLEET_SPEED; f.x = src.pos.x; f.y = src.pos.y;
+        f.speed = FLEET_SPEED;
         f.offsetL = (jitter - 0.5) * swarmWidth;
         f.spdVar = 0.98 + (jitter - 0.5) * 0.04;
         f.routeSpeedMult = srcType.speed * (hasWormholeLink ? WORMHOLE_SPEED_MULT : 1);
         f.cpx = cp.x; f.cpy = cp.y; f.arcLen = bezLen(src.pos, cp, tgt.pos);
+        f.launchT = clamp((src.radius + 2) / Math.max(f.arcLen, 1), 0, 0.12);
+        var launchPt = bezPt(src.pos, cp, tgt.pos, f.launchT);
+        f.x = launchPt.x; f.y = launchPt.y;
         f.trail = [];
         f.dmgAcc = 0;
         G.fleets.push(f);
@@ -1055,21 +1058,32 @@ function gameTick() {
             var tgt = G.nodes[f.tgtId]; if (tgt.owner === f.owner) { tgt.units += f.count; if (tgt.units > tgt.maxUnits) tgt.units = tgt.maxUnits; } else combat(f, tgt);
             f.active = false; f.trail = []; G.fleets.splice(i, 1);
         } else if (f.t > 0) {
-            var s = G.nodes[f.srcId], tg = G.nodes[f.tgtId], cp = { x: f.cpx, y: f.cpy }, pt = bezPt(s.pos, cp, tg.pos, f.t);
+            var s = G.nodes[f.srcId], tg = G.nodes[f.tgtId], cp = { x: f.cpx, y: f.cpy };
+            var launchT = clamp(typeof f.launchT === 'number' ? f.launchT : 0, 0, 0.2);
+            var curveT = launchT + (1 - launchT) * clamp(f.t, 0, 1);
+            var pt = bezPt(s.pos, cp, tg.pos, curveT);
             // compute perpendicular offset for swarm spread
-            var pt2 = bezPt(s.pos, cp, tg.pos, Math.min(1, f.t + 0.01));
+            var pt2 = bezPt(s.pos, cp, tg.pos, Math.min(1, curveT + 0.01));
             var tdx = pt2.x - pt.x, tdy = pt2.y - pt.y;
             var tlen = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
             var nx = -tdy / tlen, ny = tdx / tlen;
             // fade offset near start/end for convergence at nodes
-            var fade = Math.min(1, f.t * 5) * Math.min(1, (1 - f.t) * 5);
+            var fade = Math.min(1, curveT * 5) * Math.min(1, (1 - curveT) * 5);
             var ox = pt.x + nx * f.offsetL * fade;
             var oy = pt.y + ny * f.offsetL * fade;
             f.trail.push({ x: f.x, y: f.y }); if (f.trail.length > TRAIL_LEN) f.trail.shift();
             f.x = ox; f.y = oy;
         } else {
             // still waiting (negative t = delayed spawn)
-            f.x = G.nodes[f.srcId].pos.x; f.y = G.nodes[f.srcId].pos.y;
+            var fs = G.nodes[f.srcId], ft = G.nodes[f.tgtId];
+            if (fs && ft) {
+                var fcp = { x: f.cpx, y: f.cpy };
+                var waitT = clamp(typeof f.launchT === 'number' ? f.launchT : 0, 0, 0.2);
+                var waitPt = bezPt(fs.pos, fcp, ft.pos, waitT);
+                f.x = waitPt.x; f.y = waitPt.y;
+            } else {
+                f.x = G.nodes[f.srcId].pos.x; f.y = G.nodes[f.srcId].pos.y;
+            }
         }
     }
     // flow links
@@ -1441,6 +1455,9 @@ function drawRocketShape(ctx, x, y, dirX, dirY, col, flicker, alpha, scale) {
 
 function drawFleetRocket(ctx, f, col, tick) {
     var count = Math.max(1, Number(f.count) || 1);
+    var srcNode = G.nodes[f.srcId], tgtNode = G.nodes[f.tgtId];
+    var cp = { x: f.cpx, y: f.cpy };
+    var launchT = clamp(typeof f.launchT === 'number' ? f.launchT : 0, 0, 0.2);
     var trail = f.trail || [];
     var tl = trail.length;
     if (tl > 0) {
@@ -1484,19 +1501,30 @@ function drawFleetRocket(ctx, f, col, tick) {
     drawRocketShape(ctx, f.x, f.y, dirX, dirY, col, flicker, 1, 1);
 
     var supportCount = Math.max(0, Math.floor(count) - 1);
-    if (supportCount > 0) {
-        var spacing = 3.4;
-        var swarmWidth = Math.min(22, 6 + Math.log(count + 1) * 6);
-        var fade = Math.min(1, f.t * 5) * Math.min(1, (1 - f.t) * 5);
-        for (var ui = 0; ui < supportCount; ui++) {
-            var centered = supportCount <= 1 ? 0 : ((ui / (supportCount - 1)) * 2 - 1);
-            var jitter = (hashMix(f.srcId, f.tgtId, ui, G.seed) - 0.5) * 1.2;
-            var side = (centered * swarmWidth + jitter) * fade;
-            var back = (ui + 1) * spacing;
-            var sx = f.x - dirX * back + nX * side;
-            var sy = f.y - dirY * back + nY * side;
+    if (supportCount > 0 && srcNode && tgtNode) {
+        var spacingT = 0.012;
+        var swarmWidth = Math.min(20, 6 + count * 0.35);
+        for (var ui = 1; ui <= supportCount; ui++) {
+            var tUnit = f.t - ui * spacingT;
+            if (tUnit <= 0 || tUnit >= 1) continue;
+            var curveT = launchT + (1 - launchT) * clamp(tUnit, 0, 1);
+
+            var pt = bezPt(srcNode.pos, cp, tgtNode.pos, curveT);
+            var pt2 = bezPt(srcNode.pos, cp, tgtNode.pos, Math.min(1, curveT + 0.01));
+            var udx = pt2.x - pt.x, udy = pt2.y - pt.y;
+            var ulen = Math.sqrt(udx * udx + udy * udy) || 1;
+            udx /= ulen; udy /= ulen;
+            var unx = -udy, uny = udx;
+
+            var centered = count <= 1 ? 0 : ((ui / (count - 1)) * 2 - 1);
+            var jitter = hashMix(G.seed, f.srcId, f.tgtId, ui);
+            var offsetL = centered * swarmWidth + (jitter - 0.5) * 1.6;
+            var fade = Math.min(1, curveT * 5) * Math.min(1, (1 - curveT) * 5);
+            var sx = pt.x + unx * offsetL * fade;
+            var sy = pt.y + uny * offsetL * fade;
             var localFlicker = 0.5 + 0.5 * Math.sin(phase + ui * 0.33);
-            drawRocketShape(ctx, sx, sy, dirX, dirY, col, localFlicker, 0.82, 0.76);
+            var alpha = clamp(0.88 - ui * 0.0025, 0.35, 0.88);
+            drawRocketShape(ctx, sx, sy, udx, udy, col, localFlicker, alpha, 0.76);
         }
     }
 }
