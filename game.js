@@ -662,16 +662,21 @@ function dispatch(owner, srcIds, tgtId, pct) {
         if (cnt <= 0) continue;
         src.units = send.newSrcUnits;
         didSend = true;
-        var swarmWidth = Math.min(20, 4 + Math.log(cnt + 1) * 6);
         var hasWormholeLink = isLinkedWormhole(src.id, tgtId);
         var curv = hasWormholeLink ? 0.05 : BEZ_CURV;
         var cp = bezCP(src.pos, tgt.pos, curv);
+        var routeQueue = 0;
+        for (var fi = 0; fi < G.fleets.length; fi++) {
+            var qf = G.fleets[fi];
+            if (!qf.active) continue;
+            if (qf.owner === owner && qf.srcId === src.id && qf.tgtId === tgtId) routeQueue++;
+        }
+        var launchDelay = Math.min(0.28, routeQueue * 0.03);
         var f = acquireFleet(); f.active = true; f.owner = owner; f.count = cnt; f.srcId = srcIds[si]; f.tgtId = tgtId;
-        var jitter = hashMix(G.seed, src.id, tgtId, G.fleetSerial++);
-        f.t = 0;
+        f.t = -launchDelay;
         f.speed = FLEET_SPEED;
-        f.offsetL = (jitter - 0.5) * swarmWidth;
-        f.spdVar = 0.98 + (jitter - 0.5) * 0.04;
+        f.offsetL = 0;
+        f.spdVar = 1;
         f.routeSpeedMult = srcType.speed * (hasWormholeLink ? WORMHOLE_SPEED_MULT : 1);
         f.cpx = cp.x; f.cpy = cp.y; f.arcLen = bezLen(src.pos, cp, tgt.pos);
         f.launchT = clamp((src.radius + 2) / Math.max(f.arcLen, 1), 0, 0.12);
