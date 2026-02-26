@@ -1392,7 +1392,7 @@ function drawTurretStation(ctx, n, col, tick) {
 
 function drawRocketShape(ctx, x, y, dirX, dirY, col, flicker, alpha, scale) {
     var nX = -dirY, nY = dirX;
-    scale = scale || 1;
+    scale = (scale || 1) * 1.5;
     alpha = alpha === undefined ? 1 : alpha;
 
     var flameLen = (3 + flicker * 2) * scale;
