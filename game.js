@@ -16,7 +16,7 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     COLORS_BG = '#080c15', COL_NEUTRAL = '#5a6272', COL_FOG = '#2e3340',
     COL_GRID = 'rgba(255,255,255,0.025)', COL_GLOW = 'rgba(255,255,255,0.35)',
     PLAYER_COLORS = ['#4a8eff', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'],
-    TRAIL_LEN = 8, MAX_ORBITERS = 72, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 3, ORBIT_MAX_RINGS = 5,
+    TRAIL_LEN = 12, MAX_ORBITERS = 72, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 3, ORBIT_MAX_RINGS = 5,
     NODE_LEVEL_MAX = 3,
     DDA_MAX_BOOST = 0.2,
     WORMHOLE_SPEED_MULT = 1.75,
@@ -1157,6 +1157,87 @@ function drawPlanetTypeVisual(ctx, n, tdef, _col, tick) {
     ctx.restore();
 }
 
+function drawFleetRocket(ctx, f, col, tick) {
+    var trail = f.trail || [];
+    var tl = trail.length;
+    if (tl > 0) {
+        var prev = trail[0];
+        for (var i = 1; i < tl; i++) {
+            var curr = trail[i];
+            var t = i / tl;
+            ctx.beginPath();
+            ctx.moveTo(prev.x, prev.y);
+            ctx.lineTo(curr.x, curr.y);
+            ctx.strokeStyle = hexToRgba(col, 0.04 + t * 0.18);
+            ctx.lineWidth = 0.6 + t * 1.6;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+            prev = curr;
+        }
+        ctx.beginPath();
+        ctx.moveTo(prev.x, prev.y);
+        ctx.lineTo(f.x, f.y);
+        ctx.strokeStyle = hexToRgba(col, 0.28);
+        ctx.lineWidth = 2.3;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+    }
+
+    var dirX = 1, dirY = 0;
+    if (tl > 0) {
+        var from = trail[tl - 1];
+        dirX = f.x - from.x;
+        dirY = f.y - from.y;
+    } else {
+        var src = G.nodes[f.srcId], tgt = G.nodes[f.tgtId];
+        if (src && tgt) { dirX = tgt.pos.x - src.pos.x; dirY = tgt.pos.y - src.pos.y; }
+    }
+    var dLen = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
+    dirX /= dLen; dirY /= dLen;
+    var nX = -dirY, nY = dirX;
+
+    var phase = tick * 0.28 + f.srcId * 0.9 + f.tgtId * 0.6 + f.offsetL * 0.08;
+    var flicker = 0.5 + 0.5 * Math.sin(phase);
+    var flameLen = 3 + flicker * 2;
+    var flameWidth = 0.9 + flicker * 0.6;
+    var bx = f.x - dirX * flameLen, by = f.y - dirY * flameLen;
+
+    ctx.beginPath();
+    ctx.moveTo(f.x - dirX * 0.4 + nX * flameWidth, f.y - dirY * 0.4 + nY * flameWidth);
+    ctx.lineTo(bx, by);
+    ctx.lineTo(f.x - dirX * 0.4 - nX * flameWidth, f.y - dirY * 0.4 - nY * flameWidth);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,145,70,' + (0.22 + flicker * 0.22) + ')';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(bx, by, 1.1 + flicker * 0.9, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,210,130,' + (0.18 + flicker * 0.24) + ')';
+    ctx.fill();
+
+    var noseX = f.x + dirX * 1.8, noseY = f.y + dirY * 1.8;
+    var leftX = f.x - dirX * 1.35 + nX * 1.15, leftY = f.y - dirY * 1.35 + nY * 1.15;
+    var rightX = f.x - dirX * 1.35 - nX * 1.15, rightY = f.y - dirY * 1.35 - nY * 1.15;
+
+    ctx.beginPath();
+    ctx.arc(f.x, f.y, 4.3, 0, Math.PI * 2);
+    ctx.fillStyle = hexToRgba(col, 0.2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(noseX, noseY);
+    ctx.lineTo(leftX, leftY);
+    ctx.lineTo(rightX, rightY);
+    ctx.closePath();
+    ctx.fillStyle = col;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(noseX, noseY, 0.7, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fill();
+}
+
 function render(ctx, cv, tick) {
     ctx.fillStyle = COLORS_BG; ctx.fillRect(0, 0, cv.width, cv.height);
     ctx.save(); ctx.translate(cv.width / 2, cv.height / 2); ctx.scale(G.cam.zoom, G.cam.zoom); ctx.translate(-G.cam.x, -G.cam.y);
@@ -1195,7 +1276,7 @@ function render(ctx, cv, tick) {
         if (G.tune.fogEnabled && f.owner !== G.human && !fleetVis(f, G.human, G.nodes)) continue;
         if (Math.abs(f.x - G.cam.x) > fhw || Math.abs(f.y - G.cam.y) > fhh) continue;
         var col = G.players[f.owner] ? G.players[f.owner].color : COL_NEUTRAL;
-        ctx.beginPath(); ctx.arc(f.x, f.y, 2, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+        drawFleetRocket(ctx, f, col, tick);
     }
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ NODES Ã¢â€â‚¬Ã¢â€â‚¬
