@@ -16,7 +16,7 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     COLORS_BG = '#080c15', COL_NEUTRAL = '#5a6272', COL_FOG = '#2e3340',
     COL_GRID = 'rgba(255,255,255,0.025)', COL_GLOW = 'rgba(255,255,255,0.35)',
     PLAYER_COLORS = ['#4a8eff', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'],
-    TRAIL_LEN = 8, MAX_ORBITERS = 40, ORBIT_SPD = 0.02,
+    TRAIL_LEN = 8, MAX_ORBITERS = 72, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 3, ORBIT_MAX_RINGS = 5,
     NODE_LEVEL_MAX = 3,
     DDA_MAX_BOOST = 0.2,
     WORMHOLE_SPEED_MULT = 1.75,
@@ -26,8 +26,11 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     ISOLATED_PROD_PENALTY = 0.6,
     DEFENSE_PROD_PENALTY = 0.75,
     DEFENSE_BONUS = 1.25,
-    ASSIM_BASE_RATE = 0.012,
-    ASSIM_UNIT_BONUS = 0.004;
+    ASSIM_BASE_RATE = 0.0012,
+    ASSIM_UNIT_BONUS = 0.00014,
+    ASSIM_GARRISON_FLOOR = 0.35,
+    ASSIM_LEVEL_RESIST = 0.35,
+    ASSIM_LOCK_TICKS = 180;
 
 var NODE_TYPE_DEFS = {
     core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#8db3ff' },
@@ -239,6 +242,11 @@ function nodeCapacity(node) {
     var td = nodeTypeOf(node);
     return Math.floor(MAX_UNITS * td.cap * nodeLevelCapMult(node));
 }
+function isNodeAssimilated(node) {
+    if (!node) return false;
+    if ((node.assimilationLock || 0) > 0) return false;
+    return node.assimilationProgress === undefined || node.assimilationProgress >= 1;
+}
 function upgradeCost(node) {
     return Math.floor(18 + node.radius * 0.85 + (node.level - 1) * 14);
 }
@@ -270,12 +278,12 @@ function spawnAnchors(playerCount) {
 }
 function getPlayerCapital(pi) {
     var cap = G.playerCapital[pi];
-    if (cap !== undefined && G.nodes[cap] && G.nodes[cap].owner === pi) return cap;
+    if (cap !== undefined && G.nodes[cap] && G.nodes[cap].owner === pi && isNodeAssimilated(G.nodes[cap])) return cap;
     var corners = spawnAnchors(G.players.length);
     var c = corners[pi % corners.length], best = null, bd = Infinity;
     for (var i = 0; i < G.nodes.length; i++) {
         var n = G.nodes[i];
-        if (n.owner !== pi) continue;
+        if (n.owner !== pi || !isNodeAssimilated(n)) continue;
         var d = dist(n.pos, c);
         if (d < bd) { bd = d; best = n.id; }
     }
@@ -291,10 +299,10 @@ function computeSupplyConnected(pi) {
         changed = false;
         for (var i = 0; i < G.nodes.length; i++) {
             var n = G.nodes[i];
-            if (n.owner !== pi || connected.has(n.id)) continue;
+            if (n.owner !== pi || connected.has(n.id) || !isNodeAssimilated(n)) continue;
             for (var j = 0; j < G.nodes.length; j++) {
                 var o = G.nodes[j];
-                if (o.owner !== pi || !connected.has(o.id)) continue;
+                if (o.owner !== pi || !connected.has(o.id) || !isNodeAssimilated(o)) continue;
                 if (dist(n.pos, o.pos) <= SUPPLY_DIST) { connected.add(n.id); changed = true; break; }
             }
         }
@@ -458,6 +466,7 @@ function genMap(nc) {
         if (best) {
             best.owner = p;
             best.assimilationProgress = 1;
+            best.assimilationLock = 0;
             best.kind = 'core';
             best.level = 2;
             best.maxUnits = nodeCapacity(best);
@@ -487,16 +496,16 @@ function genMap(nc) {
 // â”€â”€ DISPATCH â”€â”€
 function dispatch(owner, srcIds, tgtId, pct) {
     pct = clamp(typeof pct === 'number' ? pct : 0.5, 0.05, 1);
-    if (owner === G.human) G.stats.fleetsSent++;
-    if (owner === G.human && typeof AudioFX !== 'undefined') AudioFX.send();
     var tgt = G.nodes[tgtId]; if (!tgt) return;
+    var didSend = false;
     for (var si = 0; si < srcIds.length; si++) {
-        var src = G.nodes[srcIds[si]]; if (!src || src.owner !== owner) continue;
+        var src = G.nodes[srcIds[si]]; if (!src || src.owner !== owner || !isNodeAssimilated(src)) continue;
         var srcType = nodeTypeOf(src);
         var cnt = Math.max(1, Math.floor(src.units * pct * srcType.flow));
         cnt = Math.min(cnt, Math.floor(src.units) - 1);
         if (cnt <= 0 || src.units <= 1) continue;
         src.units -= cnt;
+        didSend = true;
         var spacing = 0.012;
         var swarmWidth = Math.min(20, 6 + cnt * 0.35);
         var hasWormholeLink = isLinkedWormhole(src.id, tgtId);
@@ -515,6 +524,10 @@ function dispatch(owner, srcIds, tgtId, pct) {
             f.trail = [];
             G.fleets.push(f);
         }
+    }
+    if (didSend && owner === G.human) {
+        G.stats.fleetsSent++;
+        if (typeof AudioFX !== 'undefined') AudioFX.send();
     }
 }
 
@@ -541,6 +554,7 @@ function combat(fleet, tgt) {
         tgt.units = Math.max(1, Math.floor(atk - def));
         tgt.defense = false;
         tgt.assimilationProgress = 0;
+        tgt.assimilationLock = ASSIM_LOCK_TICKS;
         G.flows = G.flows.filter(function (fl) { return !(fl.tgtId === tgt.id && fl.owner !== fleet.owner); });
         spawnParticles(tgt.pos.x, tgt.pos.y, 12, col, true);
         if (G.human === fleet.owner) { G.stats.nodesCaptured++; if (typeof AudioFX !== 'undefined') AudioFX.capture(); }
@@ -559,20 +573,20 @@ function addFlow(owner, srcId, tgtId) {
     if (!isFinite(srcId) || !isFinite(tgtId) || srcId === tgtId) return;
     var srcNode = G.nodes[srcId], tgtNode = G.nodes[tgtId];
     if (!srcNode || !tgtNode) return;
-    if (srcNode.owner !== owner) return;
+    if (srcNode.owner !== owner || !isNodeAssimilated(srcNode)) return;
     for (var i = 0; i < G.flows.length; i++) { var f = G.flows[i]; if (f.srcId === srcId && f.tgtId === tgtId && f.owner === owner) { f.active = !f.active; return; } }
     G.flows.push({ id: G.flowId++, srcId: srcId, tgtId: tgtId, owner: owner, tickAcc: 0, active: true });
 }
 function rmFlow(owner, srcId, tgtId) { G.flows = G.flows.filter(function (f) { return !(f.srcId === srcId && f.tgtId === tgtId && f.owner === owner); }); }
 function toggleDefense(owner, nodeId) {
     var node = G.nodes[nodeId];
-    if (!node || node.owner !== owner) return false;
+    if (!node || node.owner !== owner || !isNodeAssimilated(node)) return false;
     node.defense = !node.defense;
     return true;
 }
 function upgradeNode(owner, nodeId) {
     var node = G.nodes[nodeId];
-    if (!node || node.owner !== owner) return false;
+    if (!node || node.owner !== owner || !isNodeAssimilated(node)) return false;
     if (node.level >= NODE_LEVEL_MAX) return false;
     var cost = upgradeCost(node);
     if (node.units < cost) return false;
@@ -587,7 +601,7 @@ function upgradeNode(owner, nodeId) {
 // â”€â”€ AI â”€â”€
 function aiDecide(pi) {
     var cmds = [], own = [];
-    for (var i = 0; i < G.nodes.length; i++) if (G.nodes[i].owner === pi) own.push(G.nodes[i]);
+    for (var i = 0; i < G.nodes.length; i++) if (G.nodes[i].owner === pi && isNodeAssimilated(G.nodes[i])) own.push(G.nodes[i]);
     if (!own.length) return cmds;
 
     var profile = G.aiProfiles[pi] || AI_ARCHETYPES[1];
@@ -787,14 +801,22 @@ function gameTick() {
     for (var sp = 0; sp < G.players.length; sp++) supplyByPlayer[sp] = computeSupplyConnected(sp);
     for (var i = 0; i < G.nodes.length; i++) {
         var n = G.nodes[i]; if (n.owner < 0) continue;
+        var td = nodeTypeOf(n);
         n.maxUnits = nodeCapacity(n);
         if (n.units > n.maxUnits) n.units = n.maxUnits;
+        if ((n.assimilationLock || 0) > 0) n.assimilationLock = Math.max(0, n.assimilationLock - 1);
         if (n.assimilationProgress !== undefined && n.assimilationProgress < 1) {
-            n.assimilationProgress = Math.min(1, (n.assimilationProgress || 0) + ASSIM_BASE_RATE + Math.floor(n.units) * ASSIM_UNIT_BONUS);
+            if ((n.assimilationLock || 0) <= 0) {
+                var garrisonRatio = clamp(n.units / Math.max(1, n.maxUnits), 0, 1);
+                var garrisonFactor = ASSIM_GARRISON_FLOOR + (1 - ASSIM_GARRISON_FLOOR) * garrisonRatio;
+                var levelResist = 1 + Math.max(0, n.level - 1) * ASSIM_LEVEL_RESIST;
+                var typeResist = 0.85 + td.def * 0.4;
+                var assimRate = (ASSIM_BASE_RATE + Math.floor(n.units) * ASSIM_UNIT_BONUS) * garrisonFactor / (levelResist * typeResist);
+                n.assimilationProgress = Math.min(1, (n.assimilationProgress || 0) + assimRate);
+            }
         }
-        var assimilated = n.assimilationProgress === undefined || n.assimilationProgress >= 1;
-        if (!assimilated) continue;
-        var td = nodeTypeOf(n);
+        var assimilated = isNodeAssimilated(n);
+        if (!assimilated) { n.supplied = false; continue; }
         var ownerAssist = 0;
         if (n.owner !== G.human && G.tune.aiAssist) {
             var delta = (power[G.human] || 0) - (power[n.owner] || 0);
@@ -1173,43 +1195,87 @@ function render(ctx, cv, tick) {
             ctx.strokeStyle = 'rgba(255,215,0,0.3)'; ctx.lineWidth = 1; ctx.stroke();
         }
         if ((vis || n.owner === G.human) && n.owner >= 0 && n.assimilationProgress !== undefined && n.assimilationProgress < 1) {
-            var ringR = n.radius + 4, prog = n.assimilationProgress;
+            var ringR = n.radius + 7;
+            var lockPhase = (n.assimilationLock || 0) > 0 ? (1 - clamp((n.assimilationLock || 0) / ASSIM_LOCK_TICKS, 0, 1)) : 1;
+            var assimPhase = clamp(n.assimilationProgress || 0, 0, 1);
+            var prog = clamp(lockPhase * 0.5 + assimPhase * 0.5, 0, 1);
+            var pulse = 0.8 + Math.sin(tick * 0.09 + n.id * 0.7) * 0.2;
+
+            // Base assimilation circle around the planet.
+            ctx.beginPath();
+            ctx.arc(n.pos.x, n.pos.y, ringR, 0, Math.PI * 2, false);
+            ctx.strokeStyle = hexToRgba(col, 0.16 + 0.12 * pulse);
+            ctx.lineWidth = 1.6;
+            ctx.stroke();
+
+            // Rotating dashed ring makes "ongoing process" readable at a glance.
+            ctx.save();
+            ctx.setLineDash([5, 4]);
+            ctx.lineDashOffset = -tick * 0.7;
+            ctx.beginPath();
+            ctx.arc(n.pos.x, n.pos.y, ringR, 0, Math.PI * 2, false);
+            ctx.strokeStyle = hexToRgba(col, 0.36);
+            ctx.lineWidth = 1.1;
+            ctx.stroke();
+            ctx.restore();
+
             ctx.beginPath();
             ctx.arc(n.pos.x, n.pos.y, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * prog, false);
-            ctx.strokeStyle = hexToRgba(col, 0.6); ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.stroke();
+            ctx.strokeStyle = hexToRgba(col, 0.82);
+            ctx.lineWidth = 2.8;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+
+            var endA = -Math.PI / 2 + Math.PI * 2 * prog;
+            var ex = n.pos.x + Math.cos(endA) * ringR;
+            var ey = n.pos.y + Math.sin(endA) * ringR;
+            ctx.beginPath();
+            ctx.arc(ex, ey, 2, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,255,255,0.75)';
+            ctx.fill();
         }
-        var hasOrbiters = false;
+        var hasOrbiters = (vis || n.owner === G.human) && n.owner >= 0;
         var orbData = [];
         if (hasOrbiters) {
-            var uCount = Math.floor(n.units);
-            var orbiters = Math.min(uCount, MAX_ORBITERS);
-            // Fixed 3 rings, fill sequentially to avoid redistribution jitter
-            var GOLDEN = 2.39996323; // golden angle in radians
-            var ringCap = [14, 14, 12]; // fixed capacity per ring
-            var assigned = 0;
-            for (var ring = 0; ring < 3; ring++) {
-                var count = Math.min(ringCap[ring], orbiters - assigned);
-                if (count <= 0) break;
-                var rr = n.radius + 8 + ring * 8;
-                var rrY = rr * (0.45 + ring * 0.1);
-                var tilt = ring * 0.7 + n.id * 0.5 + 0.3;
-                var baseSpeed = ORBIT_SPD * (1.2 - ring * 0.15) * (ring % 2 === 0 ? 1 : -1);
-                var cosT = Math.cos(tilt), sinT = Math.sin(tilt);
-                var rd = { rr: rr, rrY: rrY, tilt: tilt, cosT: cosT, sinT: sinT, baseSpeed: baseSpeed, count: count, ring: ring, dots: [] };
-                for (var oi = 0; oi < count; oi++) {
-                    // Golden angle: each new dot gets a stable unique position
-                    var angle = tick * baseSpeed + oi * GOLDEN + ring * 1.5;
-                    var wobble = Math.sin(tick * 0.06 + oi * 2.3 + ring) * 1.5;
-                    var lx = Math.cos(angle) * (rr + wobble);
-                    var ly = Math.sin(angle) * (rrY + wobble * 0.5);
-                    var ox = n.pos.x + lx * cosT - ly * sinT;
-                    var oy = n.pos.y + lx * sinT + ly * cosT;
-                    var dotR = 1.5 + ring * 0.3 + (oi % 5 === 0 ? 0.7 : 0);
-                    var behind = Math.sin(angle) < 0;
-                    rd.dots.push({ ox: ox, oy: oy, dotR: dotR, behind: behind, angle: angle, oi: oi });
+            var uCount = Math.max(0, Math.floor(n.units));
+            var orbiters = Math.min(MAX_ORBITERS, Math.round(uCount / ORBIT_UNIT_STEP));
+            if (uCount > 0 && orbiters < 1) orbiters = 1;
+            hasOrbiters = orbiters > 0;
+            if (hasOrbiters) {
+                // Stable orbital distribution: density scales with unit count.
+                var GOLDEN = 2.39996323;
+                var assigned = 0;
+                var basePhase = n.id * 0.113;
+                var ringStep = 6.8;
+                var ringStart = n.radius + 7.5;
+                var minSpacing = 7.6;
+                for (var ring = 0; ring < ORBIT_MAX_RINGS && assigned < orbiters; ring++) {
+                    var rr = ringStart + ring * ringStep;
+                    var rrY = rr * (0.56 + Math.min(0.26, ring * 0.08));
+                    var ringCap = Math.max(8, Math.floor((Math.PI * 2 * rr) / minSpacing));
+                    var count = Math.min(ringCap, orbiters - assigned);
+                    if (count <= 0) break;
+                    var tilt = (n.id * 0.73 + ring * 1.17 + 0.21) % (Math.PI * 2);
+                    // Outer rings move slower for a more natural orbit feel.
+                    var speedMag = ORBIT_SPD * Math.pow((n.radius + 9) / rr, 0.5) * (1 + ring * 0.04);
+                    var baseSpeed = (ring % 2 === 0 ? 1 : -1) * speedMag;
+                    var cosT = Math.cos(tilt), sinT = Math.sin(tilt);
+                    var rd = { rr: rr, rrY: rrY, tilt: tilt, cosT: cosT, sinT: sinT, baseSpeed: baseSpeed, count: count, ring: ring, dots: [] };
+                    for (var oi = 0; oi < count; oi++) {
+                        var phase = basePhase + oi * GOLDEN + ring * 1.37;
+                        var angle = tick * baseSpeed + phase;
+                        var wobble = Math.sin(tick * 0.045 + oi * 1.7 + ring * 0.9) * 0.9;
+                        var lx = Math.cos(angle) * (rr + wobble);
+                        var ly = Math.sin(angle) * (rrY + wobble * 0.35);
+                        var ox = n.pos.x + lx * cosT - ly * sinT;
+                        var oy = n.pos.y + lx * sinT + ly * cosT;
+                        var dotR = Math.max(1.2, 1.9 - ring * 0.17 + (oi % 9 === 0 ? 0.22 : 0));
+                        var behind = Math.sin(angle) < 0;
+                        rd.dots.push({ ox: ox, oy: oy, dotR: dotR, behind: behind, angle: angle, oi: oi });
+                    }
+                    orbData.push(rd);
+                    assigned += count;
                 }
-                orbData.push(rd);
-                assigned += count;
             }
         }
 
@@ -1980,6 +2046,14 @@ cv.addEventListener('mousedown', function (e) {
         e.preventDefault(); return;
     }
     var cn = hitNode(w); inp.shift = e.shiftKey;
+    if (cn && inp.sel.size > 0 && !e.shiftKey && cn.owner === G.human && !isNodeAssimilated(cn)) {
+        var reinforceData = { sources: Array.from(inp.sel), tgtId: cn.id, pct: inp.sendPct / 100 };
+        if (!issueOnlineCommand('send', reinforceData)) {
+            applyPlayerCommand(G.human, 'send', reinforceData);
+            recEvt('send', reinforceData);
+        }
+        return;
+    }
     if (cn && cn.owner === G.human) { if (!e.shiftKey) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); } cn.selected = true; inp.sel.add(cn.id); if (typeof AudioFX !== 'undefined') AudioFX.select(); recEvt('select', { ids: Array.from(inp.sel), append: e.shiftKey }); }
     else if (cn && inp.sel.size > 0) {
         var srcs = Array.from(inp.sel), pct = inp.sendPct / 100;
@@ -2037,7 +2111,11 @@ cv.addEventListener('touchstart', function (e) {
         var pos = { x: (e.touches[0].clientX - r.left) * (cv.width / r.width), y: (e.touches[0].clientY - r.top) * (cv.height / r.height) };
         inp.touchStart = pos;
         var w = s2w(pos.x, pos.y); var cn = hitNode(w);
-        if (cn && cn.owner === G.human) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); cn.selected = true; inp.sel.add(cn.id); if (typeof AudioFX !== 'undefined') AudioFX.select(); }
+        if (cn && inp.sel.size > 0 && cn.owner === G.human && !isNodeAssimilated(cn)) {
+            var reinforceData = { sources: Array.from(inp.sel), tgtId: cn.id, pct: inp.sendPct / 100 };
+            if (!issueOnlineCommand('send', reinforceData)) { applyPlayerCommand(G.human, 'send', reinforceData); recEvt('send', reinforceData); }
+        }
+        else if (cn && cn.owner === G.human) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); cn.selected = true; inp.sel.add(cn.id); if (typeof AudioFX !== 'undefined') AudioFX.select(); }
         else if (cn && inp.sel.size > 0) {
             var sendData = { sources: Array.from(inp.sel), tgtId: cn.id, pct: inp.sendPct / 100 };
             if (!issueOnlineCommand('send', sendData)) { applyPlayerCommand(G.human, 'send', sendData); recEvt('send', sendData); }
