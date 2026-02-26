@@ -848,7 +848,9 @@
 
         /* How to Play Modal Styles */
         .tutorial-modal {
-            max-width: 600px;
+            max-width: 700px;
+            max-height: min(88vh, 820px);
+            overflow-y: auto;
             text-align: left;
             padding: 30px;
         }
@@ -1037,70 +1039,98 @@
     </div>
     <div id="howToPlayOverlay" class="overlay hidden">
         <div class="menu-panel tutorial-modal">
-            <h2>Stellar Conquest Rehberi</h2>
+            <h2>Stellar Conquest - Nasil Oynanir</h2>
 
             <div class="tutorial-section">
-                <h3>Temel Kontroller</h3>
+                <h3>1) Modlar ve Baslangic</h3>
                 <ul>
-                    <li><b>Sol TÄ±k:</b> Kendi gezegenini seÃ§. (Ã‡oklu seÃ§im iÃ§in <b>Shift + Sol TÄ±k</b>)</li>
-                    <li><b>SÃ¼rÃ¼kle (BoÅŸlukta):</b> Kutu iÃ§ine aldÄ±ÄŸÄ±n tÃ¼m gezegenlerini seÃ§.</li>
-                    <li><b>SaÄŸ TÄ±k (Kendi gezegenin seÃ§iliyken, hedefe):</b> SÃ¼rekli asker akÄ±ÅŸÄ± (Flow) baÅŸlatÄ±r.</li>
-                    <li><b>DÃ¼ÅŸman/TarafsÄ±z Gezegene Sol TÄ±k (SeÃ§iliysen):</b> SeÃ§ili gezegeninden hedefe filonu
-                        (belirtilen yÃ¼zdeyle) saldÄ±rÄ±ya/desteÄŸe gÃ¶nder.</li>
-                    <li><b>U TuÅŸu:</b> SeÃ§ili gezegenlerine seviye atlatÄ±r (Upgrade). Yeterli asker feda edilir.</li>
-                    <li><b>SaÄŸ TÄ±k (kendi gezegen):</b> Savunma modunu ac/kapat (uretim -%25, savunma +%25). Seciliyse hepsi degisir.</li>
-                    <li><b>SayÄ± TuÅŸlarÄ± (1-0):</b> Filo gÃ¶nderim yÃ¼zdesini %10 ile %100 arasÄ± ayarlar.</li>
+                    <li><b>Tek Oyunculu:</b> Seed, Node ve zorluk secip <b>Oyuna Basla</b>.</li>
+                    <li><b>Senaryo:</b> <b>Senaryoyu Baslat</b> ile bolum menusu acilir. Baloncuktan bolum sec, <b>Bolum Baslat</b> ile gir.</li>
+                    <li><b>Cok Oyunculu:</b> <b>Oda Kur</b> veya koda katil. Maci sadece host <b>Oyunu Baslat (Host)</b> ile baslatir.</li>
                 </ul>
             </div>
 
             <div class="tutorial-section">
-                <h3>Gezegen Siniflari (Node Classes)</h3>
+                <h3>2) Temel Kontroller (PC)</h3>
+                <ul>
+                    <li><b>Sol tik:</b> Kendi gezegenini sec. <b>Shift + sol tik</b> ile coklu secim yap.</li>
+                    <li><b>Bos alanda surukle:</b> Kutu secimi yapar.</li>
+                    <li><b>Ctrl + bos alanda surukle:</b> Secili kaynaklardan hedefe birakinca toplu birlik gonderir.</li>
+                    <li><b>Seciliyken hedefe sol tik:</b> Secili gezegenlerden hedefe, HUD'daki <b>Send %</b> kadar birlik yollar.</li>
+                    <li><b>Kendi gezegenine de birlik yollayabilirsin:</b> Secili grubun icindeyken baska kendi gezegenine sol tikla transfer yap.</li>
+                    <li><b>Sag tik (kendi gezegen):</b> Savunma modunu ac/kapat. Secili grup varsa hepsine uygulanir.</li>
+                    <li><b>Sag tik (dusman veya tarafsiz):</b> Secili kaynaklardan hedefe <b>Flow</b> ac/kapat.</li>
+                    <li><b>Orta tus + surukle:</b> Kamerayi kaydir. <b>Mouse tekeri:</b> Zoom.</li>
+                </ul>
+            </div>
+
+            <div class="tutorial-section">
+                <h3>3) Kisayollar</h3>
+                <ul>
+                    <li><b>1-9, 0:</b> Gonderim yuzdesini %10-%100 arasi degistirir.</li>
+                    <li><b>U:</b> Secili gezegenleri upgrade eder (uygun olanlar).</li>
+                    <li><b>A:</b> Tum kendi gezegenlerini secer.</li>
+                    <li><b>Esc / P:</b> (Tek oyunculu) oyunu duraklatir / devam ettirir.</li>
+                    <li><b>Hiz butonu:</b> Tek oyunculuda 1x/2x/4x dongusu.</li>
+                </ul>
+            </div>
+
+            <div class="tutorial-section">
+                <h3>4) Savas, Uretim ve Asimilasyon</h3>
+                <ul>
+                    <li><b>Fetih sonrasi asimilasyon:</b> Yeni alinan gezegen once kilit surede bekler, sonra tam kontrol asamasina gecer.</li>
+                    <li><b>Asimilasyon hizi birlike bagli:</b> Garnizon ne kadar yuksekse o kadar hizli olur. Birlik gondermek genelde asimilasyonu yavaslatir.</li>
+                    <li><b>Direnc:</b> Yuksek seviye ve dayanikli tipler (ozellikle Bulwark) daha yavas asimile olur.</li>
+                    <li><b>Savunma modu:</b> Savunma gucu artar; uretim cezasi alirsin.</li>
+                    <li><b>Tedarik hatti:</b> Baskente bagli olmayan gezegenler daha dusuk uretim yapar.</li>
+                </ul>
+            </div>
+
+            <div class="tutorial-section">
+                <h3>5) Gezegen Siniflari</h3>
                 <div class="node-types">
                     <div class="node-type-card">
-                        <strong class="color-core">C - Core (Ã‡ekirdek)</strong>
-                        <p>Standart gezegen. Her yÃ¶nÃ¼yle dengelidir. Yeni fethedilen sistemler genelde Core olarak
-                            baÅŸlar.</p>
+                        <strong class="color-core">C - Core</strong>
+                        <p>Dengeli temel gezegen.</p>
                     </div>
                     <div class="node-type-card">
-                        <strong class="color-forge">F - Forge (Ãœretim)</strong>
-                        <p>Asker Ã¼retim hÄ±zÄ± Ã§ok yÃ¼ksek (+%35), ancak savunmasÄ± %10 zayÄ±ftÄ±r. Cephe gerisi iÃ§in ideal.
-                        </p>
+                        <strong class="color-forge">F - Forge</strong>
+                        <p>Uretim yuksek, savunma biraz daha zayif.</p>
                     </div>
                     <div class="node-type-card">
-                        <strong class="color-bulwark">B - Bulwark (Kale)</strong>
-                        <p>MÃ¼thiÅŸ bir savunma avantajÄ± (%45 daha dayanÄ±klÄ±) sunar ancak Ã§ok yavaÅŸ asker Ã¼retir.</p>
+                        <strong class="color-bulwark">B - Bulwark</strong>
+                        <p>Savunmasi cok guclu, uretimi daha yavas.</p>
                     </div>
                     <div class="node-type-card">
-                        <strong class="color-relay">R - Relay (AktarÄ±m)</strong>
-                        <p>Buradan Ã§Ä±kan filolar %35 daha hÄ±zlÄ± seyahat eder. GeniÅŸleme (Flow) iÃ§in kilit noktadÄ±r.</p>
+                        <strong class="color-relay">R - Relay</strong>
+                        <p>Filo hareketi ve akista hiz avantaji verir.</p>
                     </div>
                     <div class="node-type-card">
                         <strong class="color-nexus">N - Nexus</strong>
-                        <p>Hibrit gezegen. Tum yonlerde hafif bonus. Dengeli genisleme icin ideal.</p>
+                        <p>Tum alanlarda dengeli bonuslar sunar.</p>
                     </div>
                 </div>
             </div>
 
             <div class="tutorial-section">
-                <h3>ğŸŒ€ Uzay Anomalileri</h3>
-                <p>Haritada bazen Ã¶zel geÃ§itler veya anormallikler bulunur:</p>
+                <h3>6) Harita Olaylari</h3>
                 <ul>
-                    <li><b>Wormhole (Solucan DeliÄŸi - Ã‡izgili Yollar):</b> Ä°ki Relay noktasÄ± arasÄ±nda aÃ§Ä±lÄ±r. Ä°Ã§inden
-                        geÃ§en filolar <b>%175</b> hÄ±zla menzile ulaÅŸÄ±r.</li>
-                    <li><b>Gravity Sling (YerÃ§ekimi SapanÄ± - Mor Halka):</b> Harita merkezindeki mor alan. Buradan geÃ§en
-                        filolar "sapan etkisiyle" oldukÃ§a hÄ±zlanÄ±r.</li>
+                    <li><b>Wormhole:</b> Bagli iki nokta arasinda filolar cok daha hizli gider (yaklasik 1.75x).</li>
+                    <li><b>Gravity alan:</b> Merkezdeki alandan gecen filolar hiz kazanir (yaklasik 1.35x).</li>
+                    <li><b>Stratejik noktalar:</b> Altin cerceveli gecit planetleri harita kontrolunde cok kritiktir.</li>
                 </ul>
             </div>
 
             <div class="tutorial-section">
-                <h3>Strateji Mekanikleri</h3>
+                <h3>7) HUD ve Bilgi Panelleri</h3>
                 <ul>
-                    <li><b>Tedarik Hatti:</b> Baskentine bagli olmayan gezegenler %40 daha az uretir (kirmizi kesikli cerceve).</li>
-                    <li><b>Stratejik Noktalar:</b> Altin cerceveli gezegenler gecit konumlaridir - onlari kontrol et.</li>
-                    <li><b>Zafer:</b> Tum rakipleri yok et. En son hayatta kalan kazanir.</li>
+                    <li><b>Power paneli (sag):</b> Oyuncularin anlik guc siralamasini gosterir.</li>
+                    <li><b>Tick/Ping:</b> Oyunun temposunu ve online gecikmeyi izleyebilirsin.</li>
+                    <li><b>Minimap:</b> Genel durumu hizli okumak icin kullan.</li>
+                    <li><b>Zafer kosulu:</b> Tum rakipleri haritadan silen son oyuncu kazanir.</li>
                 </ul>
             </div>
-            <button id="closeHowToPlayBtn" class="primary-btn">AnladÄ±m</button>
+            <button id="closeHowToPlayBtn" class="primary-btn">Tamam</button>
         </div>
     </div>
     <div id="pauseOverlay" class="overlay hidden">
