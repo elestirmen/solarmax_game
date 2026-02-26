@@ -499,7 +499,7 @@ function dispatch(owner, srcIds, tgtId, pct) {
     var tgt = G.nodes[tgtId]; if (!tgt) return;
     var didSend = false;
     for (var si = 0; si < srcIds.length; si++) {
-        var src = G.nodes[srcIds[si]]; if (!src || src.owner !== owner || !isNodeAssimilated(src)) continue;
+        var src = G.nodes[srcIds[si]]; if (!src || src.owner !== owner) continue;
         var srcType = nodeTypeOf(src);
         var cnt = Math.max(1, Math.floor(src.units * pct * srcType.flow));
         cnt = Math.min(cnt, Math.floor(src.units) - 1);
@@ -573,7 +573,7 @@ function addFlow(owner, srcId, tgtId) {
     if (!isFinite(srcId) || !isFinite(tgtId) || srcId === tgtId) return;
     var srcNode = G.nodes[srcId], tgtNode = G.nodes[tgtId];
     if (!srcNode || !tgtNode) return;
-    if (srcNode.owner !== owner || !isNodeAssimilated(srcNode)) return;
+    if (srcNode.owner !== owner) return;
     for (var i = 0; i < G.flows.length; i++) { var f = G.flows[i]; if (f.srcId === srcId && f.tgtId === tgtId && f.owner === owner) { f.active = !f.active; return; } }
     G.flows.push({ id: G.flowId++, srcId: srcId, tgtId: tgtId, owner: owner, tickAcc: 0, active: true });
 }
@@ -601,7 +601,7 @@ function upgradeNode(owner, nodeId) {
 // â”€â”€ AI â”€â”€
 function aiDecide(pi) {
     var cmds = [], own = [];
-    for (var i = 0; i < G.nodes.length; i++) if (G.nodes[i].owner === pi && isNodeAssimilated(G.nodes[i])) own.push(G.nodes[i]);
+    for (var i = 0; i < G.nodes.length; i++) if (G.nodes[i].owner === pi) own.push(G.nodes[i]);
     if (!own.length) return cmds;
 
     var profile = G.aiProfiles[pi] || AI_ARCHETYPES[1];
