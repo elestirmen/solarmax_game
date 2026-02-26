@@ -5,6 +5,7 @@
    ============================================================ */
 
 import { computeSendCount } from './assets/sim/dispatch_math.js';
+import { applyTurretDamage } from './assets/sim/turret.js';
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ CONSTANTS Ã¢â€â‚¬Ã¢â€â‚¬
 var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
@@ -32,7 +33,10 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     ASSIM_UNIT_BONUS = 0.00014,
     ASSIM_GARRISON_FLOOR = 0.35,
     ASSIM_LEVEL_RESIST = 0.35,
-    ASSIM_LOCK_TICKS = 180;
+    ASSIM_LOCK_TICKS = 180,
+    TURRET_RANGE = 230,
+    TURRET_DPS = 18,
+    TURRET_MIN_GARRISON = 4;
 
 var NODE_TYPE_DEFS = {
     core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#8db3ff' },
@@ -40,6 +44,7 @@ var NODE_TYPE_DEFS = {
     bulwark: { label: 'Bulwark', prod: 0.75, def: 1.45, cap: 1.25, flow: 0.9, speed: 0.95, color: '#b6c1d9' },
     relay: { label: 'Relay', prod: 0.95, def: 0.95, cap: 0.85, flow: 1.35, speed: 1.35, color: '#7de3ff' },
     nexus: { label: 'Nexus', prod: 1.1, def: 1.1, cap: 1.1, flow: 1.15, speed: 1.1, color: '#c9a0dc' },
+    turret: { label: 'Turret', prod: 0.0, def: 1.65, cap: 0.7, flow: 0.8, speed: 1.0, color: '#8ff0ff' },
 };
 
 var AI_ARCHETYPES = [
@@ -150,7 +155,7 @@ function bezLen(p0, cp, p2) {
 function mkFleet() {
     return {
         active: false, owner: -1, count: 0, srcId: -1, tgtId: -1, t: 0, speed: 0, arcLen: 1, cpx: 0, cpy: 0, x: 0, y: 0,
-        trail: [], offsetL: 0, spdVar: 1, routeSpeedMult: 1
+        trail: [], offsetL: 0, spdVar: 1, routeSpeedMult: 1, dmgAcc: 0
     };
 }  // trail: array of {x,y}, offsetL: perpendicular spread, spdVar: speed variation
 var pool = [];
@@ -345,7 +350,7 @@ function placeWormholeFeature() {
     for (var i = 0; i < G.nodes.length; i++) {
         for (var j = i + 1; j < G.nodes.length; j++) {
             var a = G.nodes[i], b = G.nodes[j];
-            if (a.owner !== -1 || b.owner !== -1) continue;
+            if (a.owner !== -1 || b.owner !== -1 || a.kind === 'turret' || b.kind === 'turret') continue;
             var d = dist(a.pos, b.pos);
             if (d > bestD) { bestD = d; bestA = a.id; bestB = b.id; }
         }
@@ -365,7 +370,7 @@ function placeGravityFeature() {
     var bestNode = null, bestCenterDist = Infinity;
     for (var n = 0; n < G.nodes.length; n++) {
         var node = G.nodes[n];
-        if (node.owner !== -1) continue;
+        if (node.owner !== -1 || node.kind === 'turret') continue;
         var cd = dist(node.pos, center);
         if (cd < bestCenterDist) { bestCenterDist = cd; bestNode = node; }
     }
@@ -525,6 +530,24 @@ function genMap(nc) {
             if (neighborCount >= 3) { nd.strategic = true; G.strategicNodes.push(nd.id); }
         }
     }
+
+    var neutralNodes = [];
+    for (var ni2 = 0; ni2 < G.nodes.length; ni2++) if (G.nodes[ni2].owner === -1) neutralNodes.push(G.nodes[ni2]);
+    neutralNodes.sort(function (a, b) {
+        var ad = Math.abs(a.pos.x - center.x), bd = Math.abs(b.pos.x - center.x);
+        if (ad !== bd) return ad - bd;
+        return a.id - b.id;
+    });
+    var turretCount = Math.min(neutralNodes.length, G.rng.nextInt(1, 3));
+    for (var ti = 0; ti < turretCount; ti++) {
+        var tn = neutralNodes[ti];
+        tn.kind = 'turret';
+        tn.level = 1;
+        tn.maxUnits = nodeCapacity(tn);
+        tn.units = Math.min(tn.maxUnits - 1, G.rng.nextInt(8, 14));
+        tn.assimilationProgress = 1;
+        tn.assimilationLock = 0;
+    }
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ DISPATCH Ã¢â€â‚¬Ã¢â€â‚¬
@@ -553,6 +576,7 @@ function dispatch(owner, srcIds, tgtId, pct) {
         f.routeSpeedMult = srcType.speed * (hasWormholeLink ? WORMHOLE_SPEED_MULT : 1);
         f.cpx = cp.x; f.cpy = cp.y; f.arcLen = bezLen(src.pos, cp, tgt.pos);
         f.trail = [];
+        f.dmgAcc = 0;
         G.fleets.push(f);
     }
     if (didSend && owner === G.human) {
@@ -860,9 +884,19 @@ function gameTick() {
         n.prodAcc += BASE_PROD * G.tune.prod * (n.radius / NODE_RMAX) * td.prod * nodeLevelProdMult(n) * (1 + ownerAssist) * diffMult * supplyMult * defenseMult;
         if (n.prodAcc >= 1) { var a = Math.floor(n.prodAcc); n.units = Math.min(n.maxUnits, n.units + a); n.prodAcc -= a; }
     }
+    applyTurretDamage({
+        nodes: G.nodes,
+        fleets: G.fleets,
+        dt: TICK_DT,
+        range: TURRET_RANGE,
+        dps: TURRET_DPS,
+        minGarrison: TURRET_MIN_GARRISON,
+    });
+
     // fleet movement with trail
     for (var i = G.fleets.length - 1; i >= 0; i--) {
-        var f = G.fleets[i]; if (!f.active) continue;
+        var f = G.fleets[i];
+        if (!f.active) { G.fleets.splice(i, 1); continue; }
         var speedMult = f.routeSpeedMult || 1;
         if (G.mapFeature.type === 'gravity') {
             var gdx = f.x - G.mapFeature.x, gdy = f.y - G.mapFeature.y;
@@ -949,6 +983,7 @@ function nodeTypeLetter(kind) {
     if (kind === 'bulwark') return 'B';
     if (kind === 'relay') return 'R';
     if (kind === 'nexus') return 'N';
+    if (kind === 'turret') return 'T';
     return 'C';
 }
 
@@ -1155,6 +1190,55 @@ function drawPlanetTypeVisual(ctx, n, tdef, _col, tick) {
     ctx.restore();
 }
 
+function drawTurretStation(ctx, n, col, tick) {
+    var cx = n.pos.x, cy = n.pos.y, r = n.radius;
+    var pulse = 0.75 + Math.sin(tick * 0.08 + n.id * 0.5) * 0.25;
+    var shellColor = col && col.indexOf('#') === 0 ? col : '#8ff0ff';
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 8, 0, Math.PI * 2);
+    var glow = ctx.createRadialGradient(cx, cy, r * 0.35, cx, cy, r + 10);
+    glow.addColorStop(0, hexToRgba(shellColor, 0.05));
+    glow.addColorStop(0.8, hexToRgba(shellColor, 0.18 * pulse));
+    glow.addColorStop(1, hexToRgba(shellColor, 0));
+    ctx.fillStyle = glow;
+    ctx.fill();
+
+    var sides = 6;
+    var innerR = Math.max(5, r * 0.45);
+    var outerR = Math.max(8, r * 0.78);
+    var baseA = tick * 0.006 + n.id * 0.3;
+
+    ctx.beginPath();
+    for (var i = 0; i < sides; i++) {
+        var a = baseA + (Math.PI * 2 * i) / sides;
+        var rr = i % 2 === 0 ? outerR : innerR;
+        var px = cx + Math.cos(a) * rr;
+        var py = cy + Math.sin(a) * rr;
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fillStyle = hexToRgba(shellColor, 0.35);
+    ctx.fill();
+    ctx.strokeStyle = hexToRgba(shellColor, 0.92);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, Math.max(3, r * 0.22), 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, outerR + 2, 0, Math.PI * 2);
+    ctx.strokeStyle = hexToRgba(shellColor, 0.35);
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+}
+
 function drawFleetRocket(ctx, f, col, tick) {
     var count = Math.max(1, Number(f.count) || 1);
     var logCount = Math.log(count + 1);
@@ -1269,6 +1353,21 @@ function render(ctx, cv, tick) {
 
     drawMapFeature(ctx, tick);
 
+    for (var tr = 0; tr < G.nodes.length; tr++) {
+        var turretNode = G.nodes[tr];
+        if (turretNode.kind !== 'turret') continue;
+        var turretVisible = !G.tune.fogEnabled || turretNode.owner === G.human || !!G.fog.vis[G.human][turretNode.id];
+        if (!turretVisible) continue;
+        var turretCol = turretNode.owner >= 0 && G.players[turretNode.owner] ? G.players[turretNode.owner].color : NODE_TYPE_DEFS.turret.color;
+        ctx.beginPath();
+        ctx.arc(turretNode.pos.x, turretNode.pos.y, TURRET_RANGE, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba(turretCol, 0.16);
+        ctx.setLineDash([5, 4]);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
+
     // Ã¢â€â‚¬Ã¢â€â‚¬ FLOW LINKS Ã¢â€â‚¬Ã¢â€â‚¬
     for (var i = 0; i < G.flows.length; i++) {
         var fl = G.flows[i]; if (!fl.active) continue;
@@ -1358,7 +1457,7 @@ function render(ctx, cv, tick) {
             ctx.fillStyle = 'rgba(255,255,255,0.75)';
             ctx.fill();
         }
-        var hasOrbiters = (vis || n.owner === G.human) && n.owner >= 0;
+        var hasOrbiters = (vis || n.owner === G.human) && n.owner >= 0 && n.kind !== 'turret';
         var orbData = [];
         if (hasOrbiters) {
             var uCount = Math.max(0, Math.floor(n.units));
@@ -1433,25 +1532,29 @@ function render(ctx, cv, tick) {
 
         // Ã¢â€â‚¬Ã¢â€â‚¬ PLANET BODY (drawn between back and front orbiters) Ã¢â€â‚¬Ã¢â€â‚¬
         var tdef = nodeTypeOf(n);
-        var bodyCol = col;
-        if ((vis || n.owner === G.human) && col.indexOf('#') === 0) {
-            var typeBlend = n.owner === -1 ? 0.5 : 0.22;
-            bodyCol = blendHex(col, tdef.color, typeBlend);
-        }
-        var planetCanvas = getPlanetTexture(n.id, n.radius);
-        ctx.save();
-        if (!vis && n.owner !== G.human) { ctx.globalAlpha = 0.3; ctx.filter = 'grayscale(100%) brightness(50%)'; }
-        ctx.drawImage(planetCanvas, n.pos.x - n.radius, n.pos.y - n.radius, n.radius * 2, n.radius * 2);
-        ctx.restore();
-        if ((vis || n.owner === G.human) && n.owner >= 0 && col && col.indexOf('#') === 0) {
+        if (n.kind === 'turret') {
+            drawTurretStation(ctx, n, col, tick);
+        } else {
+            var bodyCol = col;
+            if ((vis || n.owner === G.human) && col.indexOf('#') === 0) {
+                var typeBlend = n.owner === -1 ? 0.5 : 0.22;
+                bodyCol = blendHex(col, tdef.color, typeBlend);
+            }
+            var planetCanvas = getPlanetTexture(n.id, n.radius);
             ctx.save();
-            ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, n.radius, 0, Math.PI * 2); ctx.clip();
-            var tint = ctx.createRadialGradient(n.pos.x - n.radius * 0.3, n.pos.y - n.radius * 0.3, 0, n.pos.x, n.pos.y, n.radius * 1.2);
-            tint.addColorStop(0, hexToRgba(col, 0.35)); tint.addColorStop(0.7, hexToRgba(col, 0.15)); tint.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = tint; ctx.fillRect(n.pos.x - n.radius, n.pos.y - n.radius, n.radius * 2, n.radius * 2);
+            if (!vis && n.owner !== G.human) { ctx.globalAlpha = 0.3; ctx.filter = 'grayscale(100%) brightness(50%)'; }
+            ctx.drawImage(planetCanvas, n.pos.x - n.radius, n.pos.y - n.radius, n.radius * 2, n.radius * 2);
             ctx.restore();
-            ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, n.radius + 2, 0, Math.PI * 2);
-            ctx.strokeStyle = hexToRgba(col, 0.9); ctx.lineWidth = 2.5; ctx.stroke();
+            if ((vis || n.owner === G.human) && n.owner >= 0 && col && col.indexOf('#') === 0) {
+                ctx.save();
+                ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, n.radius, 0, Math.PI * 2); ctx.clip();
+                var tint = ctx.createRadialGradient(n.pos.x - n.radius * 0.3, n.pos.y - n.radius * 0.3, 0, n.pos.x, n.pos.y, n.radius * 1.2);
+                tint.addColorStop(0, hexToRgba(col, 0.35)); tint.addColorStop(0.7, hexToRgba(col, 0.15)); tint.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = tint; ctx.fillRect(n.pos.x - n.radius, n.pos.y - n.radius, n.radius * 2, n.radius * 2);
+                ctx.restore();
+                ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, n.radius + 2, 0, Math.PI * 2);
+                ctx.strokeStyle = hexToRgba(col, 0.9); ctx.lineWidth = 2.5; ctx.stroke();
+            }
         }
 
         if ((vis || n.owner === G.human) && n.level > 1) {
