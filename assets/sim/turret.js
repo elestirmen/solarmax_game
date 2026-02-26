@@ -29,6 +29,8 @@ export function applyTurretDamage(opts) {
         if ((turret.units || 0) < minGarrison) continue;
         if (!isAssimilated(turret)) continue;
 
+        var bestFleet = null;
+        var bestDistSq = rangeSq + 1;
         for (var fi = 0; fi < fleets.length; fi++) {
             var fleet = fleets[fi];
             if (!fleet || !fleet.active || (fleet.count || 0) <= 0) continue;
@@ -36,23 +38,29 @@ export function applyTurretDamage(opts) {
 
             var dx = (fleet.x || 0) - turret.pos.x;
             var dy = (fleet.y || 0) - turret.pos.y;
-            if (dx * dx + dy * dy > rangeSq) continue;
-
-            fleet.dmgAcc = Number(fleet.dmgAcc) || 0;
-            fleet.dmgAcc += dps * dt;
-            var damage = Math.floor(fleet.dmgAcc);
-            if (damage <= 0) continue;
-
-            hits++;
-            fleet.dmgAcc -= damage;
-            fleet.count -= damage;
-
-            if (fleet.count <= 0) {
-                fleet.count = 0;
-                fleet.active = false;
-                if (Array.isArray(fleet.trail)) fleet.trail.length = 0;
-                kills++;
+            var distSq = dx * dx + dy * dy;
+            if (distSq > rangeSq) continue;
+            if (!bestFleet || distSq < bestDistSq) {
+                bestFleet = fleet;
+                bestDistSq = distSq;
             }
+        }
+
+        if (!bestFleet) continue;
+        bestFleet.dmgAcc = Number(bestFleet.dmgAcc) || 0;
+        bestFleet.dmgAcc += dps * dt;
+        var damage = Math.floor(bestFleet.dmgAcc);
+        if (damage <= 0) continue;
+
+        hits++;
+        bestFleet.dmgAcc -= damage;
+        bestFleet.count -= damage;
+
+        if (bestFleet.count <= 0) {
+            bestFleet.count = 0;
+            bestFleet.active = false;
+            if (Array.isArray(bestFleet.trail)) bestFleet.trail.length = 0;
+            kills++;
         }
     }
 

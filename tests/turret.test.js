@@ -80,3 +80,34 @@ test('turret does not damage friendly fleet', function () {
     assert.equal(fleets[0].count, 10);
     assert.equal(fleets[0].active, true);
 });
+
+test('turret attacks only one target per tick (closest in range)', function () {
+    var nodes = [
+        {
+            id: 0,
+            kind: 'turret',
+            owner: -1,
+            units: 10,
+            pos: { x: 0, y: 0 },
+            assimilationProgress: 1,
+            assimilationLock: 0,
+        },
+    ];
+    var fleets = [
+        { active: true, owner: 0, count: 10, x: 10, y: 0, dmgAcc: 0, trail: [] },
+        { active: true, owner: 1, count: 10, x: 40, y: 0, dmgAcc: 0, trail: [] },
+    ];
+
+    var result = applyTurretDamage({
+        nodes: nodes,
+        fleets: fleets,
+        dt: 1,
+        range: 120,
+        dps: 1,
+        minGarrison: 4,
+    });
+
+    assert.equal(result.hits, 1);
+    assert.equal(fleets[0].count, 9);
+    assert.equal(fleets[1].count, 10);
+});

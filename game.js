@@ -38,9 +38,9 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     ASSIM_GARRISON_FLOOR = 0.35,
     ASSIM_LEVEL_RESIST = 0.35,
     ASSIM_LOCK_TICKS = 180,
-    TURRET_RANGE = 230,
-    TURRET_DPS = 18,
-    TURRET_MIN_GARRISON = 4;
+    TURRET_RANGE = 175,
+    TURRET_DPS = 8,
+    TURRET_MIN_GARRISON = 6;
 
 var NODE_TYPE_DEFS = {
     core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#8db3ff' },
@@ -636,7 +636,7 @@ function genMap(nc) {
         tn.kind = 'turret';
         tn.level = 1;
         tn.maxUnits = nodeCapacity(tn);
-        tn.units = Math.min(tn.maxUnits - 1, G.rng.nextInt(8, 14));
+        tn.units = Math.min(tn.maxUnits - 1, G.rng.nextInt(7, 12));
         tn.assimilationProgress = 1;
         tn.assimilationLock = 0;
     }
