@@ -2903,6 +2903,9 @@ cv.addEventListener('mousedown', function (e) {
     var cn = hitNode(w); inp.shift = e.shiftKey;
     inp.dragPending = false;
     inp.dragDownNodeId = -1;
+    if (cn && cn.owner === G.human && inp.sel.size > 0 && !inp.sel.has(cn.id) && !e.shiftKey) {
+        if (sendFromSelectionTo(cn.id)) return;
+    }
 
     if (cn && cn.owner === G.human) {
         var dragSources = [];
@@ -2983,6 +2986,9 @@ cv.addEventListener('touchstart', function (e) {
         inp.dragPending = false;
         inp.dragDownNodeId = -1;
         var w = s2w(pos.x, pos.y); var cn = hitNode(w);
+        if (cn && cn.owner === G.human && inp.sel.size > 0 && !inp.sel.has(cn.id)) {
+            if (sendFromSelectionTo(cn.id)) { e.preventDefault(); return; }
+        }
         if (cn && cn.owner === G.human) {
             var touchSources = [];
             if (inp.sel.has(cn.id) && inp.sel.size > 0) {
