@@ -7,6 +7,7 @@
 import { computeSendCount } from './assets/sim/dispatch_math.js';
 import { applyTurretDamage } from './assets/sim/turret.js';
 import { shouldStartDragSend } from './assets/sim/input_policy.js';
+import { isDispatchAllowed } from './assets/sim/barrier.js';
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ CONSTANTS Ã¢â€â‚¬Ã¢â€â‚¬
 var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
@@ -206,6 +207,26 @@ function checkAchievements() {
     } catch (e) {}
 }
 function defaultTune() { return { prod: 1, fspeed: FLEET_SPEED, def: DEF_FACTOR, flowInt: 15, aiAgg: AI_AGG, aiBuf: AI_BUF, aiInt: AI_INTERVAL, fogEnabled: false, aiAssist: true }; }
+var gameToastTimer = 0;
+function showGameToast(message) {
+    if (!message) return;
+    var toast = document.getElementById('gameToastMsg');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'gameToastMsg';
+        toast.className = 'achievement-toast';
+        toast.style.bottom = '92px';
+        toast.style.padding = '8px 16px';
+        toast.style.fontSize = '0.86rem';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.display = 'block';
+    if (gameToastTimer) clearTimeout(gameToastTimer);
+    gameToastTimer = setTimeout(function () {
+        toast.style.display = 'none';
+    }, 1200);
+}
 
 var net = {
     socket: null,
@@ -382,24 +403,78 @@ function placeGravityFeature() {
     if (bestNode.units > bestNode.maxUnits) bestNode.units = bestNode.maxUnits;
     return true;
 }
+function placeBarrierFeature() {
+    var barrierX = MAP_W * 0.5;
+    var candidates = [];
+    for (var i = 0; i < G.nodes.length; i++) {
+        var node = G.nodes[i];
+        if (node.owner !== -1) continue;
+        candidates.push(node);
+    }
+    if (!candidates.length) return false;
+
+    candidates.sort(function (a, b) {
+        var ad = Math.abs(a.pos.x - barrierX);
+        var bd = Math.abs(b.pos.x - barrierX);
+        if (ad !== bd) return ad - bd;
+        return a.id - b.id;
+    });
+
+    var targetGateCount = candidates.length > 12 && G.rng.next() < 0.55 ? 2 : 1;
+    var gateIds = [];
+    for (var ci = 0; ci < candidates.length && gateIds.length < targetGateCount; ci++) {
+        var cand = candidates[ci];
+        if (!gateIds.length) {
+            gateIds.push(cand.id);
+            continue;
+        }
+        var tooClose = false;
+        for (var gi = 0; gi < gateIds.length; gi++) {
+            var gateNode = G.nodes[gateIds[gi]];
+            if (Math.abs(gateNode.pos.y - cand.pos.y) < 120) { tooClose = true; break; }
+        }
+        if (!tooClose) gateIds.push(cand.id);
+    }
+    if (!gateIds.length) gateIds.push(candidates[0].id);
+
+    for (var ni = 0; ni < G.nodes.length; ni++) G.nodes[ni].gate = false;
+    for (var g = 0; g < gateIds.length; g++) {
+        var gate = G.nodes[gateIds[g]];
+        gate.gate = true;
+        gate.assimilationProgress = 1;
+        gate.assimilationLock = 0;
+    }
+    G.mapFeature = { type: 'barrier', x: barrierX, gateIds: gateIds.slice() };
+    return true;
+}
 function applyMapFeature(cfg) {
     cfg = cfg || {};
     G.wormholes = [];
+    for (var ni = 0; ni < G.nodes.length; ni++) G.nodes[ni].gate = false;
     G.mapFeature = { type: 'none' };
     if (G.nodes.length < 8) return;
     var forcedType = cfg.type || 'auto';
     if (forcedType === 'none') return;
     if (forcedType === 'wormhole') { placeWormholeFeature(); return; }
     if (forcedType === 'gravity') { placeGravityFeature(); return; }
+    if (forcedType === 'barrier') { placeBarrierFeature(); return; }
 
     var featureChance = typeof cfg.chance === 'number' ? clamp(cfg.chance, 0, 1) : G.diffCfg.featureChance;
     if (G.rng.next() > featureChance) return;
 
     var featureRoll = G.rng.next();
-    if (featureRoll < 0.5) {
-        if (!placeWormholeFeature()) placeGravityFeature();
+    if (featureRoll < 0.34) {
+        if (!placeWormholeFeature()) {
+            if (!placeGravityFeature()) placeBarrierFeature();
+        }
+    } else if (featureRoll < 0.68) {
+        if (!placeGravityFeature()) {
+            if (!placeBarrierFeature()) placeWormholeFeature();
+        }
     } else {
-        if (!placeGravityFeature()) placeWormholeFeature();
+        if (!placeBarrierFeature()) {
+            if (!placeWormholeFeature()) placeGravityFeature();
+        }
     }
 }
 
@@ -482,7 +557,7 @@ function genMap(nc) {
         var x = G.rng.nextFloat(MAP_PAD, MAP_W - MAP_PAD), y = G.rng.nextFloat(MAP_PAD, MAP_H - MAP_PAD), r = G.rng.nextFloat(NODE_RMIN, NODE_RMAX);
         var ok = true; for (var i = 0; i < G.nodes.length; i++)if (dist({ x: x, y: y }, G.nodes[i].pos) < minDist) { ok = false; break; }
         if (ok) {
-            var node = { id: placed, pos: { x: x, y: y }, radius: r, owner: -1, units: G.rng.nextInt(2, NEUTRAL_MAX), prodAcc: 0, maxUnits: MAX_UNITS, visionR: VISION_R + r * 2, selected: false, kind: 'core', level: 1, defense: false, strategic: false };
+            var node = { id: placed, pos: { x: x, y: y }, radius: r, owner: -1, units: G.rng.nextInt(2, NEUTRAL_MAX), prodAcc: 0, maxUnits: MAX_UNITS, visionR: VISION_R + r * 2, selected: false, kind: 'core', level: 1, defense: false, strategic: false, gate: false };
             initNodeKind(node);
             node.maxUnits = nodeCapacity(node);
             node.units = Math.min(node.units, Math.max(2, Math.floor(node.maxUnits * 0.4)));
@@ -492,7 +567,7 @@ function genMap(nc) {
     }
     while (placed < nc) {
         var fx = G.rng.nextFloat(MAP_PAD, MAP_W - MAP_PAD), fy = G.rng.nextFloat(MAP_PAD, MAP_H - MAP_PAD), fr = G.rng.nextFloat(NODE_RMIN, NODE_RMAX);
-        var fn = { id: placed, pos: { x: fx, y: fy }, radius: fr, owner: -1, units: G.rng.nextInt(2, NEUTRAL_MAX), prodAcc: 0, maxUnits: MAX_UNITS, visionR: VISION_R + fr * 2, selected: false, kind: 'core', level: 1, defense: false, strategic: false };
+        var fn = { id: placed, pos: { x: fx, y: fy }, radius: fr, owner: -1, units: G.rng.nextInt(2, NEUTRAL_MAX), prodAcc: 0, maxUnits: MAX_UNITS, visionR: VISION_R + fr * 2, selected: false, kind: 'core', level: 1, defense: false, strategic: false, gate: false };
         initNodeKind(fn);
         fn.maxUnits = nodeCapacity(fn);
         fn.units = Math.min(fn.units, Math.max(2, Math.floor(fn.maxUnits * 0.4)));
@@ -556,8 +631,14 @@ function dispatch(owner, srcIds, tgtId, pct) {
     pct = clamp(typeof pct === 'number' ? pct : 0.5, 0.05, 1);
     var tgt = G.nodes[tgtId]; if (!tgt) return;
     var didSend = false;
+    var blockedByBarrier = false;
+    var barrierCfg = G.mapFeature && G.mapFeature.type === 'barrier' ? G.mapFeature : null;
     for (var si = 0; si < srcIds.length; si++) {
         var src = G.nodes[srcIds[si]]; if (!src || src.owner !== owner) continue;
+        if (!isDispatchAllowed({ src: src, tgt: tgt, barrier: barrierCfg, owner: owner, nodes: G.nodes })) {
+            blockedByBarrier = true;
+            continue;
+        }
         var srcType = nodeTypeOf(src);
         var send = computeSendCount({ srcUnits: src.units, pct: pct, flowMult: srcType.flow });
         var cnt = send.sendCount;
@@ -583,6 +664,9 @@ function dispatch(owner, srcIds, tgtId, pct) {
     if (didSend && owner === G.human) {
         G.stats.fleetsSent++;
         if (typeof AudioFX !== 'undefined') AudioFX.send();
+    }
+    if (blockedByBarrier && owner === G.human) {
+        showGameToast('Gecit kilitli: once bir gate ele gecir.');
     }
 }
 
@@ -1418,6 +1502,16 @@ function render(ctx, cv, tick) {
             ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, n.radius + 4, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(255,215,0,0.3)'; ctx.lineWidth = 1; ctx.stroke();
         }
+        if ((vis || n.owner === G.human) && n.gate) {
+            ctx.beginPath();
+            ctx.moveTo(n.pos.x, n.pos.y - n.radius - 6);
+            ctx.lineTo(n.pos.x + 4, n.pos.y - n.radius - 2);
+            ctx.lineTo(n.pos.x, n.pos.y - n.radius + 2);
+            ctx.lineTo(n.pos.x - 4, n.pos.y - n.radius - 2);
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(255,220,140,0.9)';
+            ctx.fill();
+        }
         if ((vis || n.owner === G.human) && n.owner >= 0 && n.assimilationProgress !== undefined && n.assimilationProgress < 1) {
             var ringR = n.radius + 7;
             var lockPhase = (n.assimilationLock || 0) > 0 ? (1 - clamp((n.assimilationLock || 0) / ASSIM_LOCK_TICKS, 0, 1)) : 1;
@@ -1679,6 +1773,54 @@ function drawMapFeature(ctx, tick) {
         var g = G.mapFeature;
         ctx.beginPath(); ctx.arc(g.x, g.y, g.r, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(175,145,255,0.12)'; ctx.lineWidth = 1; ctx.stroke();
+    } else if (G.mapFeature.type === 'barrier') {
+        var barrier = G.mapFeature;
+        var bx = barrier.x;
+        var minY = MAP_PAD * 0.5;
+        var maxY = MAP_H - MAP_PAD * 0.5;
+        var cuts = [];
+        var gateIds = Array.isArray(barrier.gateIds) ? barrier.gateIds : [];
+        for (var gi = 0; gi < gateIds.length; gi++) {
+            var gate = G.nodes[gateIds[gi]];
+            if (!gate) continue;
+            var gap = gate.radius + 24;
+            cuts.push({ y0: gate.pos.y - gap, y1: gate.pos.y + gap, node: gate });
+        }
+        cuts.sort(function (a, b) { return a.y0 - b.y0; });
+        var segY = minY;
+        ctx.save();
+        ctx.setLineDash([8, 7]);
+        ctx.strokeStyle = 'rgba(255,120,120,0.35)';
+        ctx.lineWidth = 2;
+        for (var ci = 0; ci < cuts.length; ci++) {
+            var cut = cuts[ci];
+            var y0 = clamp(cut.y0, minY, maxY);
+            var y1 = clamp(cut.y1, minY, maxY);
+            if (y0 > segY) {
+                ctx.beginPath();
+                ctx.moveTo(bx, segY);
+                ctx.lineTo(bx, y0);
+                ctx.stroke();
+            }
+            segY = Math.max(segY, y1);
+        }
+        if (segY < maxY) {
+            ctx.beginPath();
+            ctx.moveTo(bx, segY);
+            ctx.lineTo(bx, maxY);
+            ctx.stroke();
+        }
+        ctx.restore();
+
+        for (var ci2 = 0; ci2 < cuts.length; ci2++) {
+            var gateNode = cuts[ci2].node;
+            var pulse = 0.55 + 0.45 * Math.sin(tick * 0.08 + gateNode.id);
+            ctx.beginPath();
+            ctx.arc(gateNode.pos.x, gateNode.pos.y, gateNode.radius + 8, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,210,120,' + (0.2 + pulse * 0.3) + ')';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
     }
 }
 
@@ -2324,11 +2466,13 @@ function campaignFeatureName(feature) {
     if (typeof feature === 'string') {
         if (feature === 'wormhole') return 'Wormhole';
         if (feature === 'gravity') return 'Gravity';
+        if (feature === 'barrier') return 'Barrier';
         if (feature === 'none') return 'None';
         return 'Random';
     }
     if (feature.type === 'wormhole') return 'Wormhole';
     if (feature.type === 'gravity') return 'Gravity';
+    if (feature.type === 'barrier') return 'Barrier';
     if (feature.type === 'none') return 'None';
     return 'Random';
 }
@@ -2867,7 +3011,7 @@ function loop(ts) {
     if (G.state === 'playing' || G.state === 'replay') {
         var es = G.state === 'replay' && G.rep ? (G.rep.paused ? 0 : G.rep.speed) : G.speed; acc += rawDt * es;
         while (acc >= TICK_DT) { gameTick(); acc -= TICK_DT; }
-        var featureName = G.mapFeature.type === 'wormhole' ? 'Wormhole' : (G.mapFeature.type === 'gravity' ? 'Gravity' : 'Standard');
+        var featureName = G.mapFeature.type === 'wormhole' ? 'Wormhole' : (G.mapFeature.type === 'gravity' ? 'Gravity' : (G.mapFeature.type === 'barrier' ? 'Barrier' : 'Standard'));
         hudTick.textContent = 'Tick: ' + G.tick + ' | ' + G.diff;
         var pingEl = document.getElementById('pingDisplay');
         if (pingEl) pingEl.textContent = net.online && net.lastPingMs !== undefined ? ('Ping: ' + Math.round(net.lastPingMs) + 'ms') : '';
