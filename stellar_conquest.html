@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -501,11 +501,32 @@
         #hudLeft {
             display: flex;
             align-items: center;
-            gap: 8px
+            gap: 8px;
+            flex-wrap: wrap
         }
 
         #hudLeft input[type="range"] {
             width: 100px
+        }
+
+        .send-quick-row {
+            display: flex;
+            gap: 4px;
+        }
+
+        .send-quick-btn {
+            padding: 4px 8px;
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.06);
+            color: var(--text);
+            font-size: 0.72rem;
+            cursor: pointer;
+        }
+
+        .send-quick-btn.active {
+            background: rgba(74, 142, 255, 0.28);
+            border-color: rgba(74, 142, 255, 0.45);
         }
 
         #hudRight {
@@ -848,66 +869,175 @@
 
         /* How to Play Modal Styles */
         .tutorial-modal {
-            max-width: 700px;
-            max-height: min(88vh, 820px);
+            max-width: 720px;
+            max-height: min(90vh, 900px);
             overflow-y: auto;
+            overflow-x: hidden;
             text-align: left;
-            padding: 30px;
+            padding: 0;
+            border: 1px solid var(--panel-border);
+            box-shadow: 0 0 80px rgba(74, 142, 255, 0.15);
+            scroll-behavior: smooth;
         }
 
-        .tutorial-modal h2 {
-            font-size: 1.8rem;
-            color: var(--accent);
-            margin-bottom: 20px;
+        .tutorial-header {
+            background: linear-gradient(135deg, rgba(74, 142, 255, 0.18), rgba(99, 102, 241, 0.12));
+            border-bottom: 1px solid var(--panel-border);
+            padding: 24px 32px;
             text-align: center;
         }
 
+        .tutorial-modal h2 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #6ba3ff, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 6px;
+        }
+
+        .tutorial-subtitle {
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            letter-spacing: 0.02em;
+        }
+
+        .tutorial-nav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            padding: 12px 24px;
+            background: rgba(0, 0, 0, 0.2);
+            border-bottom: 1px solid var(--panel-border);
+            font-size: 0.78rem;
+        }
+
+        .tutorial-nav a {
+            padding: 4px 10px;
+            border-radius: 6px;
+            color: var(--text-dim);
+            text-decoration: none;
+            transition: all 0.2s;
+        }
+
+        .tutorial-nav a:hover {
+            background: rgba(74, 142, 255, 0.2);
+            color: var(--accent);
+        }
+
+        .tutorial-body {
+            padding: 24px 32px 32px;
+        }
+
         .tutorial-section {
-            margin-bottom: 24px;
+            margin-bottom: 28px;
+            padding: 20px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            border-radius: 12px;
+            transition: border-color 0.2s;
+            scroll-margin-top: 8px;
+        }
+
+        .tutorial-section:hover {
+            border-color: rgba(74, 142, 255, 0.15);
         }
 
         .tutorial-section h3 {
-            font-size: 1.1rem;
+            font-size: 1.05rem;
+            font-weight: 600;
             color: #fff;
-            margin-bottom: 8px;
+            margin-bottom: 12px;
             display: flex;
             align-items: center;
-            gap: 8px;
+            gap: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--panel-border);
+        }
+
+        .tutorial-section h3::before {
+            content: '';
+            width: 4px;
+            height: 20px;
+            background: linear-gradient(180deg, var(--accent), #6366f1);
+            border-radius: 2px;
         }
 
         .tutorial-section p,
         .tutorial-section ul {
             font-size: 0.9rem;
             color: var(--text-dim);
-            line-height: 1.5;
+            line-height: 1.6;
         }
 
         .tutorial-section ul {
-            padding-left: 20px;
-            margin-top: 8px;
+            padding-left: 22px;
+            margin-top: 10px;
         }
 
         .tutorial-section li {
-            margin-bottom: 6px;
+            margin-bottom: 8px;
+        }
+
+        .tutorial-section li b {
+            color: #c8d6e5;
+        }
+
+        .tutorial-tip {
+            margin-top: 12px;
+            padding: 12px 14px;
+            background: rgba(74, 142, 255, 0.08);
+            border-left: 4px solid var(--accent);
+            border-radius: 0 8px 8px 0;
+            font-size: 0.85rem;
+            color: #b8c8e0;
+        }
+
+        .tutorial-tip strong {
+            color: var(--accent);
+        }
+
+        .tutorial-warning {
+            margin-top: 12px;
+            padding: 12px 14px;
+            background: rgba(231, 76, 60, 0.08);
+            border-left: 4px solid var(--danger);
+            border-radius: 0 8px 8px 0;
+            font-size: 0.85rem;
+            color: #e8b4b0;
         }
 
         .node-types {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 12px;
-            margin-top: 12px;
+            margin-top: 14px;
         }
 
         .node-type-card {
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid var(--panel-border);
-            border-radius: var(--radius);
-            padding: 10px;
+            border-radius: 10px;
+            padding: 14px;
+            transition: transform 0.15s, border-color 0.2s;
+        }
+
+        .node-type-card:hover {
+            transform: translateY(-1px);
+            border-color: rgba(74, 142, 255, 0.25);
         }
 
         .node-type-card strong {
             display: block;
-            margin-bottom: 4px;
+            margin-bottom: 6px;
+            font-size: 1rem;
+        }
+
+        .node-type-card p {
+            font-size: 0.82rem;
+            margin: 0;
+            line-height: 1.45;
         }
 
         .color-core {
@@ -928,6 +1058,39 @@
 
         .color-nexus {
             color: #c9a0dc;
+        }
+
+        .tutorial-shortcut-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .shortcut-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 6px;
+            font-size: 0.85rem;
+        }
+
+        .shortcut-key {
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 3px 6px;
+            background: rgba(74, 142, 255, 0.2);
+            border-radius: 4px;
+            color: var(--accent);
+            min-width: 24px;
+            text-align: center;
+        }
+
+        .tutorial-section .tutorial-footer-btn {
+            margin-top: 20px;
+            text-align: center;
         }
 
         .game-stats { margin: 12px 0; padding: 10px; background: rgba(255,255,255,0.05); border-radius: var(--radius); font-size: .9rem; }
@@ -1039,98 +1202,149 @@
     </div>
     <div id="howToPlayOverlay" class="overlay hidden">
         <div class="menu-panel tutorial-modal">
-            <h2>Stellar Conquest - Nasil Oynanir</h2>
-
-            <div class="tutorial-section">
-                <h3>1) Modlar ve Baslangic</h3>
-                <ul>
-                    <li><b>Tek Oyunculu:</b> Seed, Node ve zorluk secip <b>Oyuna Basla</b>.</li>
-                    <li><b>Senaryo:</b> <b>Senaryoyu Baslat</b> ile bolum menusu acilir. Baloncuktan bolum sec, <b>Bolum Baslat</b> ile gir.</li>
-                    <li><b>Cok Oyunculu:</b> <b>Oda Kur</b> veya koda katil. Maci sadece host <b>Oyunu Baslat (Host)</b> ile baslatir.</li>
-                </ul>
+            <div class="tutorial-header">
+                <h2>Stellar Conquest</h2>
+                <p class="tutorial-subtitle">Yildizlari fethet. Akisi yonet.</p>
             </div>
+            <nav class="tutorial-nav">
+                <a href="#tut-modlar">Modlar</a>
+                <a href="#tut-kontroller">Kontroller</a>
+                <a href="#tut-kisayollar">Kisayollar</a>
+                <a href="#tut-flow">Flow</a>
+                <a href="#tut-asimilasyon">Asimilasyon</a>
+                <a href="#tut-savas">Savas & Uretim</a>
+                <a href="#tut-gezegenler">Gezegenler</a>
+                <a href="#tut-harita">Harita</a>
+                <a href="#tut-hud">HUD</a>
+            </nav>
+            <div class="tutorial-body">
+                <div class="tutorial-section" id="tut-modlar">
+                    <h3>1) Oyun Modlari ve Baslangic</h3>
+                    <ul>
+                        <li><b>Tek Oyunculu:</b> Seed (harita tohumu), Node sayisi ve zorluk secip <b>Oyuna Basla</b> ile basla. Ayni seed ayni haritayi uretir.</li>
+                        <li><b>Senaryo:</b> <b>Senaryoyu Baslat</b> ile bolum menusu acilir. Numara baloncuklarindan bolum sec, <b>Bolum Baslat</b> ile giris yap. Bolumler sirali acilir.</li>
+                        <li><b>Cok Oyunculu:</b> Nick gir, <b>Oda Kur</b> ile yeni oda ac veya 5 haneli <b>Oda Kodu</b> ile mevcut odaya katil. Maci sadece host <b>Oyunu Baslat (Host)</b> ile baslatir.</li>
+                    </ul>
+                    <div class="tutorial-tip"><strong>Ipuci:</strong> Seed alanindaki RND butonu rastgele harita uretir.</div>
+                </div>
 
-            <div class="tutorial-section">
-                <h3>2) Temel Kontroller (PC)</h3>
-                <ul>
-                    <li><b>Sol tik:</b> Kendi gezegenini sec. <b>Shift + sol tik</b> ile coklu secim yap.</li>
-                    <li><b>Bos alanda surukle:</b> Kutu secimi yapar.</li>
-                    <li><b>Ctrl + bos alanda surukle:</b> Secili kaynaklardan hedefe birakinca toplu birlik gonderir.</li>
-                    <li><b>Seciliyken hedefe sol tik:</b> Secili gezegenlerden hedefe, HUD'daki <b>Send %</b> kadar birlik yollar.</li>
-                    <li><b>Kendi gezegenine de birlik yollayabilirsin:</b> Secili grubun icindeyken baska kendi gezegenine sol tikla transfer yap.</li>
-                    <li><b>Sag tik (kendi gezegen):</b> Savunma modunu ac/kapat. Secili grup varsa hepsine uygulanir.</li>
-                    <li><b>Sag tik (dusman veya tarafsiz):</b> Secili kaynaklardan hedefe <b>Flow</b> ac/kapat.</li>
-                    <li><b>Orta tus + surukle:</b> Kamerayi kaydir. <b>Mouse tekeri:</b> Zoom.</li>
-                </ul>
-            </div>
+                <div class="tutorial-section" id="tut-kontroller">
+                    <h3>2) Temel Kontroller (PC)</h3>
+                    <ul>
+                        <li><b>Sol tik:</b> Kendi gezegenini secer. <b>Shift + sol tik</b> ile coklu secim yap (secime ekler).</li>
+                        <li><b>Bos alanda surukle:</b> Dikdortgen kutu secimi yapar; icindeki kendi gezegenlerini secer.</li>
+                        <li><b>Ctrl + bos alanda surukle:</b> Secili kaynaklardan hedefe birakinca toplu birlik gonderir. Cok hizli hamle icin idealdir.</li>
+                        <li><b>Seciliyken hedefe sol tik:</b> Secili gezegenlerden hedefe, HUD'daki <b>Send %</b> kadar birlik yollar (ornegin %50 = yarisi).</li>
+                        <li><b>Transfer:</b> Secili grup icindeyken baska kendi gezegenine sol tikla birlik transferi yapabilirsin.</li>
+                        <li><b>Sag tik (kendi gezegen):</b> Savunma modunu ac/kapat. Secili grup varsa hepsine uygulanir.</li>
+                        <li><b>Sag tik (dusman veya tarafsiz):</b> Secili kaynaklardan hedefe <b>Flow</b> baglantisi ac/kapat.</li>
+                        <li><b>Orta tus + surukle:</b> Kamerayi kaydir. <b>Mouse tekeri:</b> Zoom in/out.</li>
+                    </ul>
+                </div>
 
-            <div class="tutorial-section">
-                <h3>3) Kisayollar</h3>
-                <ul>
-                    <li><b>1-9, 0:</b> Gonderim yuzdesini %10-%100 arasi degistirir.</li>
-                    <li><b>U:</b> Secili gezegenleri upgrade eder (uygun olanlar).</li>
-                    <li><b>A:</b> Tum kendi gezegenlerini secer.</li>
-                    <li><b>Esc / P:</b> (Tek oyunculu) oyunu duraklatir / devam ettirir.</li>
-                    <li><b>Hiz butonu:</b> Tek oyunculuda 1x/2x/4x dongusu.</li>
-                </ul>
-            </div>
+                <div class="tutorial-section" id="tut-kisayollar">
+                    <h3>3) Kisayollar</h3>
+                    <div class="tutorial-shortcut-grid">
+                        <div class="shortcut-item"><span class="shortcut-key">1-0</span> Send % (10-100)</div>
+                        <div class="shortcut-item"><span class="shortcut-key">U</span> Upgrade</div>
+                        <div class="shortcut-item"><span class="shortcut-key">A</span> Tum gezegenler</div>
+                        <div class="shortcut-item"><span class="shortcut-key">Esc</span> Duraklat</div>
+                        <div class="shortcut-item"><span class="shortcut-key">P</span> Devam</div>
+                    </div>
+                    <ul>
+                        <li><b>1-9, 0:</b> Gonderim yuzdesini sirasiyla %10, %20, ... %100 yapar.</li>
+                        <li><b>U:</b> Secili gezegenleri upgrade eder (yeterli birlik ve seviye kosulu varsa).</li>
+                        <li><b>A:</b> Tum kendi gezegenlerini tek seferde secer.</li>
+                        <li><b>Esc / P:</b> Tek oyunculuda oyunu duraklatir veya devam ettirir.</li>
+                        <li><b>Hiz butonu (1x):</b> Tek oyunculuda 1x / 2x / 4x oyun hizi.</li>
+                    </ul>
+                </div>
 
-            <div class="tutorial-section">
-                <h3>4) Savas, Uretim ve Asimilasyon</h3>
-                <ul>
-                    <li><b>Fetih sonrasi asimilasyon:</b> Yeni alinan gezegen once kilit surede bekler, sonra tam kontrol asamasina gecer.</li>
-                    <li><b>Asimilasyon hizi birlike bagli:</b> Garnizon ne kadar yuksekse o kadar hizli olur. Birlik gondermek genelde asimilasyonu yavaslatir.</li>
-                    <li><b>Direnc:</b> Yuksek seviye ve dayanikli tipler (ozellikle Bulwark) daha yavas asimile olur.</li>
-                    <li><b>Savunma modu:</b> Savunma gucu artar; uretim cezasi alirsin.</li>
-                    <li><b>Tedarik hatti:</b> Baskente bagli olmayan gezegenler daha dusuk uretim yapar.</li>
-                </ul>
-            </div>
+                <div class="tutorial-section" id="tut-flow">
+                    <h3>4) Flow (Otomatik Akis)</h3>
+                    <p>Flow, bir gezegenden digerine periyodik otomatik birlik transferi saglar. Dusman veya tarafsiz hedefe sag tikla Flow ac; kendi gezegenine sag tikla kapat.</p>
+                    <ul>
+                        <li><b>Nasil calisir:</b> Her birkac tick'te kaynak gezegenden hedefe birlik gonderilir (yaklasik %8 oraninda).</li>
+                        <li><b>Ne zaman kullan:</b> Uzun mesafe destegi, surekli baskı veya asimilasyon destegi icin idealdir.</li>
+                        <li><b>Relay gezegenleri</b> Flow icin bonus verir; filo hizi da artar.</li>
+                    </ul>
+                    <div class="tutorial-tip"><strong>Strateji:</strong> Dusman sinirina Flow ac, fetih sonrasi kendi gezegenine sag tikla Flow'u kapat.</div>
+                </div>
 
-            <div class="tutorial-section">
-                <h3>5) Gezegen Siniflari</h3>
-                <div class="node-types">
-                    <div class="node-type-card">
-                        <strong class="color-core">C - Core</strong>
-                        <p>Dengeli temel gezegen.</p>
-                    </div>
-                    <div class="node-type-card">
-                        <strong class="color-forge">F - Forge</strong>
-                        <p>Uretim yuksek, savunma biraz daha zayif.</p>
-                    </div>
-                    <div class="node-type-card">
-                        <strong class="color-bulwark">B - Bulwark</strong>
-                        <p>Savunmasi cok guclu, uretimi daha yavas.</p>
-                    </div>
-                    <div class="node-type-card">
-                        <strong class="color-relay">R - Relay</strong>
-                        <p>Filo hareketi ve akista hiz avantaji verir.</p>
-                    </div>
-                    <div class="node-type-card">
-                        <strong class="color-nexus">N - Nexus</strong>
-                        <p>Tum alanlarda dengeli bonuslar sunar.</p>
+                <div class="tutorial-section" id="tut-asimilasyon">
+                    <h3>5) Asimilasyon (Fetih Sonrasi Kontrol)</h3>
+                    <p>Bir gezegeni fethettiginde hemen tam uretim yapamazsin. Iki asamali surec vardir:</p>
+                    <ul>
+                        <li><b>Kilit asaması (~6 saniye):</b> Fetih sonrasi gezegen kilitte bekler; bu surede uretim yok.</li>
+                        <li><b>Asimilasyon asaması:</b> Kilit bittikten sonra ilerleme cubugu dolana kadar kismi kontrol. Tam dolunca normal uretim baslar.</li>
+                        <li><b>Garnizon etkisi:</b> Gezegendeki birlik orani ne kadar yuksekse asimilasyon o kadar hizli. Birlik gondermek garnizonu dusurur, asimilasyonu yavaslatir.</li>
+                        <li><b>Direnc:</b> Yuksek seviye gezegenler ve Bulwark tipi daha yavas asimile olur.</li>
+                    </ul>
+                    <div class="tutorial-warning">Fethettikten hemen sonra cok birlik gondermek asimilasyonu yavaslatir. Garnizonu yuksek tut.</div>
+                </div>
+
+                <div class="tutorial-section" id="tut-savas">
+                    <h3>6) Savas, Uretim ve Tedarik</h3>
+                    <ul>
+                        <li><b>Savunma modu:</b> Savunma gucu %25 artar; uretim %25 ceza alir. Kritik sinirlarda kullan.</li>
+                        <li><b>Tedarik hatti:</b> Baskente (veya bagli gezegenlere) 220 birim mesafede bagli olmayan gezegenler %40 uretim cezasi alir.</li>
+                        <li><b>Upgrade:</b> Gezegen seviyesi 2 ve 3'e cikar; uretim ve kapasite artar. Maliyet: ~18 + yaricap + (seviye-1)*14 birlik.</li>
+                        <li><b>Zafer:</b> Tum rakipleri haritadan silen oyuncu kazanir.</li>
+                    </ul>
+                </div>
+
+                <div class="tutorial-section" id="tut-gezegenler">
+                    <h3>7) Gezegen Siniflari</h3>
+                    <p>Her gezegen bir tip ile dogar. Harf kodu ve rengi haritada gorunur.</p>
+                    <div class="node-types">
+                        <div class="node-type-card">
+                            <strong class="color-core">C - Core</strong>
+                            <p>Dengeli temel gezegen. Uretim, savunma ve kapasite 1.0x.</p>
+                        </div>
+                        <div class="node-type-card">
+                            <strong class="color-forge">F - Forge</strong>
+                            <p>Uretim +35%, savunma -10%, kapasite -10%. Hizli uretim icin.</p>
+                        </div>
+                        <div class="node-type-card">
+                            <strong class="color-bulwark">B - Bulwark</strong>
+                            <p>Savunma +45%, uretim -25%, kapasite +25%. Kaleler icin ideal.</p>
+                        </div>
+                        <div class="node-type-card">
+                            <strong class="color-relay">R - Relay</strong>
+                            <p>Flow +35%, filo hizi +35%, kapasite -15%. Akis ve hareket odakli.</p>
+                        </div>
+                        <div class="node-type-card">
+                            <strong class="color-nexus">N - Nexus</strong>
+                            <p>Tum alanlarda +10-15% bonus. En dengeli ozel tip.</p>
+                        </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="tutorial-section">
-                <h3>6) Harita Olaylari</h3>
-                <ul>
-                    <li><b>Wormhole:</b> Bagli iki nokta arasinda filolar cok daha hizli gider (yaklasik 1.75x).</li>
-                    <li><b>Gravity alan:</b> Merkezdeki alandan gecen filolar hiz kazanir (yaklasik 1.35x).</li>
-                    <li><b>Stratejik noktalar:</b> Altin cerceveli gecit planetleri harita kontrolunde cok kritiktir.</li>
-                </ul>
-            </div>
+                <div class="tutorial-section" id="tut-harita">
+                    <h3>8) Harita Olaylari</h3>
+                    <ul>
+                        <li><b>Wormhole:</b> Bagli iki nokta arasinda filolar 1.75x hizla gider. Uzun mesafeleri kisaltir.</li>
+                        <li><b>Gravity alan:</b> Merkezdeki ~170 birim yaricaptaki alandan gecen filolar 1.35x hiz kazanir.</li>
+                        <li><b>Stratejik noktalar:</b> Altin cerceveli gezegenler cok komsulu gecit noktalaridir. Kontrol etmek harita hakimiyeti saglar.</li>
+                    </ul>
+                    <div class="tutorial-tip"><strong>Strateji:</strong> Wormhole uclarina erken ulas, dusmanin hizli transferini kes.</div>
+                </div>
 
-            <div class="tutorial-section">
-                <h3>7) HUD ve Bilgi Panelleri</h3>
-                <ul>
-                    <li><b>Power paneli (sag):</b> Oyuncularin anlik guc siralamasini gosterir.</li>
-                    <li><b>Tick/Ping:</b> Oyunun temposunu ve online gecikmeyi izleyebilirsin.</li>
-                    <li><b>Minimap:</b> Genel durumu hizli okumak icin kullan.</li>
-                    <li><b>Zafer kosulu:</b> Tum rakipleri haritadan silen son oyuncu kazanir.</li>
-                </ul>
+                <div class="tutorial-section" id="tut-hud">
+                    <h3>9) HUD ve Bilgi Panelleri</h3>
+                    <ul>
+                        <li><b>Power paneli (sag ust):</b> Oyuncularin anlik guc siralamasini gosterir. Renkler oyuncuya gore.</li>
+                        <li><b>Send % / Slider:</b> Her tiklamada gonderilecek birlik orani. 1-0 tuslariyla da degistirilebilir.</li>
+                        <li><b>Tick / Ping:</b> Oyun temposu ve (cok oyunculuda) ag gecikmesi.</li>
+                        <li><b>Minimap:</b> Genel durumu hizli okumak icin. CHAT ile sohbet paneli acilir.</li>
+                        <li><b>THEME:</b> Acik/koyu tema degistirir.</li>
+                    </ul>
+                </div>
+
+                <div class="tutorial-footer-btn">
+                    <button id="closeHowToPlayBtn" class="primary-btn">Tamam, Anladim</button>
+                </div>
             </div>
-            <button id="closeHowToPlayBtn" class="primary-btn">Tamam</button>
         </div>
     </div>
     <div id="pauseOverlay" class="overlay hidden">
@@ -1172,7 +1386,14 @@
     </div>
     <div id="hud" class="hidden">
         <div id="hudLeft"><span id="hudPercent">Send: 50%</span><input type="range" id="sendPercent" min="10" max="100"
-                value="50" step="5" /></div>
+                value="50" step="5" />
+            <div class="send-quick-row">
+                <button type="button" class="send-quick-btn" data-send-pct="25">25%</button>
+                <button type="button" class="send-quick-btn active" data-send-pct="50">50%</button>
+                <button type="button" class="send-quick-btn" data-send-pct="75">75%</button>
+                <button type="button" class="send-quick-btn" data-send-pct="100">100%</button>
+            </div>
+        </div>
         <div id="hudCenter"><span id="hudTick">Tick: 0</span><span id="pingDisplay" class="ping-display"></span></div>
         <div id="hudRight"><button id="pauseBtn" title="Pause">||</button><button id="speedBtn" title="Speed">1x</button><button id="themeBtn" title="Tema">THEME</button><button id="chatToggle" title="Chat">CHAT</button>
         </div>

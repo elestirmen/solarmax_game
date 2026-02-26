@@ -6,6 +6,7 @@
 
 import { computeSendCount } from './assets/sim/dispatch_math.js';
 import { applyTurretDamage } from './assets/sim/turret.js';
+import { shouldStartDragSend } from './assets/sim/input_policy.js';
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ CONSTANTS Ã¢â€â‚¬Ã¢â€â‚¬
 var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
@@ -1684,6 +1685,7 @@ function drawMapFeature(ctx, tick) {
 // Ã¢â€â‚¬Ã¢â€â‚¬ INPUT Ã¢â€â‚¬Ã¢â€â‚¬
 var inp = {
     sel: new Set(), marqActive: false, marqStart: { x: 0, y: 0 }, marqEnd: { x: 0, y: 0 }, dragActive: false, dragStart: { x: 0, y: 0 }, dragEnd: { x: 0, y: 0 }, dragSrcs: [],
+    dragPending: false, dragDownNodeId: -1, dragDownScreen: { x: 0, y: 0 }, dragThreshold: 6,
     panActive: false, panLast: { x: 0, y: 0 }, mw: { x: 0, y: 0 }, ms: { x: 0, y: 0 }, sendPct: 50, shift: false
 };
 function s2w(sx, sy) { return { x: (sx - cv.width / 2) / G.cam.zoom + G.cam.x, y: (sy - cv.height / 2) / G.cam.zoom + G.cam.y }; }
@@ -1709,6 +1711,43 @@ function sendFromSelectionTo(tgtId) {
         applyPlayerCommand(G.human, 'send', sendData);
         recEvt('send', sendData);
     }
+    return true;
+}
+function sendFromSourcesTo(srcs, tgtId) {
+    var valid = [];
+    for (var i = 0; i < srcs.length; i++) {
+        var sid = srcs[i];
+        var sn = G.nodes[sid];
+        if (sn && sn.owner === G.human && sid !== tgtId) valid.push(sid);
+    }
+    if (!valid.length) return false;
+    var sendData = { sources: valid, tgtId: tgtId, pct: inp.sendPct / 100 };
+    if (!issueOnlineCommand('send', sendData)) {
+        applyPlayerCommand(G.human, 'send', sendData);
+        recEvt('send', sendData);
+    }
+    return true;
+}
+function centroidForSources(srcIds) {
+    var cx = 0, cy = 0, cc = 0;
+    for (var i = 0; i < srcIds.length; i++) {
+        var sn = G.nodes[srcIds[i]];
+        if (!sn || sn.owner !== G.human) continue;
+        cx += sn.pos.x;
+        cy += sn.pos.y;
+        cc++;
+    }
+    if (!cc) return null;
+    return { x: cx / cc, y: cy / cc };
+}
+function beginDragSend(srcIds, worldPos) {
+    var center = centroidForSources(srcIds);
+    if (!center) return false;
+    inp.dragActive = true;
+    inp.dragPending = false;
+    inp.dragSrcs = srcIds.slice();
+    inp.dragStart = center;
+    inp.dragEnd = worldPos;
     return true;
 }
 
@@ -1743,6 +1782,7 @@ var tabSingle = $('tabSingle'), tabMulti = $('tabMulti'), panelSingle = $('panel
 var resumeBtn = $('resumeBtn'), quitBtn = $('quitBtn');
 var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameOverStats'), repBtn = $('replayBtn'), expRepBtn = $('exportReplayBtn'), restartBtn = $('restartBtn'), nextLevelBtn = $('nextLevelBtn');
 var hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
+var sendPctQuickBtns = Array.prototype.slice.call(document.querySelectorAll('.send-quick-btn'));
 var powerSidebar = $('powerSidebar'), powerListEl = $('powerList');
 var scenarioBtn = $('scenarioBtn'), scenarioOv = $('scenarioOverlay'), scenarioStartBtn = $('scenarioStartBtn'), scenarioCloseBtn = $('scenarioCloseBtn'), scenarioProgressEl = $('scenarioProgress'), scenarioBubbleListEl = $('scenarioBubbleList'), scenarioMissionEl = $('scenarioMission');
 var repSlower = $('replaySlower'), repPauseBtn = $('replayPause'), repFaster = $('replayFaster'), repSpdLbl = $('replaySpeedLabel'), repTickLbl = $('replayTickLabel'), repStopBtn = $('replayStop');
@@ -2509,7 +2549,31 @@ if (leaderboardBtn) leaderboardBtn.addEventListener('click', function () {
     if (net.socket && net.connected) net.socket.emit('requestLeaderboard');
 });
 if (leaderboardClose) leaderboardClose.addEventListener('click', function () { if (leaderboardOv) leaderboardOv.classList.add('hidden'); });
-sendPctIn.addEventListener('input', function () { inp.sendPct = parseInt(sendPctIn.value, 10); hudPct.textContent = 'Send: ' + inp.sendPct + '%'; });
+function syncSendQuickButtons() {
+    for (var i = 0; i < sendPctQuickBtns.length; i++) {
+        var btn = sendPctQuickBtns[i];
+        var pct = parseInt(btn.getAttribute('data-send-pct') || '0', 10);
+        if (pct === inp.sendPct) btn.classList.add('active');
+        else btn.classList.remove('active');
+    }
+}
+function setSendPct(pct) {
+    var next = clamp(Math.round(Number(pct) || 50), 10, 100);
+    inp.sendPct = next;
+    if (sendPctIn) sendPctIn.value = '' + next;
+    if (hudPct) hudPct.textContent = 'Send: ' + next + '%';
+    syncSendQuickButtons();
+}
+sendPctIn.addEventListener('input', function () { setSendPct(parseInt(sendPctIn.value, 10)); });
+for (var sqi = 0; sqi < sendPctQuickBtns.length; sqi++) {
+    (function (btn) {
+        btn.addEventListener('click', function () {
+            var pct = parseInt(btn.getAttribute('data-send-pct') || '50', 10);
+            setSendPct(pct);
+        });
+    })(sendPctQuickBtns[sqi]);
+}
+syncSendQuickButtons();
 repBtn.addEventListener('click', function () { if (lastRepData) startReplayFromData(lastRepData); });
 expRepBtn.addEventListener('click', function () { if (!lastRepData) return; var b = new Blob([JSON.stringify(lastRepData, null, 2)], { type: 'application/json' }), u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = 'replay-' + lastRepData.seed + '.json'; a.click(); URL.revokeObjectURL(u); });
 if (nextLevelBtn) nextLevelBtn.addEventListener('click', function () {
@@ -2584,29 +2648,58 @@ cv.addEventListener('mousedown', function (e) {
         e.preventDefault(); return;
     }
     var cn = hitNode(w); inp.shift = e.shiftKey;
-    if (cn && inp.sel.size > 0 && !e.shiftKey) {
-        var sendToOwn = cn.owner === G.human && (!inp.sel.has(cn.id) || inp.sel.size > 1);
-        if (cn.owner !== G.human || sendToOwn) {
-            if (sendFromSelectionTo(cn.id)) return;
-        }
-    }
-    if (cn && cn.owner === G.human) { if (!e.shiftKey) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); } cn.selected = true; inp.sel.add(cn.id); if (typeof AudioFX !== 'undefined') AudioFX.select(); recEvt('select', { ids: Array.from(inp.sel), append: e.shiftKey }); }
-    else if (cn && inp.sel.size > 0) sendFromSelectionTo(cn.id);
-    else {
-        // Empty-space drag defaults to marquee selection.
-        // Use Ctrl + drag for drag-send when a selection exists.
-        if (e.ctrlKey && inp.sel.size > 0) {
-            inp.dragActive = true; var cx = 0, cy = 0, cc = 0; inp.sel.forEach(function (id) { cx += G.nodes[id].pos.x; cy += G.nodes[id].pos.y; cc++; });
-            inp.dragStart = { x: cx / cc, y: cy / cc }; inp.dragEnd = w; inp.dragSrcs = Array.from(inp.sel);
+    inp.dragPending = false;
+    inp.dragDownNodeId = -1;
+
+    if (cn && cn.owner === G.human) {
+        var dragSources = [];
+        if (inp.sel.has(cn.id) && inp.sel.size > 0) {
+            inp.sel.forEach(function (sid) {
+                var sn = G.nodes[sid];
+                if (sn && sn.owner === G.human) dragSources.push(sid);
+            });
         } else {
-            if (!e.shiftKey) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); recEvt('deselect', {}); }
-            inp.marqActive = true; inp.marqStart = { x: e.offsetX, y: e.offsetY }; inp.marqEnd = { x: e.offsetX, y: e.offsetY };
+            G.nodes.forEach(function (n) { n.selected = false; });
+            inp.sel.clear();
+            cn.selected = true;
+            inp.sel.add(cn.id);
+            dragSources = [cn.id];
+            if (typeof AudioFX !== 'undefined') AudioFX.select();
+            recEvt('select', { ids: Array.from(inp.sel), append: false });
         }
+        if (dragSources.length > 0) {
+            inp.dragPending = true;
+            inp.dragDownNodeId = cn.id;
+            inp.dragDownScreen = { x: e.offsetX, y: e.offsetY };
+            inp.dragSrcs = dragSources;
+            var startPt = centroidForSources(dragSources);
+            inp.dragStart = startPt || { x: cn.pos.x, y: cn.pos.y };
+            inp.dragEnd = w;
+        }
+        return;
+    }
+
+    if (cn && inp.sel.size > 0) {
+        sendFromSelectionTo(cn.id);
+        return;
+    }
+
+    if (!cn) {
+        if (!e.shiftKey) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); recEvt('deselect', {}); }
+        inp.marqActive = true; inp.marqStart = { x: e.offsetX, y: e.offsetY }; inp.marqEnd = { x: e.offsetX, y: e.offsetY };
     }
 });
 cv.addEventListener('mousemove', function (e) {
     var w = s2w(e.offsetX, e.offsetY); inp.mw = w; inp.ms = { x: e.offsetX, y: e.offsetY };
     if (inp.panActive) { var dx = (e.offsetX - inp.panLast.x) / G.cam.zoom, dy = (e.offsetY - inp.panLast.y) / G.cam.zoom; G.cam.x -= dx; G.cam.y -= dy; inp.panLast = { x: e.offsetX, y: e.offsetY }; return; }
+    if (inp.dragPending && !inp.dragActive) {
+        var mdx = e.offsetX - inp.dragDownScreen.x;
+        var mdy = e.offsetY - inp.dragDownScreen.y;
+        var movedPx = Math.sqrt(mdx * mdx + mdy * mdy);
+        if (shouldStartDragSend({ downOnOwnedNode: inp.dragDownNodeId >= 0, movedPx: movedPx, thresholdPx: inp.dragThreshold })) {
+            beginDragSend(inp.dragSrcs, w);
+        }
+    }
     if (inp.dragActive) { inp.dragEnd = w; return; }
     if (inp.marqActive) { inp.marqEnd = { x: e.offsetX, y: e.offsetY }; }
 });
@@ -2614,22 +2707,11 @@ cv.addEventListener('mouseup', function (e) {
     if (e.button === 1) { inp.panActive = false; return; }
     if (inp.dragActive) {
         var w = s2w(e.offsetX, e.offsetY), tn = hitNode(w);
-        if (tn && inp.dragSrcs.length > 0) {
-            var dragSources = inp.dragSrcs.filter(function (sid) {
-                var sn = G.nodes[sid];
-                return sn && sn.owner === G.human && sid !== tn.id;
-            });
-            if (dragSources.length > 0) {
-                var pct = inp.sendPct / 100;
-                var dragSend = { sources: dragSources, tgtId: tn.id, pct: pct };
-                if (!issueOnlineCommand('send', dragSend)) {
-                    applyPlayerCommand(G.human, 'send', dragSend);
-                    recEvt('send', dragSend);
-                }
-            }
-        }
-        inp.dragActive = false; inp.dragSrcs = []; return;
+        if (tn && inp.dragSrcs.length > 0) sendFromSourcesTo(inp.dragSrcs, tn.id);
+        inp.dragActive = false; inp.dragPending = false; inp.dragDownNodeId = -1; inp.dragSrcs = []; return;
     }
+    inp.dragPending = false;
+    inp.dragDownNodeId = -1;
     if (inp.marqActive) {
         var sw = s2w(inp.marqStart.x, inp.marqStart.y), ew = s2w(inp.marqEnd.x, inp.marqEnd.y), ids = nodesInRect(sw, ew, G.human);
         if (ids.length > 0) { if (!inp.shift) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); } ids.forEach(function (id) { G.nodes[id].selected = true; inp.sel.add(id); }); recEvt('select', { ids: Array.from(inp.sel), append: inp.shift }); } inp.marqActive = false;
@@ -2645,33 +2727,78 @@ cv.addEventListener('touchstart', function (e) {
         var r = cv.getBoundingClientRect();
         var pos = { x: (e.touches[0].clientX - r.left) * (cv.width / r.width), y: (e.touches[0].clientY - r.top) * (cv.height / r.height) };
         inp.touchStart = pos;
+        inp.dragPending = false;
+        inp.dragDownNodeId = -1;
         var w = s2w(pos.x, pos.y); var cn = hitNode(w);
-        if (cn && inp.sel.size > 0) {
-            var sendOwnTouch = cn.owner === G.human && (!inp.sel.has(cn.id) || inp.sel.size > 1);
-            if (cn.owner !== G.human || sendOwnTouch) {
-                if (sendFromSelectionTo(cn.id)) { e.preventDefault(); return; }
+        if (cn && cn.owner === G.human) {
+            var touchSources = [];
+            if (inp.sel.has(cn.id) && inp.sel.size > 0) {
+                inp.sel.forEach(function (sid) {
+                    var sn = G.nodes[sid];
+                    if (sn && sn.owner === G.human) touchSources.push(sid);
+                });
+            } else {
+                G.nodes.forEach(function (n) { n.selected = false; });
+                inp.sel.clear();
+                cn.selected = true;
+                inp.sel.add(cn.id);
+                touchSources = [cn.id];
+                if (typeof AudioFX !== 'undefined') AudioFX.select();
+                recEvt('select', { ids: Array.from(inp.sel), append: false });
             }
+            inp.dragPending = true;
+            inp.dragDownNodeId = cn.id;
+            inp.dragDownScreen = { x: pos.x, y: pos.y };
+            inp.dragSrcs = touchSources;
+            var touchStartPt = centroidForSources(touchSources);
+            inp.dragStart = touchStartPt || { x: cn.pos.x, y: cn.pos.y };
+            inp.dragEnd = w;
+        } else if (cn && inp.sel.size > 0) {
+            sendFromSelectionTo(cn.id);
+        } else {
+            inp.marqActive = true; inp.marqStart = pos; inp.marqEnd = pos;
         }
-        if (cn && cn.owner === G.human) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); cn.selected = true; inp.sel.add(cn.id); if (typeof AudioFX !== 'undefined') AudioFX.select(); }
-        else if (cn && inp.sel.size > 0) sendFromSelectionTo(cn.id);
-        else { inp.marqActive = true; inp.marqStart = pos; inp.marqEnd = pos; }
         e.preventDefault();
     }
 }, { passive: false });
 cv.addEventListener('touchmove', function (e) {
-    if (e.touches.length === 1 && inp.marqActive) {
+    if (e.touches.length === 1 && G.state === 'playing') {
         var r = cv.getBoundingClientRect();
-        inp.marqEnd = { x: (e.touches[0].clientX - r.left) * (cv.width / r.width), y: (e.touches[0].clientY - r.top) * (cv.height / r.height) };
+        var pos = { x: (e.touches[0].clientX - r.left) * (cv.width / r.width), y: (e.touches[0].clientY - r.top) * (cv.height / r.height) };
+        var w = s2w(pos.x, pos.y);
+        if (inp.dragPending && !inp.dragActive) {
+            var mdx = pos.x - inp.dragDownScreen.x;
+            var mdy = pos.y - inp.dragDownScreen.y;
+            var movedPx = Math.sqrt(mdx * mdx + mdy * mdy);
+            if (shouldStartDragSend({ downOnOwnedNode: inp.dragDownNodeId >= 0, movedPx: movedPx, thresholdPx: inp.dragThreshold })) {
+                beginDragSend(inp.dragSrcs, w);
+            }
+        }
+        if (inp.dragActive) inp.dragEnd = w;
+        else if (inp.marqActive) inp.marqEnd = pos;
         e.preventDefault();
     }
 }, { passive: false });
 cv.addEventListener('touchend', function (e) {
-    if (e.changedTouches.length === 1 && inp.marqActive) {
+    if (e.changedTouches.length === 1 && G.state === 'playing') {
         var r = cv.getBoundingClientRect();
         var pos = { x: (e.changedTouches[0].clientX - r.left) * (cv.width / r.width), y: (e.changedTouches[0].clientY - r.top) * (cv.height / r.height) };
-        var sw = s2w(inp.marqStart.x, inp.marqStart.y), ew = s2w(pos.x, pos.y), ids = nodesInRect(sw, ew, G.human);
-        if (ids.length > 0) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); ids.forEach(function (id) { G.nodes[id].selected = true; inp.sel.add(id); }); }
-        inp.marqActive = false;
+        var w = s2w(pos.x, pos.y);
+        if (inp.dragActive) {
+            var tn = hitNode(w);
+            if (tn && inp.dragSrcs.length > 0) sendFromSourcesTo(inp.dragSrcs, tn.id);
+            inp.dragActive = false;
+            inp.dragPending = false;
+            inp.dragDownNodeId = -1;
+            inp.dragSrcs = [];
+        } else if (inp.marqActive) {
+            var sw = s2w(inp.marqStart.x, inp.marqStart.y), ew = s2w(pos.x, pos.y), ids = nodesInRect(sw, ew, G.human);
+            if (ids.length > 0) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); ids.forEach(function (id) { G.nodes[id].selected = true; inp.sel.add(id); }); }
+            inp.marqActive = false;
+        } else {
+            inp.dragPending = false;
+            inp.dragDownNodeId = -1;
+        }
     }
 }, { passive: false });
 window.addEventListener('keydown', function (e) {
@@ -2690,13 +2817,9 @@ window.addEventListener('keydown', function (e) {
             }
         }
         if (e.key >= '1' && e.key <= '9') {
-            inp.sendPct = parseInt(e.key, 10) * 10;
-            sendPctIn.value = '' + inp.sendPct;
-            hudPct.textContent = 'Send: ' + inp.sendPct + '%';
+            setSendPct(parseInt(e.key, 10) * 10);
         } else if (e.key === '0') {
-            inp.sendPct = 100;
-            sendPctIn.value = '100';
-            hudPct.textContent = 'Send: 100%';
+            setSendPct(100);
         }
     }
     else if (G.state === 'paused') { if (!net.online && (e.key === 'Escape' || e.key === 'p')) { G.state = 'playing'; showUI('playing'); } }
