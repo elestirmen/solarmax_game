@@ -1449,11 +1449,11 @@ function drawFleetRocket(ctx, f, col, tick) {
             var dotAlpha = clamp(0.96 - ui * 0.003, 0.28, 0.96);
 
             ctx.beginPath();
-            ctx.arc(px, py, 0.82, 0, Math.PI * 2);
+            ctx.arc(px, py, 1.02, 0, Math.PI * 2);
             ctx.fillStyle = hexToRgba(col, dotAlpha);
             ctx.fill();
             ctx.beginPath();
-            ctx.arc(px, py, 0.3, 0, Math.PI * 2);
+            ctx.arc(px, py, 0.38, 0, Math.PI * 2);
             ctx.fillStyle = 'rgba(255,255,255,' + (dotAlpha * 0.82) + ')';
             ctx.fill();
         }
