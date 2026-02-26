@@ -1437,34 +1437,25 @@ function drawFleetRocket(ctx, f, col, tick) {
     var flameWidth = 0.9 + flicker * 0.6;
     var bx = f.x - dirX * flameLen, by = f.y - dirY * flameLen;
 
-    // Draw every transported unit as a separate escort marker (1:1 with fleet.count).
+    // Draw every transported unit in a single trailing queue (1:1 with fleet.count).
     var supportCount = Math.max(0, Math.floor(count) - 1);
     if (supportCount > 0) {
-        var remaining = supportCount;
-        var rowIdx = 0;
-        var markerIdx = 0;
-        while (remaining > 0) {
-            var rowCount = Math.min(remaining, 2 + rowIdx * 2);
-            var back = 4 + rowIdx * 2.85;
-            for (var ri = 0; ri < rowCount; ri++) {
-                var centered = ri - (rowCount - 1) * 0.5;
-                var side = centered * 2.35;
-                var wobble = Math.sin(tick * 0.16 + markerIdx * 0.67 + f.offsetL * 0.04) * 0.22;
-                var px = f.x - dirX * back + nX * (side + wobble);
-                var py = f.y - dirY * back + nY * (side + wobble);
+        var queueSpacing = 2.25;
+        for (var ui = 0; ui < supportCount; ui++) {
+            var back = 4.1 + ui * queueSpacing;
+            var wobble = Math.sin(tick * 0.14 + ui * 0.42 + f.offsetL * 0.03) * 0.14;
+            var px = f.x - dirX * back + nX * wobble;
+            var py = f.y - dirY * back + nY * wobble;
+            var dotAlpha = clamp(0.96 - ui * 0.003, 0.28, 0.96);
 
-                ctx.beginPath();
-                ctx.arc(px, py, 0.96, 0, Math.PI * 2);
-                ctx.fillStyle = hexToRgba(col, 0.98);
-                ctx.fill();
-                ctx.beginPath();
-                ctx.arc(px, py, 0.36, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255,255,255,0.84)';
-                ctx.fill();
-                markerIdx++;
-            }
-            remaining -= rowCount;
-            rowIdx++;
+            ctx.beginPath();
+            ctx.arc(px, py, 0.82, 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba(col, dotAlpha);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(px, py, 0.3, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(255,255,255,' + (dotAlpha * 0.82) + ')';
+            ctx.fill();
         }
     }
 
