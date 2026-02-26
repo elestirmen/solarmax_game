@@ -114,3 +114,41 @@ test('turret attacks only one target per tick (closest in range)', function () {
     assert.equal(fleets[0].count, 9);
     assert.equal(fleets[1].count, 10);
 });
+
+test('captured turret fires with low garrison while assimilation is incomplete', function () {
+    var nodes = [
+        {
+            id: 0,
+            kind: 'turret',
+            owner: 0,
+            units: 1,
+            pos: { x: 0, y: 0 },
+            assimilationProgress: 0.2,
+            assimilationLock: 180,
+        },
+    ];
+    var fleets = [
+        {
+            active: true,
+            owner: 1,
+            count: 10,
+            x: 20,
+            y: 0,
+            dmgAcc: 0,
+            trail: [],
+        },
+    ];
+
+    var result = applyTurretDamage({
+        nodes: nodes,
+        fleets: fleets,
+        dt: 1,
+        range: 120,
+        dps: 2,
+        minGarrison: 6,
+    });
+
+    assert.equal(result.hits, 1);
+    assert.equal(result.shots.length, 1);
+    assert.equal(fleets[0].count, 8);
+});

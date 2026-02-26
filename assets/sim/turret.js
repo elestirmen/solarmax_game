@@ -27,8 +27,9 @@ export function applyTurretDamage(opts) {
         var turret = nodes[ni];
         if (!turret || turret.kind !== 'turret') continue;
         if (!turret.pos) continue;
-        if ((turret.units || 0) < minGarrison) continue;
-        if (!isAssimilated(turret)) continue;
+        var requiredGarrison = turret.owner === -1 ? minGarrison : 1;
+        if ((turret.units || 0) < requiredGarrison) continue;
+        if (turret.owner === -1 && !isAssimilated(turret)) continue;
 
         var bestFleet = null;
         var bestDistSq = rangeSq + 1;
