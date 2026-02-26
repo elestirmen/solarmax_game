@@ -1392,9 +1392,7 @@ function drawTurretStation(ctx, n, col, tick) {
 
 function drawFleetRocket(ctx, f, col, tick) {
     var count = Math.max(1, Number(f.count) || 1);
-    var logCount = Math.log(count + 1);
-    var radiusScale = clamp(0.9 + logCount * 0.34, 0.9, 2.5);
-    var fleetAlpha = clamp(0.45 + logCount * 0.2, 0.45, 0.95);
+    var fleetAlpha = clamp(0.58 + Math.log(count + 1) * 0.07, 0.58, 0.9);
     var trail = f.trail || [];
     var tl = trail.length;
     if (tl > 0) {
@@ -1406,7 +1404,7 @@ function drawFleetRocket(ctx, f, col, tick) {
             ctx.moveTo(prev.x, prev.y);
             ctx.lineTo(curr.x, curr.y);
             ctx.strokeStyle = hexToRgba(col, (0.04 + t * 0.18) * fleetAlpha);
-            ctx.lineWidth = (0.6 + t * 1.6) * (0.8 + radiusScale * 0.2);
+            ctx.lineWidth = 0.6 + t * 1.6;
             ctx.lineCap = 'round';
             ctx.stroke();
             prev = curr;
@@ -1415,7 +1413,7 @@ function drawFleetRocket(ctx, f, col, tick) {
         ctx.moveTo(prev.x, prev.y);
         ctx.lineTo(f.x, f.y);
         ctx.strokeStyle = hexToRgba(col, 0.28 * fleetAlpha);
-        ctx.lineWidth = 2.3 * (0.85 + radiusScale * 0.25);
+        ctx.lineWidth = 2.3;
         ctx.lineCap = 'round';
         ctx.stroke();
     }
@@ -1439,11 +1437,31 @@ function drawFleetRocket(ctx, f, col, tick) {
     var flameWidth = 0.9 + flicker * 0.6;
     var bx = f.x - dirX * flameLen, by = f.y - dirY * flameLen;
 
+    // Draw every transported unit as a tiny escort marker (1:1 with fleet.count).
+    var supportCount = Math.max(0, Math.floor(count) - 1);
+    if (supportCount > 0) {
+        var cols = Math.max(3, Math.ceil(Math.sqrt(supportCount)));
+        var spacing = 1.65;
+        for (var ui = 0; ui < supportCount; ui++) {
+            var row = Math.floor(ui / cols);
+            var colIdx = ui % cols;
+            var centered = colIdx - (cols - 1) * 0.5;
+            var jitter = (hashMix(f.srcId, f.tgtId, ui, 97) - 0.5) * 0.35;
+            var sway = Math.sin(tick * 0.12 + ui * 0.45 + f.offsetL * 0.03) * 0.22;
+            var back = 2.2 + row * spacing * 1.1;
+            var side = centered * spacing + jitter + sway;
+            var px = f.x - dirX * back + nX * side;
+            var py = f.y - dirY * back + nY * side;
+
+            ctx.beginPath();
+            ctx.arc(px, py, 0.72, 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba(col, 0.78);
+            ctx.fill();
+        }
+    }
+
     ctx.save();
     ctx.globalAlpha = fleetAlpha;
-    ctx.translate(f.x, f.y);
-    ctx.scale(radiusScale, radiusScale);
-    ctx.translate(-f.x, -f.y);
 
     ctx.beginPath();
     ctx.moveTo(f.x - dirX * 0.4 + nX * flameWidth, f.y - dirY * 0.4 + nY * flameWidth);
@@ -1647,7 +1665,8 @@ function render(ctx, cv, tick) {
         var orbData = [];
         if (hasOrbiters) {
             var uCount = Math.max(0, Math.floor(n.units));
-            var orbiters = uCount;
+            var orbiters = Math.min(MAX_ORBITERS, Math.round(uCount / ORBIT_UNIT_STEP));
+            if (uCount > 0 && orbiters < 1) orbiters = 1;
             hasOrbiters = orbiters > 0;
             if (hasOrbiters) {
                 // Stable orbital distribution: density scales with unit count.
@@ -1657,7 +1676,7 @@ function render(ctx, cv, tick) {
                 var ringStep = 6.8;
                 var ringStart = n.radius + 7.5;
                 var minSpacing = 7.6;
-                for (var ring = 0; ring < 40 && assigned < orbiters; ring++) {
+                for (var ring = 0; ring < ORBIT_MAX_RINGS && assigned < orbiters; ring++) {
                     var rr = ringStart + ring * ringStep;
                     var rrY = rr * (0.56 + Math.min(0.26, ring * 0.08));
                     var ringCap = Math.max(8, Math.floor((Math.PI * 2 * rr) / minSpacing));
