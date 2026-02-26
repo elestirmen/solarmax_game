@@ -20,6 +20,7 @@ export function applyTurretDamage(opts) {
 
     var hits = 0;
     var kills = 0;
+    var shots = [];
     var rangeSq = range * range;
 
     for (var ni = 0; ni < nodes.length; ni++) {
@@ -53,6 +54,13 @@ export function applyTurretDamage(opts) {
         if (damage <= 0) continue;
 
         hits++;
+        shots.push({
+            fromX: turret.pos.x,
+            fromY: turret.pos.y,
+            toX: bestFleet.x || 0,
+            toY: bestFleet.y || 0,
+            turretOwner: turret.owner,
+        });
         bestFleet.dmgAcc -= damage;
         bestFleet.count -= damage;
 
@@ -64,5 +72,5 @@ export function applyTurretDamage(opts) {
         }
     }
 
-    return { hits: hits, kills: kills };
+    return { hits: hits, kills: kills, shots: shots };
 }

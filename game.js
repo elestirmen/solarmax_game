@@ -178,7 +178,7 @@ var G = {
     rep: null, aiTicks: [], flowId: 0, fleetSerial: 0,
     aiProfiles: [], mapFeature: { type: 'none' }, wormholes: [],
     stats: { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0 },
-    particles: [], mapMode: 'random',
+    particles: [], turretBeams: [], mapMode: 'random',
     playerCapital: {}, strategicNodes: [],
     powerByPlayer: {}, capByPlayer: {}, unitByPlayer: {},
     campaign: { active: false, levelIndex: -1, unlocked: 1, completed: 0 },
@@ -534,6 +534,7 @@ function initGame(seedStr, nc, diff, opts) {
     G.fleetSerial = 0;
     G.stats = { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0 };
     G.particles = [];
+    G.turretBeams = [];
     for (var i = 0; i < pool.length; i++) { pool[i].active = false; pool[i].trail = []; }
     G.fleets = [];
     G.flows = [];
@@ -1015,7 +1016,7 @@ function gameTick() {
             n.prodAcc -= a;
         }
     }
-    applyTurretDamage({
+    var turretReport = applyTurretDamage({
         nodes: G.nodes,
         fleets: G.fleets,
         dt: TICK_DT,
@@ -1023,6 +1024,21 @@ function gameTick() {
         dps: TURRET_DPS,
         minGarrison: TURRET_MIN_GARRISON,
     });
+    if (turretReport && Array.isArray(turretReport.shots) && turretReport.shots.length > 0) {
+        for (var tsi = 0; tsi < turretReport.shots.length; tsi++) {
+            var shot = turretReport.shots[tsi];
+            G.turretBeams.push({
+                fromX: shot.fromX,
+                fromY: shot.fromY,
+                toX: shot.toX,
+                toY: shot.toY,
+                owner: shot.turretOwner,
+                life: 0.12,
+                maxLife: 0.12,
+            });
+        }
+        if (G.turretBeams.length > 80) G.turretBeams = G.turretBeams.slice(-80);
+    }
 
     // fleet movement with trail
     for (var i = G.fleets.length - 1; i >= 0; i--) {
@@ -1088,6 +1104,10 @@ function gameTick() {
         var p = G.particles[pi];
         p.x += p.vx; p.y += p.vy; p.life -= TICK_DT;
         if (p.life <= 0) G.particles.splice(pi, 1);
+    }
+    for (var bi = G.turretBeams.length - 1; bi >= 0; bi--) {
+        G.turretBeams[bi].life -= TICK_DT;
+        if (G.turretBeams[bi].life <= 0) G.turretBeams.splice(bi, 1);
     }
     checkEnd(); G.tick++;
 }
@@ -1517,6 +1537,31 @@ function render(ctx, cv, tick) {
         if (Math.abs(f.x - G.cam.x) > fhw || Math.abs(f.y - G.cam.y) > fhh) continue;
         var col = G.players[f.owner] ? G.players[f.owner].color : COL_NEUTRAL;
         drawFleetRocket(ctx, f, col, tick);
+    }
+    for (var bi = 0; bi < G.turretBeams.length; bi++) {
+        var beam = G.turretBeams[bi];
+        var beamAlpha = clamp(beam.life / Math.max(beam.maxLife, 0.0001), 0, 1);
+        var beamCol = beam.owner >= 0 && G.players[beam.owner] ? G.players[beam.owner].color : NODE_TYPE_DEFS.turret.color;
+        ctx.beginPath();
+        ctx.moveTo(beam.fromX, beam.fromY);
+        ctx.lineTo(beam.toX, beam.toY);
+        ctx.strokeStyle = hexToRgba(beamCol, 0.18 * beamAlpha);
+        ctx.lineWidth = 5;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(beam.fromX, beam.fromY);
+        ctx.lineTo(beam.toX, beam.toY);
+        ctx.strokeStyle = hexToRgba('#ffffff', 0.75 * beamAlpha);
+        ctx.lineWidth = 1.4;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(beam.toX, beam.toY, 1.6 + beamAlpha * 1.2, 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba('#ffffff', 0.55 * beamAlpha);
+        ctx.fill();
     }
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ NODES Ã¢â€â‚¬Ã¢â€â‚¬
