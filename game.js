@@ -4,6 +4,8 @@
    v2: Orbital warriors, fleet trails, enhanced visuals
    ============================================================ */
 
+import { computeSendCount } from './assets/sim/dispatch_math.js';
+
 // Ã¢â€â‚¬Ã¢â€â‚¬ CONSTANTS Ã¢â€â‚¬Ã¢â€â‚¬
 var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     NODE_RMIN = 18, NODE_RMAX = 36, NODE_MINDIST = 100, NEUTRAL_MAX = 20,
@@ -533,29 +535,25 @@ function dispatch(owner, srcIds, tgtId, pct) {
     for (var si = 0; si < srcIds.length; si++) {
         var src = G.nodes[srcIds[si]]; if (!src || src.owner !== owner) continue;
         var srcType = nodeTypeOf(src);
-        var cnt = Math.max(1, Math.floor(src.units * pct * srcType.flow));
-        cnt = Math.min(cnt, Math.floor(src.units) - 1);
-        if (cnt <= 0 || src.units <= 1) continue;
-        src.units -= cnt;
+        var send = computeSendCount({ srcUnits: src.units, pct: pct, flowMult: srcType.flow });
+        var cnt = send.sendCount;
+        if (cnt <= 0) continue;
+        src.units = send.newSrcUnits;
         didSend = true;
-        var spacing = 0.012;
-        var swarmWidth = Math.min(20, 6 + cnt * 0.35);
+        var swarmWidth = Math.min(20, 4 + Math.log(cnt + 1) * 6);
         var hasWormholeLink = isLinkedWormhole(src.id, tgtId);
         var curv = hasWormholeLink ? 0.05 : BEZ_CURV;
         var cp = bezCP(src.pos, tgt.pos, curv);
-        for (var u = 0; u < cnt; u++) {
-            var f = acquireFleet(); f.active = true; f.owner = owner; f.count = 1; f.srcId = srcIds[si]; f.tgtId = tgtId;
-            var jitter = hashMix(G.seed, src.id, tgtId, G.fleetSerial++);
-            var centered = cnt <= 1 ? 0 : ((u / (cnt - 1)) * 2 - 1);
-            f.t = -u * spacing;
-            f.speed = FLEET_SPEED; f.x = src.pos.x; f.y = src.pos.y;
-            f.offsetL = centered * swarmWidth + (jitter - 0.5) * 1.6;
-            f.spdVar = 0.98 + (jitter - 0.5) * 0.04;
-            f.routeSpeedMult = srcType.speed * (hasWormholeLink ? WORMHOLE_SPEED_MULT : 1);
-            f.cpx = cp.x; f.cpy = cp.y; f.arcLen = bezLen(src.pos, cp, tgt.pos);
-            f.trail = [];
-            G.fleets.push(f);
-        }
+        var f = acquireFleet(); f.active = true; f.owner = owner; f.count = cnt; f.srcId = srcIds[si]; f.tgtId = tgtId;
+        var jitter = hashMix(G.seed, src.id, tgtId, G.fleetSerial++);
+        f.t = 0;
+        f.speed = FLEET_SPEED; f.x = src.pos.x; f.y = src.pos.y;
+        f.offsetL = (jitter - 0.5) * swarmWidth;
+        f.spdVar = 0.98 + (jitter - 0.5) * 0.04;
+        f.routeSpeedMult = srcType.speed * (hasWormholeLink ? WORMHOLE_SPEED_MULT : 1);
+        f.cpx = cp.x; f.cpy = cp.y; f.arcLen = bezLen(src.pos, cp, tgt.pos);
+        f.trail = [];
+        G.fleets.push(f);
     }
     if (didSend && owner === G.human) {
         G.stats.fleetsSent++;
@@ -1158,6 +1156,10 @@ function drawPlanetTypeVisual(ctx, n, tdef, _col, tick) {
 }
 
 function drawFleetRocket(ctx, f, col, tick) {
+    var count = Math.max(1, Number(f.count) || 1);
+    var logCount = Math.log(count + 1);
+    var radiusScale = clamp(0.9 + logCount * 0.34, 0.9, 2.5);
+    var fleetAlpha = clamp(0.45 + logCount * 0.2, 0.45, 0.95);
     var trail = f.trail || [];
     var tl = trail.length;
     if (tl > 0) {
@@ -1168,8 +1170,8 @@ function drawFleetRocket(ctx, f, col, tick) {
             ctx.beginPath();
             ctx.moveTo(prev.x, prev.y);
             ctx.lineTo(curr.x, curr.y);
-            ctx.strokeStyle = hexToRgba(col, 0.04 + t * 0.18);
-            ctx.lineWidth = 0.6 + t * 1.6;
+            ctx.strokeStyle = hexToRgba(col, (0.04 + t * 0.18) * fleetAlpha);
+            ctx.lineWidth = (0.6 + t * 1.6) * (0.8 + radiusScale * 0.2);
             ctx.lineCap = 'round';
             ctx.stroke();
             prev = curr;
@@ -1177,8 +1179,8 @@ function drawFleetRocket(ctx, f, col, tick) {
         ctx.beginPath();
         ctx.moveTo(prev.x, prev.y);
         ctx.lineTo(f.x, f.y);
-        ctx.strokeStyle = hexToRgba(col, 0.28);
-        ctx.lineWidth = 2.3;
+        ctx.strokeStyle = hexToRgba(col, 0.28 * fleetAlpha);
+        ctx.lineWidth = 2.3 * (0.85 + radiusScale * 0.25);
         ctx.lineCap = 'round';
         ctx.stroke();
     }
@@ -1201,6 +1203,12 @@ function drawFleetRocket(ctx, f, col, tick) {
     var flameLen = 3 + flicker * 2;
     var flameWidth = 0.9 + flicker * 0.6;
     var bx = f.x - dirX * flameLen, by = f.y - dirY * flameLen;
+
+    ctx.save();
+    ctx.globalAlpha = fleetAlpha;
+    ctx.translate(f.x, f.y);
+    ctx.scale(radiusScale, radiusScale);
+    ctx.translate(-f.x, -f.y);
 
     ctx.beginPath();
     ctx.moveTo(f.x - dirX * 0.4 + nX * flameWidth, f.y - dirY * 0.4 + nY * flameWidth);
@@ -1236,6 +1244,8 @@ function drawFleetRocket(ctx, f, col, tick) {
     ctx.arc(noseX, noseY, 0.7, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255,255,255,0.9)';
     ctx.fill();
+
+    ctx.restore();
 }
 
 function render(ctx, cv, tick) {
