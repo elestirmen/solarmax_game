@@ -8,6 +8,8 @@ import { computeSendCount } from './assets/sim/dispatch_math.js';
 import { applyTurretDamage } from './assets/sim/turret.js';
 import { shouldStartDragSend } from './assets/sim/input_policy.js';
 import { isDispatchAllowed } from './assets/sim/barrier.js';
+import { computePlayerUnitCount, computeGlobalCap } from './assets/sim/cap.js';
+import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } from './assets/sim/ruleset.js';
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ CONSTANTS Ã¢â€â‚¬Ã¢â€â‚¬
 var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
@@ -167,6 +169,7 @@ function acquireFleet() { for (var i = 0; i < pool.length; i++) { if (!pool[i].a
 // Ã¢â€â‚¬Ã¢â€â‚¬ GAME STATE Ã¢â€â‚¬Ã¢â€â‚¬
 var G = {
     state: 'mainMenu', winner: -1, tick: 0, speed: 1, rng: null, seed: 42, diff: 'normal',
+    rulesMode: 'advanced', rules: getRulesetConfig('advanced'),
     nodes: [], fleets: [], flows: [], players: [], human: 0, fog: null,
     cam: { x: MAP_W / 2, y: MAP_H / 2, zoom: 1 },
     diffCfg: DIFFICULTY_PRESETS.normal,
@@ -177,7 +180,7 @@ var G = {
     stats: { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0 },
     particles: [], mapMode: 'random',
     playerCapital: {}, strategicNodes: [],
-    powerByPlayer: {},
+    powerByPlayer: {}, capByPlayer: {}, unitByPlayer: {},
     campaign: { active: false, levelIndex: -1, unlocked: 1, completed: 0 },
 };
 var ACHIEVEMENTS = [
@@ -272,6 +275,15 @@ function nodeLevelCapMult(node) { return 1 + (node.level - 1) * 0.12; }
 function nodeCapacity(node) {
     var td = nodeTypeOf(node);
     return Math.floor(MAX_UNITS * td.cap * nodeLevelCapMult(node));
+}
+function applyRulesetNodeKinds() {
+    if (!G.rules || !G.rules.simplifyNodeKinds) return;
+    for (var i = 0; i < G.nodes.length; i++) {
+        var node = G.nodes[i];
+        node.kind = normalizeNodeKindForRuleset(node.kind, G.rulesMode);
+        node.maxUnits = nodeCapacity(node);
+        if (node.units > node.maxUnits) node.units = node.maxUnits;
+    }
 }
 function isNodeAssimilated(node) {
     if (!node) return false;
@@ -484,6 +496,7 @@ function initGame(seedStr, nc, diff, opts) {
     var keepReplay = !!opts.keepReplay;
     var keepTuning = !!opts.keepTuning;
     var menuFog = typeof opts.fogEnabled === 'boolean' ? opts.fogEnabled : null;
+    var rulesMode = normalizeRulesetMode(opts.rulesMode || 'advanced');
     var mapFeatureCfg = null;
     if (typeof opts.mapFeature === 'string') mapFeatureCfg = { type: opts.mapFeature };
     else if (opts.mapFeature && typeof opts.mapFeature === 'object') mapFeatureCfg = opts.mapFeature;
@@ -494,6 +507,8 @@ function initGame(seedStr, nc, diff, opts) {
     G.speed = 1;
     G.winner = -1;
     G.diffCfg = difficultyConfig(diff);
+    G.rulesMode = rulesMode;
+    G.rules = getRulesetConfig(rulesMode);
     if (!keepTuning) {
         G.tune = defaultTune();
         G.tune.aiAgg = G.diffCfg.aiAggBase;
@@ -540,13 +555,14 @@ function initGame(seedStr, nc, diff, opts) {
     }
     genMap(nc);
     applyMapFeature(mapFeatureCfg || {});
+    applyRulesetNodeKinds();
     G.fog = initFog(G.players.length, G.nodes.length);
     for (var p = 0; p < G.players.length; p++) updateVis(G.fog, p, G.nodes, 0);
     powerRenderKey = '';
     G.powerByPlayer = computePowerByPlayer();
     var pn = null; for (var ni = 0; ni < G.nodes.length; ni++) if (G.nodes[ni].owner === 0) { pn = G.nodes[ni]; break; }
     if (pn) { G.cam.x = pn.pos.x; G.cam.y = pn.pos.y; } G.cam.zoom = 1;
-    if (!keepReplay) G.rec = { events: [], seed: G.seed, nc: nc, diff: diff };
+    if (!keepReplay) G.rec = { events: [], seed: G.seed, nc: nc, diff: diff, rulesMode: G.rulesMode };
     if (!keepReplay) G.rep = null;
     G.state = keepReplay ? 'replay' : 'playing';
 }
@@ -724,6 +740,7 @@ function toggleDefense(owner, nodeId) {
     return true;
 }
 function upgradeNode(owner, nodeId) {
+    if (!G.rules || !G.rules.allowUpgrade) return false;
     var node = G.nodes[nodeId];
     if (!node || node.owner !== owner || !isNodeAssimilated(node)) return false;
     if (node.level >= NODE_LEVEL_MAX) return false;
@@ -939,6 +956,19 @@ function gameTick() {
     G.powerByPlayer = power;
     var supplyByPlayer = {};
     for (var sp = 0; sp < G.players.length; sp++) supplyByPlayer[sp] = computeSupplyConnected(sp);
+    var ownerUnits = {};
+    var ownerCaps = {};
+    for (var op = 0; op < G.players.length; op++) {
+        ownerUnits[op] = computePlayerUnitCount({ nodes: G.nodes, fleets: G.fleets, owner: op });
+        ownerCaps[op] = computeGlobalCap({
+            nodes: G.nodes,
+            owner: op,
+            baseCap: G.rules ? G.rules.baseCap : 180,
+            capPerNodeFactor: G.rules ? G.rules.capPerNodeFactor : 42,
+        });
+    }
+    G.unitByPlayer = ownerUnits;
+    G.capByPlayer = ownerCaps;
     for (var i = 0; i < G.nodes.length; i++) {
         var n = G.nodes[i]; if (n.owner < 0) continue;
         var td = nodeTypeOf(n);
@@ -965,9 +995,25 @@ function gameTick() {
         var diffMult = n.owner === G.human ? G.diffCfg.humanProdMult : G.diffCfg.aiProdMult;
         var supplyMult = supplyByPlayer[n.owner] && supplyByPlayer[n.owner].has(n.id) ? 1 : ISOLATED_PROD_PENALTY;
         var defenseMult = n.defense ? DEFENSE_PROD_PENALTY : 1;
+        if (G.rules && !G.rules.applyExtraPenalties) {
+            supplyMult = 1;
+            defenseMult = 1;
+        }
         n.supplied = supplyMult === 1;
+        if (ownerUnits[n.owner] >= ownerCaps[n.owner]) continue;
         n.prodAcc += BASE_PROD * G.tune.prod * (n.radius / NODE_RMAX) * td.prod * nodeLevelProdMult(n) * (1 + ownerAssist) * diffMult * supplyMult * defenseMult;
-        if (n.prodAcc >= 1) { var a = Math.floor(n.prodAcc); n.units = Math.min(n.maxUnits, n.units + a); n.prodAcc -= a; }
+        if (n.prodAcc >= 1) {
+            var a = Math.floor(n.prodAcc);
+            var nodeRoom = Math.max(0, Math.floor(n.maxUnits - n.units));
+            var capRoom = Math.max(0, ownerCaps[n.owner] - ownerUnits[n.owner]);
+            var produced = Math.min(a, nodeRoom, capRoom);
+            if (produced > 0) {
+                n.units += produced;
+                ownerUnits[n.owner] += produced;
+                G.stats.unitsProduced += produced;
+            }
+            n.prodAcc -= a;
+        }
     }
     applyTurretDamage({
         nodes: G.nodes,
@@ -1898,6 +1944,7 @@ var cv = document.getElementById('gameCanvas'), ctx = cv.getContext('2d');
 var $ = function (id) { return document.getElementById(id); };
 var mainMenu = $('mainMenu'), pauseOv = $('pauseOverlay'), goOv = $('gameOverOverlay'), hud = $('hud'), repBar = $('replayBar'), tunePanel = $('tuningPanel'), tuneOpen = $('tuneOpenBtn');
 var seedIn = $('seedInput'), rndSeedBtn = $('randomSeedBtn'), ncIn = $('nodeCountInput'), ncLbl = $('nodeCountLabel'), diffSel = $('difficultySelect');
+var gameModeSel = $('gameModeSelect'), multiModeSel = $('multiModeSelect');
 var startBtn = $('startBtn'), loadRepBtn = $('loadReplayBtn'), repFileIn = $('replayFileInput');
 var playerNameIn = $('playerNameInput');
 var startRoomBtn = $('startRoomBtn');
@@ -1923,7 +1970,7 @@ var roomStatusEl = $('roomStatus'), roomPlayersEl = $('roomPlayers'), roomListEl
 var tabSingle = $('tabSingle'), tabMulti = $('tabMulti'), panelSingle = $('panelSingle'), panelMulti = $('panelMulti');
 var resumeBtn = $('resumeBtn'), quitBtn = $('quitBtn');
 var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameOverStats'), repBtn = $('replayBtn'), expRepBtn = $('exportReplayBtn'), restartBtn = $('restartBtn'), nextLevelBtn = $('nextLevelBtn');
-var hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
+var hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), hudCap = $('hudCap'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
 var sendPctQuickBtns = Array.prototype.slice.call(document.querySelectorAll('.send-quick-btn'));
 var powerSidebar = $('powerSidebar'), powerListEl = $('powerList');
 var scenarioBtn = $('scenarioBtn'), scenarioOv = $('scenarioOverlay'), scenarioStartBtn = $('scenarioStartBtn'), scenarioCloseBtn = $('scenarioCloseBtn'), scenarioProgressEl = $('scenarioProgress'), scenarioBubbleListEl = $('scenarioBubbleList'), scenarioMissionEl = $('scenarioMission');
@@ -2147,6 +2194,7 @@ function doCreateRoom() {
         nodeCount: Number((multiNode && multiNode.value) || ncIn.value || 16),
         difficulty: (multiDiff && multiDiff.value) || diffSel.value || 'normal',
         fogEnabled: menuFogCb ? !!menuFogCb.checked : false,
+        rulesMode: (multiModeSel && multiModeSel.value) || (gameModeSel && gameModeSel.value) || 'advanced',
     });
 }
 
@@ -2230,6 +2278,11 @@ function ensureSocket() {
         net.isHost = !!state.isHost;
         net.players = state.players || [];
         net.pendingJoin = false;
+        if (state.config) {
+            var stateMode = normalizeRulesetMode(state.config.rulesMode || 'advanced');
+            if (multiModeSel) multiModeSel.value = stateMode;
+            if (gameModeSel) gameModeSel.value = stateMode;
+        }
 
         if (hostControls) hostControls.style.display = net.isHost ? 'flex' : 'none';
         if (roomListEl) roomListEl.style.display = 'none';
@@ -2293,6 +2346,7 @@ function ensureSocket() {
             keepReplay: false,
             keepTuning: false,
             fogEnabled: !!payload.fogEnabled,
+            rulesMode: payload.rulesMode || 'advanced',
             humanCount: Number(payload.humanCount || players.length || 2),
             aiCount: Number(payload.aiCount || 0),
             localPlayerIndex: net.localPlayerIndex,
@@ -2360,10 +2414,12 @@ function normalizeReplay(raw) {
     var nc = Number(raw.nc !== undefined ? raw.nc : raw.nodeCount);
     var diff = raw.diff !== undefined ? raw.diff : raw.difficulty;
     var seed = Number(raw.seed);
+    var rulesMode = normalizeRulesetMode(raw.rulesMode || raw.mode || 'advanced');
     return {
         seed: isNaN(seed) ? 42 : seed,
         nc: isNaN(nc) ? 16 : nc,
         diff: (typeof diff === 'string' ? diff : 'normal'),
+        rulesMode: rulesMode,
         events: raw.events.map(function (e) {
             return { tick: Number(e.tick) || 0, type: e.type, data: e.data || {} };
         }),
@@ -2373,7 +2429,7 @@ function startReplayFromData(raw) {
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
     clearRoomState('');
     var rep = normalizeReplay(raw);
-    initGame('' + rep.seed, rep.nc, rep.diff, { keepReplay: true, keepTuning: false, fogEnabled: false });
+    initGame('' + rep.seed, rep.nc, rep.diff, { keepReplay: true, keepTuning: false, fogEnabled: false, rulesMode: rep.rulesMode });
     G.campaign.active = false;
     G.campaign.levelIndex = -1;
     G.rep = { events: rep.events, idx: 0, speed: 1, paused: false };
@@ -2387,6 +2443,10 @@ function startReplayFromData(raw) {
 ncIn.addEventListener('input', function () { ncLbl.textContent = ncIn.value; });
 var multiNodeIn = $('multiNodeInput'), multiNodeLbl = $('multiNodeLabel');
 if (multiNodeIn && multiNodeLbl) multiNodeIn.addEventListener('input', function () { multiNodeLbl.textContent = multiNodeIn.value; });
+if (gameModeSel && multiModeSel) {
+    gameModeSel.addEventListener('change', function () { multiModeSel.value = gameModeSel.value; });
+    multiModeSel.addEventListener('change', function () { gameModeSel.value = multiModeSel.value; });
+}
 rndSeedBtn.addEventListener('click', function () { seedIn.value = '' + Math.floor(Math.random() * 100000); });
 var SCENARIO_UNLOCKED_KEY = 'stellar_scenario_unlocked_v1';
 var SCENARIO_COMPLETED_KEY = 'stellar_scenario_completed_v1';
@@ -2548,7 +2608,8 @@ function startCampaignLevel(levelIndex) {
         fogEnabled: !!lvl.fog,
         aiCount: lvl.aiCount,
         mapFeature: lvl.mapFeature || 'auto',
-        tuneOverrides: lvl.tune || null
+        tuneOverrides: lvl.tune || null,
+        rulesMode: (gameModeSel && gameModeSel.value) || 'advanced',
     });
     G.campaign.active = true;
     G.campaign.levelIndex = idx;
@@ -2602,7 +2663,10 @@ if (startBtn) {
         var fogOn = menuFogCb ? !!menuFogCb.checked : false;
         var nc = (ncIn && ncIn.value) ? parseInt(ncIn.value, 10) : 16;
         nc = (isNaN(nc) || nc < 8 || nc > 30) ? 16 : nc;
-        initGame((seedIn && seedIn.value) || '42', nc, (diffSel && diffSel.value) || 'normal', { fogEnabled: fogOn });
+        initGame((seedIn && seedIn.value) || '42', nc, (diffSel && diffSel.value) || 'normal', {
+            fogEnabled: fogOn,
+            rulesMode: (gameModeSel && gameModeSel.value) || 'advanced',
+        });
         G.campaign.active = false;
         G.campaign.levelIndex = -1;
         resetSelectionAndSpeed();
@@ -3013,6 +3077,11 @@ function loop(ts) {
         while (acc >= TICK_DT) { gameTick(); acc -= TICK_DT; }
         var featureName = G.mapFeature.type === 'wormhole' ? 'Wormhole' : (G.mapFeature.type === 'gravity' ? 'Gravity' : (G.mapFeature.type === 'barrier' ? 'Barrier' : 'Standard'));
         hudTick.textContent = 'Tick: ' + G.tick + ' | ' + G.diff;
+        if (hudCap) {
+            var hu = Math.floor((G.unitByPlayer && G.unitByPlayer[G.human]) || 0);
+            var hc = Math.floor((G.capByPlayer && G.capByPlayer[G.human]) || 0);
+            hudCap.textContent = 'Cap ' + hu + '/' + hc;
+        }
         var pingEl = document.getElementById('pingDisplay');
         if (pingEl) pingEl.textContent = net.online && net.lastPingMs !== undefined ? ('Ping: ' + Math.round(net.lastPingMs) + 'ms') : '';
         if (G.state === 'replay') repTickLbl.textContent = 'Tick: ' + G.tick;

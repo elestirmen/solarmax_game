@@ -26,6 +26,7 @@ const DEFAULT_ROOM_CONFIG = {
     nodeCount: 16,
     difficulty: 'normal',
     fogEnabled: false,
+    rulesMode: 'advanced',
 };
 const DIST_DIR = path.join(__dirname, 'dist');
 const HAS_DIST_BUILD =
@@ -50,6 +51,11 @@ function normalizeDifficulty(raw) {
     return DEFAULT_ROOM_CONFIG.difficulty;
 }
 
+function normalizeRulesMode(raw) {
+    const value = String(raw || DEFAULT_ROOM_CONFIG.rulesMode).toLowerCase();
+    return value === 'classic' ? 'classic' : 'advanced';
+}
+
 function normalizeNodeCount(raw) {
     const value = Number(raw);
     if (!Number.isFinite(value)) return DEFAULT_ROOM_CONFIG.nodeCount;
@@ -62,6 +68,7 @@ function normalizeRoomConfig(payload = {}) {
         nodeCount: normalizeNodeCount(payload.nodeCount),
         difficulty: normalizeDifficulty(payload.difficulty),
         fogEnabled: payload.fogEnabled === true,
+        rulesMode: normalizeRulesMode(payload.rulesMode),
     };
 }
 
@@ -225,6 +232,7 @@ function publicRoomList() {
                 difficulty: String(room.config?.difficulty || DEFAULT_ROOM_CONFIG.difficulty),
                 nodeCount: Number(room.config?.nodeCount || DEFAULT_ROOM_CONFIG.nodeCount),
                 fogEnabled: !!room.config?.fogEnabled,
+                rulesMode: String(room.config?.rulesMode || DEFAULT_ROOM_CONFIG.rulesMode),
                 createdAt: Number(room.createdAt || 0),
             });
         }
@@ -258,6 +266,7 @@ function startRoomMatch(room) {
         nodeCount: room.config.nodeCount,
         difficulty: room.config.difficulty,
         fogEnabled: room.config.fogEnabled,
+        rulesMode: room.config.rulesMode,
         humanCount: room.players.length,
         aiCount: 0,
         players,

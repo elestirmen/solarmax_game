@@ -534,6 +534,17 @@
             gap: 8px
         }
 
+        #hudCenter {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        #hudCap {
+            color: var(--text-dim);
+            font-size: .78rem;
+        }
+
         #hudRight button {
             padding: 6px 14px;
             background: rgba(255, 255, 255, 0.06);
@@ -1134,6 +1145,10 @@
                         <option value="normal" selected>Normal</option>
                         <option value="hard">Hard</option>
                     </select></div>
+                <div class="menu-field"><label for="gameModeSelect">Game Mode</label><select id="gameModeSelect">
+                        <option value="classic">Classic</option>
+                        <option value="advanced" selected>Advanced</option>
+                    </select></div>
                 <div class="tune-toggle" style="margin-top:4px"><label>Fog of War</label><label class="switch"><input
                             type="checkbox" id="menuFogOfWar" /><span class="slider"></span></label></div>
                 <button id="startBtn" class="primary-btn">Oyuna Basla</button>
@@ -1151,6 +1166,7 @@
                         <input type="text" id="multiSeedInput" value="42" placeholder="Seed" style="flex:0 0 70px" />
                         <input type="range" id="multiNodeInput" min="8" max="30" value="16" style="flex:1; min-width:80px" /><span id="multiNodeLabel" style="width:24px">16</span>
                         <select id="multiDiffSelect" style="flex:0 0 80px"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select>
+                        <select id="multiModeSelect" style="flex:0 0 92px"><option value="classic">Classic</option><option value="advanced" selected>Advanced</option></select>
                     </div>
                 </div>
                 <div class="menu-field">
@@ -1394,7 +1410,7 @@
                 <button type="button" class="send-quick-btn" data-send-pct="100">100%</button>
             </div>
         </div>
-        <div id="hudCenter"><span id="hudTick">Tick: 0</span><span id="pingDisplay" class="ping-display"></span></div>
+        <div id="hudCenter"><span id="hudTick">Tick: 0</span><span id="hudCap">Cap 0/0</span><span id="pingDisplay" class="ping-display"></span></div>
         <div id="hudRight"><button id="pauseBtn" title="Pause">||</button><button id="speedBtn" title="Speed">1x</button><button id="themeBtn" title="Tema">THEME</button><button id="chatToggle" title="Chat">CHAT</button>
         </div>
     </div>
