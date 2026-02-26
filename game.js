@@ -1437,34 +1437,34 @@ function drawFleetRocket(ctx, f, col, tick) {
     var flameWidth = 0.9 + flicker * 0.6;
     var bx = f.x - dirX * flameLen, by = f.y - dirY * flameLen;
 
-    // Draw every transported unit as a visible escort marker (1:1 with fleet.count).
+    // Draw every transported unit as a separate escort marker (1:1 with fleet.count).
     var supportCount = Math.max(0, Math.floor(count) - 1);
     if (supportCount > 0) {
-        var cols = Math.max(3, Math.ceil(Math.sqrt(supportCount)));
-        var spacing = 2.45;
-        for (var ui = 0; ui < supportCount; ui++) {
-            var row = Math.floor(ui / cols);
-            var colIdx = ui % cols;
-            var centered = colIdx - (cols - 1) * 0.5;
-            var jitter = (hashMix(f.srcId, f.tgtId, ui, 97) - 0.5) * 0.45;
-            var sway = Math.sin(tick * 0.12 + ui * 0.45 + f.offsetL * 0.03) * 0.3;
-            var back = 3.4 + row * spacing * 0.95;
-            var side = centered * spacing + jitter + sway;
-            var px = f.x - dirX * back + nX * side;
-            var py = f.y - dirY * back + nY * side;
+        var remaining = supportCount;
+        var rowIdx = 0;
+        var markerIdx = 0;
+        while (remaining > 0) {
+            var rowCount = Math.min(remaining, 2 + rowIdx * 2);
+            var back = 4 + rowIdx * 2.85;
+            for (var ri = 0; ri < rowCount; ri++) {
+                var centered = ri - (rowCount - 1) * 0.5;
+                var side = centered * 2.35;
+                var wobble = Math.sin(tick * 0.16 + markerIdx * 0.67 + f.offsetL * 0.04) * 0.22;
+                var px = f.x - dirX * back + nX * (side + wobble);
+                var py = f.y - dirY * back + nY * (side + wobble);
 
-            ctx.beginPath();
-            ctx.arc(px, py, 1.25, 0, Math.PI * 2);
-            ctx.fillStyle = hexToRgba(col, 0.24);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(px, py, 0.78, 0, Math.PI * 2);
-            ctx.fillStyle = hexToRgba(col, 0.96);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(px, py, 0.34, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(255,255,255,0.78)';
-            ctx.fill();
+                ctx.beginPath();
+                ctx.arc(px, py, 0.96, 0, Math.PI * 2);
+                ctx.fillStyle = hexToRgba(col, 0.98);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.arc(px, py, 0.36, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(255,255,255,0.84)';
+                ctx.fill();
+                markerIdx++;
+            }
+            remaining -= rowCount;
+            rowIdx++;
         }
     }
 
@@ -1507,12 +1507,6 @@ function drawFleetRocket(ctx, f, col, tick) {
     ctx.fill();
 
     ctx.restore();
-
-    ctx.font = 'bold 9px Outfit,sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-    ctx.fillText('x' + count, f.x + nX * 7 + 2, f.y + nY * 7 - 1);
 }
 
 function render(ctx, cv, tick) {
