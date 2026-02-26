@@ -1647,8 +1647,7 @@ function render(ctx, cv, tick) {
         var orbData = [];
         if (hasOrbiters) {
             var uCount = Math.max(0, Math.floor(n.units));
-            var orbiters = Math.min(MAX_ORBITERS, Math.round(uCount / ORBIT_UNIT_STEP));
-            if (uCount > 0 && orbiters < 1) orbiters = 1;
+            var orbiters = uCount;
             hasOrbiters = orbiters > 0;
             if (hasOrbiters) {
                 // Stable orbital distribution: density scales with unit count.
@@ -1658,7 +1657,7 @@ function render(ctx, cv, tick) {
                 var ringStep = 6.8;
                 var ringStart = n.radius + 7.5;
                 var minSpacing = 7.6;
-                for (var ring = 0; ring < ORBIT_MAX_RINGS && assigned < orbiters; ring++) {
+                for (var ring = 0; ring < 40 && assigned < orbiters; ring++) {
                     var rr = ringStart + ring * ringStep;
                     var rrY = rr * (0.56 + Math.min(0.26, ring * 0.08));
                     var ringCap = Math.max(8, Math.floor((Math.PI * 2 * rr) / minSpacing));
