@@ -1440,7 +1440,7 @@ function drawFleetRocket(ctx, f, col, tick) {
     // Draw every transported unit in a single trailing queue (1:1 with fleet.count).
     var supportCount = Math.max(0, Math.floor(count) - 1);
     if (supportCount > 0) {
-        var queueSpacing = 2.25;
+        var queueSpacing = 2.85;
         for (var ui = 0; ui < supportCount; ui++) {
             var back = 4.1 + ui * queueSpacing;
             var wobble = Math.sin(tick * 0.14 + ui * 0.42 + f.offsetL * 0.03) * 0.14;
