@@ -529,7 +529,9 @@ function spawnParticles(x, y, count, color, isCapture) {
 }
 function combat(fleet, tgt) {
     if (tgt.owner === fleet.owner) { tgt.units += fleet.count; return; }
-    var defMult = (tgt.owner >= 0 ? G.tune.def : 1) * nodeTypeOf(tgt).def * nodeLevelDefMult(tgt);
+    var targetOwnerBefore = tgt.owner;
+    var humanInvolved = (fleet.owner === G.human) || (targetOwnerBefore === G.human);
+    var defMult = (targetOwnerBefore >= 0 ? G.tune.def : 1) * nodeTypeOf(tgt).def * nodeLevelDefMult(tgt);
     if (tgt.defense) defMult *= DEFENSE_BONUS;
     var atk = fleet.count, def = tgt.units * defMult;
     var col = G.players[fleet.owner] ? G.players[fleet.owner].color : '#fff';
@@ -542,10 +544,10 @@ function combat(fleet, tgt) {
         G.flows = G.flows.filter(function (fl) { return !(fl.tgtId === tgt.id && fl.owner !== fleet.owner); });
         spawnParticles(tgt.pos.x, tgt.pos.y, 12, col, true);
         if (G.human === fleet.owner) { G.stats.nodesCaptured++; if (typeof AudioFX !== 'undefined') AudioFX.capture(); }
-        else if (typeof AudioFX !== 'undefined') AudioFX.combat();
+        else if (humanInvolved && typeof AudioFX !== 'undefined') AudioFX.combat();
     } else {
         tgt.units = Math.max(0, (def - atk) / defMult);
-        if (typeof AudioFX !== 'undefined') AudioFX.combat();
+        if (humanInvolved && typeof AudioFX !== 'undefined') AudioFX.combat();
     }
     tgt.maxUnits = nodeCapacity(tgt);
 }
