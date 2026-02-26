@@ -1390,9 +1390,57 @@ function drawTurretStation(ctx, n, col, tick) {
     ctx.restore();
 }
 
+function drawRocketShape(ctx, x, y, dirX, dirY, col, flicker, alpha, scale) {
+    var nX = -dirY, nY = dirX;
+    scale = scale || 1;
+    alpha = alpha === undefined ? 1 : alpha;
+
+    var flameLen = (3 + flicker * 2) * scale;
+    var flameWidth = (0.9 + flicker * 0.6) * scale;
+    var bx = x - dirX * flameLen, by = y - dirY * flameLen;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    ctx.beginPath();
+    ctx.moveTo(x - dirX * 0.4 * scale + nX * flameWidth, y - dirY * 0.4 * scale + nY * flameWidth);
+    ctx.lineTo(bx, by);
+    ctx.lineTo(x - dirX * 0.4 * scale - nX * flameWidth, y - dirY * 0.4 * scale - nY * flameWidth);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255,145,70,' + (0.22 + flicker * 0.22) + ')';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(bx, by, (1.1 + flicker * 0.9) * scale, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,210,130,' + (0.18 + flicker * 0.24) + ')';
+    ctx.fill();
+
+    var noseX = x + dirX * 1.8 * scale, noseY = y + dirY * 1.8 * scale;
+    var leftX = x - dirX * 1.35 * scale + nX * 1.15 * scale, leftY = y - dirY * 1.35 * scale + nY * 1.15 * scale;
+    var rightX = x - dirX * 1.35 * scale - nX * 1.15 * scale, rightY = y - dirY * 1.35 * scale - nY * 1.15 * scale;
+
+    ctx.beginPath();
+    ctx.arc(x, y, 4.3 * scale, 0, Math.PI * 2);
+    ctx.fillStyle = hexToRgba(col, 0.2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(noseX, noseY);
+    ctx.lineTo(leftX, leftY);
+    ctx.lineTo(rightX, rightY);
+    ctx.closePath();
+    ctx.fillStyle = col;
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(noseX, noseY, 0.7 * scale, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fill();
+    ctx.restore();
+}
+
 function drawFleetRocket(ctx, f, col, tick) {
     var count = Math.max(1, Number(f.count) || 1);
-    var fleetAlpha = clamp(0.58 + Math.log(count + 1) * 0.07, 0.58, 0.9);
     var trail = f.trail || [];
     var tl = trail.length;
     if (tl > 0) {
@@ -1403,7 +1451,7 @@ function drawFleetRocket(ctx, f, col, tick) {
             ctx.beginPath();
             ctx.moveTo(prev.x, prev.y);
             ctx.lineTo(curr.x, curr.y);
-            ctx.strokeStyle = hexToRgba(col, (0.04 + t * 0.18) * fleetAlpha);
+            ctx.strokeStyle = hexToRgba(col, 0.04 + t * 0.18);
             ctx.lineWidth = 0.6 + t * 1.6;
             ctx.lineCap = 'round';
             ctx.stroke();
@@ -1412,7 +1460,7 @@ function drawFleetRocket(ctx, f, col, tick) {
         ctx.beginPath();
         ctx.moveTo(prev.x, prev.y);
         ctx.lineTo(f.x, f.y);
-        ctx.strokeStyle = hexToRgba(col, 0.28 * fleetAlpha);
+        ctx.strokeStyle = hexToRgba(col, 0.28);
         ctx.lineWidth = 2.3;
         ctx.lineCap = 'round';
         ctx.stroke();
@@ -1433,94 +1481,24 @@ function drawFleetRocket(ctx, f, col, tick) {
 
     var phase = tick * 0.28 + f.srcId * 0.9 + f.tgtId * 0.6 + f.offsetL * 0.08;
     var flicker = 0.5 + 0.5 * Math.sin(phase);
-    var flameLen = 3 + flicker * 2;
-    var flameWidth = 0.9 + flicker * 0.6;
-    var bx = f.x - dirX * flameLen, by = f.y - dirY * flameLen;
+    drawRocketShape(ctx, f.x, f.y, dirX, dirY, col, flicker, 1, 1);
 
-    // Draw every transported unit in a single trailing queue (1:1 with fleet.count).
     var supportCount = Math.max(0, Math.floor(count) - 1);
     if (supportCount > 0) {
-        var queueSpacing = 3.05;
+        var spacing = 3.4;
+        var swarmWidth = Math.min(22, 6 + Math.log(count + 1) * 6);
+        var fade = Math.min(1, f.t * 5) * Math.min(1, (1 - f.t) * 5);
         for (var ui = 0; ui < supportCount; ui++) {
-            var back = 4.1 + ui * queueSpacing;
-            var wobble = Math.sin(tick * 0.14 + ui * 0.42 + f.offsetL * 0.03) * 0.2;
-            var px = f.x - dirX * back + nX * wobble;
-            var py = f.y - dirY * back + nY * wobble;
-            var dotAlpha = clamp(0.96 - ui * 0.003, 0.28, 0.96);
-            var scale = 1.25;
-            var noseX2 = px + dirX * (1.05 * scale);
-            var noseY2 = py + dirY * (1.05 * scale);
-            var leftX2 = px - dirX * (0.72 * scale) + nX * (0.62 * scale);
-            var leftY2 = py - dirY * (0.72 * scale) + nY * (0.62 * scale);
-            var rightX2 = px - dirX * (0.72 * scale) - nX * (0.62 * scale);
-            var rightY2 = py - dirY * (0.72 * scale) - nY * (0.62 * scale);
-            var tailX2 = px - dirX * (1.22 * scale);
-            var tailY2 = py - dirY * (1.22 * scale);
-
-            ctx.beginPath();
-            ctx.arc(px, py, 1.2 * scale, 0, Math.PI * 2);
-            ctx.fillStyle = hexToRgba(col, 0.14 * dotAlpha);
-            ctx.fill();
-
-            ctx.beginPath();
-            ctx.moveTo(noseX2, noseY2);
-            ctx.lineTo(leftX2, leftY2);
-            ctx.lineTo(rightX2, rightY2);
-            ctx.closePath();
-            ctx.fillStyle = hexToRgba(col, dotAlpha);
-            ctx.fill();
-
-            ctx.beginPath();
-            ctx.arc(tailX2, tailY2, 0.44 * scale, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(255,155,75,' + (0.34 * dotAlpha) + ')';
-            ctx.fill();
-
-            ctx.beginPath();
-            ctx.arc(noseX2, noseY2, 0.26 * scale, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(255,255,255,' + (dotAlpha * 0.82) + ')';
-            ctx.fill();
+            var centered = supportCount <= 1 ? 0 : ((ui / (supportCount - 1)) * 2 - 1);
+            var jitter = (hashMix(f.srcId, f.tgtId, ui, G.seed) - 0.5) * 1.2;
+            var side = (centered * swarmWidth + jitter) * fade;
+            var back = (ui + 1) * spacing;
+            var sx = f.x - dirX * back + nX * side;
+            var sy = f.y - dirY * back + nY * side;
+            var localFlicker = 0.5 + 0.5 * Math.sin(phase + ui * 0.33);
+            drawRocketShape(ctx, sx, sy, dirX, dirY, col, localFlicker, 0.82, 0.76);
         }
     }
-
-    ctx.save();
-    ctx.globalAlpha = fleetAlpha;
-
-    ctx.beginPath();
-    ctx.moveTo(f.x - dirX * 0.4 + nX * flameWidth, f.y - dirY * 0.4 + nY * flameWidth);
-    ctx.lineTo(bx, by);
-    ctx.lineTo(f.x - dirX * 0.4 - nX * flameWidth, f.y - dirY * 0.4 - nY * flameWidth);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255,145,70,' + (0.22 + flicker * 0.22) + ')';
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(bx, by, 1.1 + flicker * 0.9, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,210,130,' + (0.18 + flicker * 0.24) + ')';
-    ctx.fill();
-
-    var noseX = f.x + dirX * 1.8, noseY = f.y + dirY * 1.8;
-    var leftX = f.x - dirX * 1.35 + nX * 1.15, leftY = f.y - dirY * 1.35 + nY * 1.15;
-    var rightX = f.x - dirX * 1.35 - nX * 1.15, rightY = f.y - dirY * 1.35 - nY * 1.15;
-
-    ctx.beginPath();
-    ctx.arc(f.x, f.y, 4.3, 0, Math.PI * 2);
-    ctx.fillStyle = hexToRgba(col, 0.2);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(noseX, noseY);
-    ctx.lineTo(leftX, leftY);
-    ctx.lineTo(rightX, rightY);
-    ctx.closePath();
-    ctx.fillStyle = col;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(noseX, noseY, 0.7, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fill();
-
-    ctx.restore();
 }
 
 function render(ctx, cv, tick) {
