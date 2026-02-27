@@ -779,6 +779,30 @@ function aiDecide(pi) {
     var aggr = G.tune.aiAgg * profile.aggr * (1 + assist * 0.8);
     var reserve = Math.max(2, Math.floor(G.tune.aiBuf * profile.reserve * (1 - assist * 0.5)));
     var maxSources = profile.name === 'Rusher' ? 4 : 3;
+    var barrierCfg = G.mapFeature && G.mapFeature.type === 'barrier' ? G.mapFeature : null;
+    var ownsGate = false;
+    if (barrierCfg && Array.isArray(barrierCfg.gateIds)) {
+        for (var gi = 0; gi < barrierCfg.gateIds.length; gi++) {
+            var gateNode = G.nodes[barrierCfg.gateIds[gi]];
+            if (!gateNode || !gateNode.gate) continue;
+            if (gateNode.owner !== pi) continue;
+            if (!isNodeAssimilated(gateNode)) continue;
+            ownsGate = true;
+            break;
+        }
+    }
+    var myUnits = (G.unitByPlayer && Number(G.unitByPlayer[pi])) || computePlayerUnitCount({ nodes: G.nodes, fleets: G.fleets, owner: pi });
+    var myCap = (G.capByPlayer && Number(G.capByPlayer[pi])) || computeGlobalCap({
+        nodes: G.nodes,
+        owner: pi,
+        baseCap: G.rules ? G.rules.baseCap : 180,
+        capPerNodeFactor: G.rules ? G.rules.capPerNodeFactor : 42,
+    });
+    var capPressure = myCap > 0 ? myUnits / myCap : 0;
+    if (capPressure > 0.85) reserve = Math.max(1, Math.floor(reserve * 0.72));
+    function canDispatchAI(srcNode, tgtNode) {
+        return isDispatchAllowed({ src: srcNode, tgt: tgtNode, barrier: barrierCfg, owner: pi, nodes: G.nodes });
+    }
 
     var targets = [];
     for (var ni = 0; ni < G.nodes.length; ni++) {
@@ -789,10 +813,14 @@ function aiDecide(pi) {
         var tDef = nodeTypeOf(n).def * nodeLevelDefMult(n) * (n.owner >= 0 ? G.tune.def : 1);
 
         var bd = Infinity;
+        var reachable = false;
         for (var oi = 0; oi < own.length; oi++) {
+            if (!canDispatchAI(own[oi], n)) continue;
             var d = dist(own[oi].pos, n.pos);
+            reachable = true;
             if (d < bd) bd = d;
         }
+        if (!reachable) continue;
 
         var score = 0;
         score += Math.max(0, 520 - bd) * 0.45;
@@ -801,7 +829,10 @@ function aiDecide(pi) {
         if (n.owner === -1) score += 34;
         if (n.kind === 'forge') score += 20;
         if (n.kind === 'relay') score += 12;
+        if (n.kind === 'turret') score -= 8;
+        if (n.gate && n.owner !== pi) score += ownsGate ? 10 : 64;
         if (n.level > 1) score += (n.level - 1) * 11;
+        if (capPressure > 0.9) score += Math.max(0, 44 - tu * tDef) * 0.6;
         score *= aggr;
 
         targets.push({ id: n.id, score: score, units: tu, effDef: tDef });
@@ -810,12 +841,19 @@ function aiDecide(pi) {
     targets.sort(function (a, b) { return b.score - a.score; });
     var attackCount = myPower < humanPower ? 2 : 1;
     if (profile.name === 'Rusher') attackCount = Math.min(2, targets.length);
+    if (capPressure > 0.9) attackCount += 1;
     attackCount = Math.min(attackCount, targets.length, G.diffCfg.maxAttackTargets);
 
     for (var ti = 0; ti < attackCount; ti++) {
         var t = targets[ti], tn = G.nodes[t.id], srcs = [], total = 0;
         var needed = t.units * t.effDef + 5 + tn.level * 3;
-        var cands = own.filter(function (n) { return n.units > reserve + 1; }).sort(function (a, b) { return dist(a.pos, tn.pos) - dist(b.pos, tn.pos); });
+        if (tn.kind === 'turret') needed += 7;
+        if (tn.gate && tn.owner !== pi && barrierCfg && !ownsGate) needed = Math.max(6, needed * 0.82);
+        if (capPressure > 0.9) needed *= 0.93;
+        var cands = own.filter(function (n) {
+            if (n.units <= reserve + 1) return false;
+            return canDispatchAI(n, tn);
+        }).sort(function (a, b) { return dist(a.pos, tn.pos) - dist(b.pos, tn.pos); });
         for (var j = 0; j < cands.length && srcs.length < maxSources; j++) {
             var av = cands[j].units - reserve;
             if (av <= 0) continue;
@@ -825,11 +863,14 @@ function aiDecide(pi) {
         }
         if (srcs.length === 0) continue;
         if (total < needed * 0.55 && tn.owner !== -1) continue;
-        var pct = clamp(needed / Math.max(total, 1), 0.3, 0.75);
+        var pctMax = capPressure > 0.9 ? 0.9 : 0.75;
+        var pct = clamp(needed / Math.max(total, 1), 0.3, pctMax);
+        if (capPressure > 0.95) pct = Math.max(pct, 0.72);
 
         var flowGate = ((G.tick + tn.id * 3 + pi * 7) % 13) === 0;
         var shouldFlow = tn.owner !== -1 && tn.units > 12 && profile.flow > 0.75 && flowGate &&
-            !G.flows.some(function (f) { return f.owner === pi && f.tgtId === tn.id && f.active; });
+            !G.flows.some(function (f) { return f.owner === pi && f.tgtId === tn.id && f.active; }) &&
+            canDispatchAI(G.nodes[srcs[0]], tn);
         if (shouldFlow) cmds.push({ type: 'flow', srcId: srcs[0], tgtId: tn.id });
         cmds.push({ type: 'send', sources: srcs, tgtId: tn.id, pct: pct });
     }
@@ -850,7 +891,9 @@ function aiDecide(pi) {
 
     for (var fi = 0; fi < G.flows.length; fi++) {
         var fl = G.flows[fi];
-        if (fl.owner === pi && fl.active && G.nodes[fl.tgtId].owner === pi) cmds.push({ type: 'rmFlow', srcId: fl.srcId, tgtId: fl.tgtId });
+        if (fl.owner !== pi || !fl.active) continue;
+        var flowTarget = G.nodes[fl.tgtId];
+        if (!flowTarget || flowTarget.owner === pi) cmds.push({ type: 'rmFlow', srcId: fl.srcId, tgtId: fl.tgtId });
     }
     return cmds;
 }
