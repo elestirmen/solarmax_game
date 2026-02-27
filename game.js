@@ -2043,6 +2043,7 @@ var seedIn = $('seedInput'), rndSeedBtn = $('randomSeedBtn'), ncIn = $('nodeCoun
 var gameModeSel = $('gameModeSelect'), multiModeSel = $('multiModeSelect');
 var playTypeSel = $('playTypeSelect');
 var startBtn = $('startBtn'), loadRepBtn = $('loadReplayBtn'), repFileIn = $('replayFileInput');
+var menuSeedField = $('menuSeedField'), menuNodesField = $('menuNodesField'), menuDifficultyField = $('menuDifficultyField'), menuFogField = $('menuFogField');
 var playerNameIn = $('playerNameInput');
 var startRoomBtn = $('startRoomBtn');
 var createRoomBtn = $('createRoomBtn');
@@ -2688,13 +2689,23 @@ function refreshCampaignUI() {
     var selectedDone = campaignSelectedLevel < completed;
     scenarioMissionEl.textContent = campaignLevelSummary(selected) + '\nDurum: ' + (selectedDone ? 'Gecildi' : 'Hazir');
     if (scenarioStartBtn) scenarioStartBtn.textContent = 'Bolum ' + selected.id + ' Baslat';
-    if (scenarioBtn) scenarioBtn.textContent = 'Senaryoyu Baslat (' + completed + '/' + CAMPAIGN_LEVELS.length + ')';
+    if (scenarioBtn) scenarioBtn.textContent = 'Senaryo Sec (' + completed + '/' + CAMPAIGN_LEVELS.length + ')';
 }
 function resetSelectionAndSpeed() {
     inp.sel.clear();
     for (var i = 0; i < G.nodes.length; i++) G.nodes[i].selected = false;
     spIdx = 0;
     if (spdBtn) spdBtn.textContent = '1x';
+}
+function syncSinglePlayTypeUI() {
+    if (!playTypeSel) return;
+    var scenarioMode = playTypeSel.value === 'scenario';
+    if (menuSeedField) menuSeedField.classList.toggle('hidden', scenarioMode);
+    if (menuNodesField) menuNodesField.classList.toggle('hidden', scenarioMode);
+    if (menuDifficultyField) menuDifficultyField.classList.toggle('hidden', scenarioMode);
+    if (menuFogField) menuFogField.classList.toggle('hidden', scenarioMode);
+    if (scenarioBtn) scenarioBtn.classList.toggle('hidden', !scenarioMode);
+    if (startBtn) startBtn.textContent = scenarioMode ? 'Secili Senaryoyu Baslat' : 'Oyuna Basla';
 }
 function startCampaignLevel(levelIndex) {
     var idx = applyCampaignLevelSelection(levelIndex);
@@ -2753,6 +2764,12 @@ if (scenarioOv) {
     });
 }
 refreshCampaignUI();
+syncSinglePlayTypeUI();
+if (playTypeSel) {
+    playTypeSel.addEventListener('change', function () {
+        syncSinglePlayTypeUI();
+    });
+}
 if (startBtn) {
     startBtn.addEventListener('click', function () {
         var playType = (playTypeSel && playTypeSel.value) || 'free';
