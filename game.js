@@ -2041,9 +2041,7 @@ var $ = function (id) { return document.getElementById(id); };
 var mainMenu = $('mainMenu'), pauseOv = $('pauseOverlay'), goOv = $('gameOverOverlay'), hud = $('hud'), repBar = $('replayBar'), tunePanel = $('tuningPanel'), tuneOpen = $('tuneOpenBtn');
 var seedIn = $('seedInput'), rndSeedBtn = $('randomSeedBtn'), ncIn = $('nodeCountInput'), ncLbl = $('nodeCountLabel'), diffSel = $('difficultySelect');
 var gameModeSel = $('gameModeSelect'), multiModeSel = $('multiModeSelect');
-var playTypeSel = $('playTypeSelect');
-var startBtn = $('startBtn'), loadRepBtn = $('loadReplayBtn'), repFileIn = $('replayFileInput');
-var menuSeedField = $('menuSeedField'), menuNodesField = $('menuNodesField'), menuDifficultyField = $('menuDifficultyField'), menuFogField = $('menuFogField');
+var startBtn = $('startBtn'), sandboxBtn = $('sandboxBtn'), loadRepBtn = $('loadReplayBtn'), repFileIn = $('replayFileInput');
 var playerNameIn = $('playerNameInput');
 var startRoomBtn = $('startRoomBtn');
 var createRoomBtn = $('createRoomBtn');
@@ -2071,7 +2069,7 @@ var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameO
 var hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), hudCap = $('hudCap'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
 var sendPctQuickBtns = Array.prototype.slice.call(document.querySelectorAll('.send-quick-btn'));
 var powerSidebar = $('powerSidebar'), powerListEl = $('powerList');
-var scenarioBtn = $('scenarioBtn'), scenarioOv = $('scenarioOverlay'), scenarioStartBtn = $('scenarioStartBtn'), scenarioCloseBtn = $('scenarioCloseBtn'), scenarioProgressEl = $('scenarioProgress'), scenarioBubbleListEl = $('scenarioBubbleList'), scenarioMissionEl = $('scenarioMission');
+var scenarioOv = $('scenarioOverlay'), scenarioStartBtn = $('scenarioStartBtn'), scenarioCloseBtn = $('scenarioCloseBtn'), scenarioProgressEl = $('scenarioProgress'), scenarioBubbleListEl = $('scenarioBubbleList'), scenarioMissionEl = $('scenarioMission');
 var repSlower = $('replaySlower'), repPauseBtn = $('replayPause'), repFaster = $('replayFaster'), repSpdLbl = $('replaySpeedLabel'), repTickLbl = $('replayTickLabel'), repStopBtn = $('replayStop');
 var tuneProd = $('tuneProduction'), tuneFSpd = $('tuneFleetSpeed'), tuneDef = $('tuneDefense'), tuneFlowInt = $('tuneFlowInterval');
 var tuneAiAgg = $('tuneAIAggression'), tuneAiBuf = $('tuneAIBuffer'), tuneAiDec = $('tuneAIDecision');
@@ -2689,7 +2687,6 @@ function refreshCampaignUI() {
     var selectedDone = campaignSelectedLevel < completed;
     scenarioMissionEl.textContent = campaignLevelSummary(selected) + '\nDurum: ' + (selectedDone ? 'Gecildi' : 'Hazir');
     if (scenarioStartBtn) scenarioStartBtn.textContent = 'Bolum ' + selected.id + ' Baslat';
-    if (scenarioBtn) scenarioBtn.textContent = 'Senaryo Sec (' + completed + '/' + CAMPAIGN_LEVELS.length + ')';
 }
 function resetSelectionAndSpeed() {
     inp.sel.clear();
@@ -2697,15 +2694,22 @@ function resetSelectionAndSpeed() {
     spIdx = 0;
     if (spdBtn) spdBtn.textContent = '1x';
 }
-function syncSinglePlayTypeUI() {
-    if (!playTypeSel) return;
-    var scenarioMode = playTypeSel.value === 'scenario';
-    if (menuSeedField) menuSeedField.classList.toggle('hidden', scenarioMode);
-    if (menuNodesField) menuNodesField.classList.toggle('hidden', scenarioMode);
-    if (menuDifficultyField) menuDifficultyField.classList.toggle('hidden', scenarioMode);
-    if (menuFogField) menuFogField.classList.toggle('hidden', scenarioMode);
-    if (scenarioBtn) scenarioBtn.classList.toggle('hidden', !scenarioMode);
-    if (startBtn) startBtn.textContent = scenarioMode ? 'Secili Senaryoyu Baslat' : 'Oyuna Basla';
+function startSandboxGame() {
+    if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
+    clearRoomState('');
+    var fogOn = menuFogCb ? !!menuFogCb.checked : false;
+    var nc = (ncIn && ncIn.value) ? parseInt(ncIn.value, 10) : 16;
+    nc = (isNaN(nc) || nc < 8 || nc > 30) ? 16 : nc;
+    initGame((seedIn && seedIn.value) || '42', nc, (diffSel && diffSel.value) || 'normal', {
+        fogEnabled: fogOn,
+        rulesMode: (gameModeSel && gameModeSel.value) || 'advanced',
+    });
+    G.campaign.active = false;
+    G.campaign.levelIndex = -1;
+    resetSelectionAndSpeed();
+    if (tuneFogCb) tuneFogCb.checked = fogOn;
+    if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
+    showUI('playing');
 }
 function startCampaignLevel(levelIndex) {
     var idx = applyCampaignLevelSelection(levelIndex);
@@ -2743,9 +2747,9 @@ G.campaign.unlocked = loadCampaignUnlocked();
 G.campaign.completed = loadCampaignCompleted();
 if (G.campaign.completed > G.campaign.unlocked) G.campaign.unlocked = G.campaign.completed;
 campaignSelectedLevel = Math.max(0, Math.min((G.campaign.unlocked || 1) - 1, CAMPAIGN_LEVELS.length - 1));
-if (scenarioBtn) {
-    scenarioBtn.addEventListener('click', function () {
-        openScenarioMenu();
+if (sandboxBtn) {
+    sandboxBtn.addEventListener('click', function () {
+        startSandboxGame();
     });
 }
 if (scenarioStartBtn) {
@@ -2764,34 +2768,9 @@ if (scenarioOv) {
     });
 }
 refreshCampaignUI();
-syncSinglePlayTypeUI();
-if (playTypeSel) {
-    playTypeSel.addEventListener('change', function () {
-        syncSinglePlayTypeUI();
-    });
-}
 if (startBtn) {
     startBtn.addEventListener('click', function () {
-        var playType = (playTypeSel && playTypeSel.value) || 'free';
-        if (playType === 'scenario') {
-            startCampaignLevel(campaignSelectedLevel);
-            return;
-        }
-        if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
-        clearRoomState('');
-        var fogOn = menuFogCb ? !!menuFogCb.checked : false;
-        var nc = (ncIn && ncIn.value) ? parseInt(ncIn.value, 10) : 16;
-        nc = (isNaN(nc) || nc < 8 || nc > 30) ? 16 : nc;
-        initGame((seedIn && seedIn.value) || '42', nc, (diffSel && diffSel.value) || 'normal', {
-            fogEnabled: fogOn,
-            rulesMode: (gameModeSel && gameModeSel.value) || 'advanced',
-        });
-        G.campaign.active = false;
-        G.campaign.levelIndex = -1;
-        resetSelectionAndSpeed();
-        if (tuneFogCb) tuneFogCb.checked = fogOn;
-        if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
-        showUI('playing');
+        openScenarioMenu();
     });
 }
 
