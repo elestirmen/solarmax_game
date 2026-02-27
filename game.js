@@ -2041,6 +2041,7 @@ var $ = function (id) { return document.getElementById(id); };
 var mainMenu = $('mainMenu'), pauseOv = $('pauseOverlay'), goOv = $('gameOverOverlay'), hud = $('hud'), repBar = $('replayBar'), tunePanel = $('tuningPanel'), tuneOpen = $('tuneOpenBtn');
 var seedIn = $('seedInput'), rndSeedBtn = $('randomSeedBtn'), ncIn = $('nodeCountInput'), ncLbl = $('nodeCountLabel'), diffSel = $('difficultySelect');
 var gameModeSel = $('gameModeSelect'), multiModeSel = $('multiModeSelect');
+var playTypeSel = $('playTypeSelect');
 var startBtn = $('startBtn'), loadRepBtn = $('loadReplayBtn'), repFileIn = $('replayFileInput');
 var playerNameIn = $('playerNameInput');
 var startRoomBtn = $('startRoomBtn');
@@ -2754,6 +2755,11 @@ if (scenarioOv) {
 refreshCampaignUI();
 if (startBtn) {
     startBtn.addEventListener('click', function () {
+        var playType = (playTypeSel && playTypeSel.value) || 'free';
+        if (playType === 'scenario') {
+            startCampaignLevel(campaignSelectedLevel);
+            return;
+        }
         if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
         clearRoomState('');
         var fogOn = menuFogCb ? !!menuFogCb.checked : false;
