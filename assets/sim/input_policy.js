@@ -9,3 +9,21 @@ export function shouldStartDragSend(opts) {
 
     return downOnOwnedNode && movedPx >= thresholdPx;
 }
+
+export function resolveRightClickAction(opts) {
+    opts = opts || {};
+    var targetExists = !!opts.targetExists;
+    var targetOwnerIsHuman = !!opts.targetOwnerIsHuman;
+    var targetSelected = !!opts.targetSelected;
+    var selectedOwnedCount = Math.max(0, Math.floor(Number(opts.selectedOwnedCount) || 0));
+
+    if (!targetExists) return 'none';
+
+    if (targetOwnerIsHuman) {
+        if (selectedOwnedCount > 0 && !targetSelected) return 'flow';
+        return 'defense';
+    }
+
+    if (selectedOwnedCount > 0) return 'flow';
+    return 'none';
+}

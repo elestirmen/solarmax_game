@@ -6,10 +6,11 @@
 
 import { computeSendCount } from './assets/sim/dispatch_math.js';
 import { applyTurretDamage } from './assets/sim/turret.js';
-import { shouldStartDragSend } from './assets/sim/input_policy.js';
+import { shouldStartDragSend, resolveRightClickAction } from './assets/sim/input_policy.js';
 import { isDispatchAllowed } from './assets/sim/barrier.js';
 import { computePlayerUnitCount, computeGlobalCap } from './assets/sim/cap.js';
 import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } from './assets/sim/ruleset.js';
+import { computeFriendlyReinforcementRoom, resolveFriendlyArrival } from './assets/sim/reinforcement.js';
 import { getStrategicPulseState, isStrategicPulseActiveForNode } from './assets/sim/strategic_pulse.js';
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ CONSTANTS Ã¢â€â‚¬Ã¢â€â‚¬
@@ -709,6 +710,20 @@ function dispatch(owner, srcIds, tgtId, pct) {
     var didSend = false;
     var blockedByBarrier = false;
     var barrierCfg = G.mapFeature && G.mapFeature.type === 'barrier' ? G.mapFeature : null;
+    var friendlyRoom = null;
+    if (tgt.owner === owner) {
+        var incomingFriendlyUnits = 0;
+        for (var fi0 = 0; fi0 < G.fleets.length; fi0++) {
+            var incomingFleet = G.fleets[fi0];
+            if (!incomingFleet.active || incomingFleet.owner !== owner || incomingFleet.tgtId !== tgtId) continue;
+            incomingFriendlyUnits += Math.max(0, Math.floor(incomingFleet.count) || 0);
+        }
+        friendlyRoom = computeFriendlyReinforcementRoom({
+            targetUnits: tgt.units,
+            targetMaxUnits: tgt.maxUnits,
+            incomingUnits: incomingFriendlyUnits,
+        });
+    }
     for (var si = 0; si < srcIds.length; si++) {
         var src = G.nodes[srcIds[si]]; if (!src || src.owner !== owner) continue;
         if (!isDispatchAllowed({ src: src, tgt: tgt, barrier: barrierCfg, owner: owner, nodes: G.nodes })) {
@@ -718,9 +733,14 @@ function dispatch(owner, srcIds, tgtId, pct) {
         var srcType = nodeTypeOf(src);
         var send = computeSendCount({ srcUnits: src.units, pct: pct, flowMult: srcType.flow });
         var cnt = send.sendCount;
+        if (friendlyRoom !== null) {
+            cnt = Math.min(cnt, friendlyRoom);
+        }
         if (cnt <= 0) continue;
-        src.units = send.newSrcUnits;
+        if (cnt === send.sendCount) src.units = send.newSrcUnits;
+        else src.units -= cnt;
         didSend = true;
+        if (friendlyRoom !== null) friendlyRoom -= cnt;
         var hasWormholeLink = isLinkedWormhole(src.id, tgtId);
         var curv = hasWormholeLink ? 0.05 : BEZ_CURV;
         var cp = bezCP(src.pos, tgt.pos, curv);
@@ -754,6 +774,8 @@ function dispatch(owner, srcIds, tgtId, pct) {
     }
     if (blockedByBarrier && owner === G.human) {
         showGameToast('Gecit kilitli: once bir gate ele gecir.');
+    } else if (!didSend && friendlyRoom !== null && owner === G.human) {
+        showGameToast('Hedef dolu: takviye beklemeye alindi.');
     }
 }
 
@@ -1208,7 +1230,22 @@ function gameTick() {
         var dp = (f.speed * f.spdVar * G.tune.fspeed / FLEET_SPEED) * speedMult * TICK_DT;
         f.t += dp / f.arcLen;
         if (f.t >= 1) {
-            var tgt = G.nodes[f.tgtId]; if (tgt.owner === f.owner) { tgt.units += f.count; if (tgt.units > tgt.maxUnits) tgt.units = tgt.maxUnits; } else combat(f, tgt);
+            var tgt = G.nodes[f.tgtId];
+            if (tgt.owner === f.owner) {
+                var srcNode = G.nodes[f.srcId];
+                var friendlyArrival = resolveFriendlyArrival({
+                    targetUnits: tgt.units,
+                    targetMaxUnits: tgt.maxUnits,
+                    sourceUnits: srcNode && srcNode.owner === f.owner ? srcNode.units : 0,
+                    sourceMaxUnits: srcNode && srcNode.owner === f.owner ? srcNode.maxUnits : 0,
+                    fleetCount: f.count,
+                });
+                tgt.units = friendlyArrival.targetUnits;
+                if (srcNode && srcNode.owner === f.owner) srcNode.units = friendlyArrival.sourceUnits;
+                if (friendlyArrival.lost > 0 && f.owner === G.human) {
+                    showGameToast('Takviye taskini: fazla birlik geri dondu, kalani dagildi.');
+                }
+            } else combat(f, tgt);
             f.active = false; f.trail = []; G.fleets.splice(i, 1);
         } else if (f.t > 0) {
             var s = G.nodes[f.srcId], tg = G.nodes[f.tgtId], cp = { x: f.cpx, y: f.cpy };
@@ -3177,16 +3214,27 @@ cv.addEventListener('mousedown', function (e) {
     if (e.button === 1) { inp.panActive = true; inp.panLast = { x: e.offsetX, y: e.offsetY }; e.preventDefault(); return; }
     if (e.button === 2) {
         var nd = hitNode(w);
-        if (nd && nd.owner === G.human) {
+        var selectedOwnedSources = 0;
+        inp.sel.forEach(function (sid) {
+            var sn = G.nodes[sid];
+            if (sn && sn.owner === G.human) selectedOwnedSources++;
+        });
+        var rightClickAction = resolveRightClickAction({
+            targetExists: !!nd,
+            targetOwnerIsHuman: !!(nd && nd.owner === G.human),
+            targetSelected: !!(nd && inp.sel.has(nd.id)),
+            selectedOwnedCount: selectedOwnedSources,
+        });
+        if (rightClickAction === 'defense' && nd && nd.owner === G.human) {
             var defIds = inp.sel.has(nd.id) && inp.sel.size > 0 ? Array.from(inp.sel) : [nd.id];
             if (issueOnlineCommand('toggleDefense', { nodeIds: defIds })) { } else {
                 defIds.forEach(function (id) { toggleDefense(G.human, id); });
                 recEvt('toggleDefense', { nodeIds: defIds });
             }
-        } else if (nd && inp.sel.size > 0 && nd.owner !== G.human) {
+        } else if (rightClickAction === 'flow' && nd) {
             inp.sel.forEach(function (sid) {
                 var sn = G.nodes[sid];
-                if (sn && sn.owner === G.human) {
+                if (sn && sn.owner === G.human && sid !== nd.id) {
                     var flowData = { srcId: sid, tgtId: nd.id };
                     if (!issueOnlineCommand('flow', flowData)) {
                         applyPlayerCommand(G.human, 'flow', flowData);
