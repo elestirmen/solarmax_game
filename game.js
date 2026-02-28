@@ -9,6 +9,7 @@ import { applyTurretDamage } from './assets/sim/turret.js';
 import { shouldStartDragSend, resolveRightClickAction } from './assets/sim/input_policy.js';
 import { isDispatchAllowed } from './assets/sim/barrier.js';
 import { selectBarrierGateIds } from './assets/sim/barrier_layout.js';
+import { applyDefenseFieldDamage, getDefenseFieldStats } from './assets/sim/defense_field.js';
 import { computePlayerUnitCount, computeGlobalCap } from './assets/sim/cap.js';
 import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } from './assets/sim/ruleset.js';
 import { computeFriendlyReinforcementRoom, resolveFriendlyArrival } from './assets/sim/reinforcement.js';
@@ -41,9 +42,17 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     ASSIM_GARRISON_FLOOR = 0.35,
     ASSIM_LEVEL_RESIST = 0.35,
     ASSIM_LOCK_TICKS = 180,
-    TURRET_RANGE = 175,
-    TURRET_DPS = 8,
-    TURRET_MIN_GARRISON = 6,
+    TURRET_RANGE = 220,
+    TURRET_DPS = 16,
+    TURRET_MIN_GARRISON = 8,
+    TURRET_CAPTURE_RESIST = 1.35,
+    DEFENSE_FIELD_RANGE_PAD = 24,
+    DEFENSE_FIELD_LEVEL_RANGE = 4,
+    DEFENSE_FIELD_DPS = 2.6,
+    DEFENSE_FIELD_LEVEL_DPS = 0.3,
+    DEFENSE_FIELD_DEFENSE_BONUS = 1.25,
+    DEFENSE_FIELD_BULWARK_BONUS = 1.18,
+    DEFENSE_FIELD_RELAY_RANGE = 6,
     STRATEGIC_PULSE_CYCLE = 540,
     STRATEGIC_PULSE_ACTIVE = 300,
     STRATEGIC_PULSE_PROD = 1.35,
@@ -62,7 +71,7 @@ var NODE_TYPE_DEFS = {
     bulwark: { label: 'Bulwark', prod: 0.75, def: 1.45, cap: 1.25, flow: 0.9, speed: 0.95, color: '#b6c1d9' },
     relay: { label: 'Relay', prod: 0.95, def: 0.95, cap: 0.85, flow: 1.35, speed: 1.35, color: '#7de3ff' },
     nexus: { label: 'Nexus', prod: 1.1, def: 1.1, cap: 1.1, flow: 1.15, speed: 1.1, color: '#c9a0dc' },
-    turret: { label: 'Turret', prod: 0.0, def: 1.65, cap: 0.7, flow: 0.8, speed: 1.0, color: '#8ff0ff' },
+    turret: { label: 'Turret', prod: 0.0, def: 2.25, cap: 0.8, flow: 0.8, speed: 1.0, color: '#8ff0ff' },
 };
 
 var AI_ARCHETYPES = [
@@ -192,7 +201,7 @@ var G = {
     rep: null, aiTicks: [], flowId: 0, fleetSerial: 0,
     aiProfiles: [], mapFeature: { type: 'none' }, wormholes: [],
     stats: { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0 },
-    particles: [], turretBeams: [], mapMode: 'random',
+    particles: [], turretBeams: [], fieldBeams: [], mapMode: 'random',
     playerCapital: {}, strategicNodes: [],
     strategicPulse: { active: false, nodeId: -1, cycle: 0, phase: 0, remainingTicks: 0, announcedCycle: -1 },
     powerByPlayer: {}, capByPlayer: {}, unitByPlayer: {},
@@ -408,7 +417,7 @@ function strategicPulseToast() {
     if (G.state !== 'playing' || !G.strategicPulse.active) return;
     if (G.strategicPulse.announcedCycle === G.strategicPulse.cycle) return;
     G.strategicPulse.announcedCycle = G.strategicPulse.cycle;
-    showGameToast('Strategic pulse: parlayan hub gecici tempo bonusu veriyor.');
+    showGameToast('Strategic pulse aktif: PULSE hubi +35% uretim, +18% filo hizi, +30% asimilasyon ve +18 cap verir.');
 }
 function isLinkedWormhole(srcId, tgtId) {
     for (var i = 0; i < G.wormholes.length; i++) {
@@ -572,6 +581,7 @@ function initGame(seedStr, nc, diff, opts) {
     G.stats = { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0 };
     G.particles = [];
     G.turretBeams = [];
+    G.fieldBeams = [];
     for (var i = 0; i < pool.length; i++) { pool[i].active = false; pool[i].trail = []; }
     G.fleets = [];
     G.flows = [];
@@ -697,7 +707,7 @@ function genMap(nc) {
         tn.kind = 'turret';
         tn.level = 1;
         tn.maxUnits = nodeCapacity(tn);
-        tn.units = Math.min(tn.maxUnits - 1, G.rng.nextInt(7, 12));
+        tn.units = Math.min(tn.maxUnits - 1, G.rng.nextInt(22, 34));
         tn.assimilationProgress = 1;
         tn.assimilationLock = 0;
     }
@@ -773,9 +783,9 @@ function dispatch(owner, srcIds, tgtId, pct) {
         if (typeof AudioFX !== 'undefined') AudioFX.send();
     }
     if (blockedByBarrier && owner === G.human) {
-        showGameToast('Gecit kilitli: ' + barrierGateObjectiveText() + '.');
+        showGameToast('Gecit kilitli: ' + barrierGateObjectiveText() + ', sonra asimilasyon tamamlanana kadar bekle.');
     } else if (!didSend && friendlyRoom !== null && owner === G.human) {
-        showGameToast('Hedef dolu: takviye beklemeye alindi.');
+        showGameToast('Hedef dolu: dost takviye sigmiyor. Birlik cikar veya baska hedefe yonlendir.');
     }
 }
 
@@ -793,6 +803,7 @@ function combat(fleet, tgt) {
     var targetOwnerBefore = tgt.owner;
     var humanInvolved = (fleet.owner === G.human) || (targetOwnerBefore === G.human);
     var defMult = (targetOwnerBefore >= 0 ? G.tune.def : 1) * nodeTypeOf(tgt).def * nodeLevelDefMult(tgt);
+    if (tgt.kind === 'turret') defMult *= TURRET_CAPTURE_RESIST;
     if (tgt.defense) defMult *= DEFENSE_BONUS;
     var atk = fleet.count, def = tgt.units * defMult;
     var col = G.players[fleet.owner] ? G.players[fleet.owner].color : '#fff';
@@ -913,7 +924,7 @@ function aiDecide(pi) {
         if (n.owner === -1) score += 34;
         if (n.kind === 'forge') score += 20;
         if (n.kind === 'relay') score += 12;
-        if (n.kind === 'turret') score -= 8;
+        if (n.kind === 'turret') score -= 18;
         if (n.gate && n.owner !== pi) score += ownsGate ? 10 : 64;
         if (strategicPulseAppliesToNode(n.id)) score += STRATEGIC_PULSE_AI_BONUS;
         if (n.level > 1) score += (n.level - 1) * 11;
@@ -932,7 +943,7 @@ function aiDecide(pi) {
     for (var ti = 0; ti < attackCount; ti++) {
         var t = targets[ti], tn = G.nodes[t.id], srcs = [], total = 0;
         var needed = t.units * t.effDef + 5 + tn.level * 3;
-        if (tn.kind === 'turret') needed += 7;
+        if (tn.kind === 'turret') needed += 18;
         if (tn.gate && tn.owner !== pi && barrierCfg && !ownsGate) needed = Math.max(6, needed * 0.82);
         if (capPressure > 0.9) needed *= 0.93;
         var cands = own.filter(function (n) {
@@ -1221,7 +1232,7 @@ function gameTick() {
     // fleet movement with trail
     for (var i = G.fleets.length - 1; i >= 0; i--) {
         var f = G.fleets[i];
-        if (!f.active) { G.fleets.splice(i, 1); continue; }
+        if (!f.active) continue;
         var speedMult = f.routeSpeedMult || 1;
         if (G.mapFeature.type === 'gravity') {
             var gdx = f.x - G.mapFeature.x, gdy = f.y - G.mapFeature.y;
@@ -1230,23 +1241,13 @@ function gameTick() {
         var dp = (f.speed * f.spdVar * G.tune.fspeed / FLEET_SPEED) * speedMult * TICK_DT;
         f.t += dp / f.arcLen;
         if (f.t >= 1) {
-            var tgt = G.nodes[f.tgtId];
-            if (tgt.owner === f.owner) {
-                var srcNode = G.nodes[f.srcId];
-                var friendlyArrival = resolveFriendlyArrival({
-                    targetUnits: tgt.units,
-                    targetMaxUnits: tgt.maxUnits,
-                    sourceUnits: srcNode && srcNode.owner === f.owner ? srcNode.units : 0,
-                    sourceMaxUnits: srcNode && srcNode.owner === f.owner ? srcNode.maxUnits : 0,
-                    fleetCount: f.count,
-                });
-                tgt.units = friendlyArrival.targetUnits;
-                if (srcNode && srcNode.owner === f.owner) srcNode.units = friendlyArrival.sourceUnits;
-                if (friendlyArrival.lost > 0 && f.owner === G.human) {
-                    showGameToast('Takviye taskini: fazla birlik geri dondu, kalani dagildi.');
-                }
-            } else combat(f, tgt);
-            f.active = false; f.trail = []; G.fleets.splice(i, 1);
+            var arrivalNode = G.nodes[f.tgtId];
+            if (arrivalNode) {
+                f.trail.push({ x: f.x, y: f.y });
+                if (f.trail.length > TRAIL_LEN) f.trail.shift();
+                f.x = arrivalNode.pos.x;
+                f.y = arrivalNode.pos.y;
+            }
         } else if (f.t > 0) {
             var s = G.nodes[f.srcId], tg = G.nodes[f.tgtId], cp = { x: f.cpx, y: f.cpy };
             var launchT = clamp(typeof f.launchT === 'number' ? f.launchT : 0, 0, 0.2);
@@ -1275,6 +1276,49 @@ function gameTick() {
                 f.x = G.nodes[f.srcId].pos.x; f.y = G.nodes[f.srcId].pos.y;
             }
         }
+    }
+    var fieldReport = applyDefenseFieldDamage({
+        nodes: G.nodes,
+        fleets: G.fleets,
+        dt: TICK_DT,
+        cfg: defenseFieldCfg(),
+    });
+    if (fieldReport && Array.isArray(fieldReport.arcs) && fieldReport.arcs.length > 0) {
+        for (var fai = 0; fai < fieldReport.arcs.length; fai++) {
+            var arc = fieldReport.arcs[fai];
+            G.fieldBeams.push({
+                fromX: arc.fromX,
+                fromY: arc.fromY,
+                toX: arc.toX,
+                toY: arc.toY,
+                owner: arc.owner,
+                life: 0.1,
+                maxLife: 0.1,
+            });
+        }
+        if (G.fieldBeams.length > 120) G.fieldBeams = G.fieldBeams.slice(-120);
+    }
+    for (var i = G.fleets.length - 1; i >= 0; i--) {
+        var f = G.fleets[i];
+        if (!f.active) { G.fleets.splice(i, 1); continue; }
+        if (f.t < 1) continue;
+        var tgt = G.nodes[f.tgtId];
+        if (tgt.owner === f.owner) {
+            var srcNode = G.nodes[f.srcId];
+            var friendlyArrival = resolveFriendlyArrival({
+                targetUnits: tgt.units,
+                targetMaxUnits: tgt.maxUnits,
+                sourceUnits: srcNode && srcNode.owner === f.owner ? srcNode.units : 0,
+                sourceMaxUnits: srcNode && srcNode.owner === f.owner ? srcNode.maxUnits : 0,
+                fleetCount: f.count,
+            });
+            tgt.units = friendlyArrival.targetUnits;
+            if (srcNode && srcNode.owner === f.owner) srcNode.units = friendlyArrival.sourceUnits;
+            if (friendlyArrival.lost > 0 && f.owner === G.human) {
+                showGameToast('Takviye taski: hedef doluydu. Fazla birlik once kaynaga dondu, kalan fazlalik dagildi.');
+            }
+        } else combat(f, tgt);
+        f.active = false; f.trail = []; G.fleets.splice(i, 1);
     }
     // flow links
     for (var i = 0; i < G.flows.length; i++) {
@@ -1312,6 +1356,10 @@ function gameTick() {
     for (var bi = G.turretBeams.length - 1; bi >= 0; bi--) {
         G.turretBeams[bi].life -= TICK_DT;
         if (G.turretBeams[bi].life <= 0) G.turretBeams.splice(bi, 1);
+    }
+    for (var fi = G.fieldBeams.length - 1; fi >= 0; fi--) {
+        G.fieldBeams[fi].life -= TICK_DT;
+        if (G.fieldBeams[fi].life <= 0) G.fieldBeams.splice(fi, 1);
     }
     checkEnd(); G.tick++;
 }
@@ -1754,6 +1802,24 @@ function render(ctx, cv, tick) {
         ctx.stroke();
         ctx.setLineDash([]);
     }
+    for (var fr = 0; fr < G.nodes.length; fr++) {
+        var fieldNode = G.nodes[fr];
+        if (!fieldNode || fieldNode.kind === 'turret' || fieldNode.owner < 0) continue;
+        var fieldVisible = !G.tune.fogEnabled || fieldNode.owner === G.human || !!G.fog.vis[G.human][fieldNode.id];
+        if (!fieldVisible) continue;
+        var fieldStats = getDefenseFieldStats(fieldNode, defenseFieldCfg());
+        if (!fieldStats.active) continue;
+        var fieldCol = G.players[fieldNode.owner] ? G.players[fieldNode.owner].color : COL_NEUTRAL;
+        var fieldAlpha = fieldNode.owner === G.human ? 0.12 : 0.07;
+        if (fieldNode.selected) fieldAlpha += 0.05;
+        ctx.beginPath();
+        ctx.arc(fieldNode.pos.x, fieldNode.pos.y, fieldStats.range, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba(fieldCol, fieldAlpha);
+        ctx.setLineDash([4, 5]);
+        ctx.lineWidth = fieldNode.defense ? 1.4 : 1;
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ FLOW LINKS Ã¢â€â‚¬Ã¢â€â‚¬
     for (var i = 0; i < G.flows.length; i++) {
@@ -1797,6 +1863,23 @@ function render(ctx, cv, tick) {
         ctx.beginPath();
         ctx.arc(beam.toX, beam.toY, 1.6 + beamAlpha * 1.2, 0, Math.PI * 2);
         ctx.fillStyle = hexToRgba('#ffffff', 0.55 * beamAlpha);
+        ctx.fill();
+    }
+    for (var fbi = 0; fbi < G.fieldBeams.length; fbi++) {
+        var fieldBeam = G.fieldBeams[fbi];
+        var fieldBeamAlpha = clamp(fieldBeam.life / Math.max(fieldBeam.maxLife, 0.0001), 0, 1);
+        var fieldBeamCol = fieldBeam.owner >= 0 && G.players[fieldBeam.owner] ? G.players[fieldBeam.owner].color : '#8db3ff';
+        ctx.beginPath();
+        ctx.moveTo(fieldBeam.fromX, fieldBeam.fromY);
+        ctx.lineTo(fieldBeam.toX, fieldBeam.toY);
+        ctx.strokeStyle = hexToRgba(fieldBeamCol, 0.22 * fieldBeamAlpha);
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(fieldBeam.toX, fieldBeam.toY, 1.2 + fieldBeamAlpha, 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba('#ffffff', 0.45 * fieldBeamAlpha);
         ctx.fill();
     }
 
@@ -2316,7 +2399,25 @@ function labelForPlayer(idx) {
 }
 
 function pulseBonusSummary() {
-    return 'Pulse: Prod +' + Math.round((STRATEGIC_PULSE_PROD - 1) * 100) + '% | Fleet +' + Math.round((STRATEGIC_PULSE_SPEED - 1) * 100) + '% | Assim +' + Math.round((STRATEGIC_PULSE_ASSIM - 1) * 100) + '% | Cap +' + STRATEGIC_PULSE_CAP;
+    return 'Pulse: uretim +' + Math.round((STRATEGIC_PULSE_PROD - 1) * 100) + '% | filo hizi +' + Math.round((STRATEGIC_PULSE_SPEED - 1) * 100) + '% | asimilasyon +' + Math.round((STRATEGIC_PULSE_ASSIM - 1) * 100) + '% | cap +' + STRATEGIC_PULSE_CAP;
+}
+
+function defenseFieldCfg() {
+    return {
+        baseRangePad: DEFENSE_FIELD_RANGE_PAD,
+        levelRangeBonus: DEFENSE_FIELD_LEVEL_RANGE,
+        baseDps: DEFENSE_FIELD_DPS,
+        levelDpsBonus: DEFENSE_FIELD_LEVEL_DPS,
+        defenseDpsBonus: DEFENSE_FIELD_DEFENSE_BONUS,
+        bulwarkDpsBonus: DEFENSE_FIELD_BULWARK_BONUS,
+        relayRangeBonus: DEFENSE_FIELD_RELAY_RANGE,
+    };
+}
+
+function defenseFieldSummary(node) {
+    var stats = getDefenseFieldStats(node, defenseFieldCfg());
+    if (!stats.active) return 'Field OFF: asimilasyon tamamlaninca acilir';
+    return 'Field: r' + Math.round(stats.range) + ' | dusman filo ' + stats.dps.toFixed(1) + '/s erir';
 }
 
 function barrierGateNodes() {
@@ -2347,7 +2448,7 @@ function barrierGateObjectiveText() {
 }
 
 function barrierGatePromptText() {
-    return 'Barrier aktif: ' + barrierGateObjectiveText() + '.';
+    return 'Barrier aktif: ' + barrierGateObjectiveText() + '. Gecis, fetih yetmez; asimilasyon tamamlaninca acilir.';
 }
 
 function barrierGateStatusText() {
@@ -2357,7 +2458,7 @@ function barrierGateStatusText() {
     for (var i = 0; i < gates.length; i++) {
         var gate = gates[i];
         var ownerText = gate.owner < 0 ? 'Neutral' : labelForPlayer(gate.owner);
-        var statusText = gate.owner >= 0 ? (isNodeAssimilated(gate) ? 'hazir' : 'asimile oluyor') : 'bos';
+        var statusText = gate.owner >= 0 ? (isNodeAssimilated(gate) ? 'hazir, gecit acik' : 'asimile oluyor, gecit kapali') : 'bos, once fethet';
         parts.push(barrierGateLabel(i, gates.length) + ': ' + ownerText + ' ' + statusText);
     }
     return 'Barrier | ' + parts.join(' | ');
@@ -2371,7 +2472,7 @@ function selectionMetaText() {
         if (G.mapFeature && G.mapFeature.type === 'barrier') idleParts.push(barrierGateStatusText());
         if (G.strategicPulse && G.strategicPulse.active) idleParts.push(pulseBonusSummary());
         if (idleParts.length) return idleParts.join(' | ');
-        return 'Secili node yok. Upgrade maliyeti, savunma tradeofflari ve pulse bonusu burada gorunur.';
+        return 'Bir gezegen sec: upgrade maliyeti, savunma alani, asimilasyon, supply ve pulse etkileri burada gorunur.';
     }
 
     if (ids.length === 1) {
@@ -2386,14 +2487,15 @@ function selectionMetaText() {
                 parts.push('Upgrade OFF');
             }
             parts.push(node.defense ? ('Defense ON | Assim +' + Math.round((DEFENSE_ASSIM_BONUS - 1) * 100) + '% | Prod -' + Math.round((1 - DEFENSE_PROD_PENALTY) * 100) + '%') : 'Defense OFF');
+            if (node.kind !== 'turret') parts.push(defenseFieldSummary(node));
             if (node.supplied === true) parts.push('Supply upgrade -' + Math.round((1 - SUPPLIED_UPGRADE_DISCOUNT) * 100) + '%');
             if (!isNodeAssimilated(node)) parts.push('Assim ' + Math.round(clamp(node.assimilationProgress || 0, 0, 1) * 100) + '%');
         } else if (node.strategic) {
             parts.push('Strategic hub');
         }
-        if (node.gate) parts.push(node.owner === G.human && isNodeAssimilated(node) ? 'GATE ready: gecit acik' : 'GATE: bariyer gecidi');
+        if (node.gate) parts.push(node.owner === G.human && isNodeAssimilated(node) ? 'GATE ready: gecit acik' : 'GATE: bariyeri asip diger tarafa gecisi acar');
         if (strategicPulseAppliesToNode(node.id)) parts.push(pulseBonusSummary());
-        else if (node.strategic) parts.push('Strategic hub: pulse buraya donunce tempo kazanir');
+        else if (node.strategic) parts.push('Strategic hub: pulse buraya dondugunde uretim, hiz, asimilasyon ve cap bonusu gelir');
         return parts.join(' | ');
     }
 
@@ -2883,26 +2985,26 @@ var SCENARIO_UNLOCKED_KEY = 'stellar_scenario_unlocked_v1';
 var SCENARIO_COMPLETED_KEY = 'stellar_scenario_completed_v1';
 var LEGACY_CAMPAIGN_UNLOCKED_KEY = 'stellar_campaign_unlocked_v2';
 var CAMPAIGN_LEVELS = [
-    { id: 1, name: 'Acilis Hatti', blurb: 'Temel cephe kontrolu. Tek AI, sakin baslangic.', seed: 'camp-01-awake', nc: 10, diff: 'easy', aiCount: 1, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 0.76, aiBuf: 10, aiInt: 46, flowInt: 22 }, hint: 'Merkez strategic hubi erken al; ilk pulse seni one iter.' },
-    { id: 2, name: 'Kenar Cizgisi', blurb: 'Harita genisliyor. Iki yonde savunma kur.', seed: 'camp-02-ridge', nc: 11, diff: 'easy', aiCount: 1, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 0.8, aiBuf: 9, aiInt: 44, flowInt: 21 }, hint: 'Yeni aldigin node\'da defense ac; asimilasyonu garantiye al.' },
-    { id: 3, name: 'Yildiz Koprusu', blurb: 'Ilk wormhole dersi. Hizli rota avantajini kap.', seed: 'camp-03-bridge', nc: 12, diff: 'easy', aiCount: 1, fog: false, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 0.84, aiBuf: 8, aiInt: 42, flowInt: 20 }, hint: 'Wormhole ve pulse ayni anda acildiginda ani rota kur.' },
-    { id: 4, name: 'Cift Baskin', blurb: 'Iki AI ayni anda sikistirir. Erken genisleme kritik.', seed: 'camp-04-dual', nc: 13, diff: 'easy', aiCount: 2, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 0.9, aiBuf: 8, aiInt: 40, flowInt: 18 }, hint: 'Iki cepheyi supply zinciriyle bagla; kopuk node pahaliya uretir.' },
-    { id: 5, name: 'Cekim Cukuru', blurb: 'Merkezde gravity alani var. Rotalari hiz ile kir.', seed: 'camp-05-grav', nc: 14, diff: 'easy', aiCount: 2, fog: false, mapFeature: 'gravity', rulesMode: 'advanced', tune: { aiAgg: 0.93, aiBuf: 7, aiInt: 38, flowInt: 17 }, hint: 'Gravity merkezinde pulse cikarsa tempoyu zorla.' },
-    { id: 6, name: 'Gecis Koridoru', blurb: 'Normal zorluga giris. Ekonomi ve savunma dengesi.', seed: 'camp-06-lane', nc: 14, diff: 'normal', aiCount: 2, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 0.98, aiBuf: 6, aiInt: 34, flowInt: 16 }, hint: 'Cap strain gorununce buyume yerine gonderim yap.' },
-    { id: 7, name: 'Relay Rupture', blurb: 'Wormhole ile ani baskin pencereleri acilir.', seed: 'camp-07-relay', nc: 15, diff: 'normal', aiCount: 2, fog: false, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 1.01, aiBuf: 6, aiInt: 32, flowInt: 15 }, hint: 'Relay upgrade\'i supply altinda daha ucuz; hiz altyapisini oncele.' },
-    { id: 8, name: 'Sis Perdesi', blurb: 'Fog acik. Gorus kontrolu olmadan saldiri pahali.', seed: 'camp-08-fog', nc: 16, diff: 'normal', aiCount: 2, fog: true, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 1.02, aiBuf: 6, aiInt: 33, flowInt: 16 }, hint: 'Sis altinda pulse hub gorus ve tempo merkezidir.' },
-    { id: 9, name: 'Uc Cephe', blurb: 'Uc AI ile kaynak dagitimi zorlasir. Gate kontrolu burada oyunu acar.', seed: 'camp-09-triad', nc: 17, diff: 'normal', aiCount: 3, fog: false, mapFeature: 'barrier', rulesMode: 'advanced', tune: { aiAgg: 1.05, aiBuf: 5, aiInt: 31, flowInt: 15 }, hint: 'Gate + pulse kombinasyonu haritayi tek anda acar.' },
-    { id: 10, name: 'Anomali Avi', blurb: 'Mapte kesin bir anomali var. Kim once kullanacak?', seed: 'camp-10-hunt', nc: 18, diff: 'normal', aiCount: 3, fog: false, mapFeature: { type: 'auto', chance: 1 }, rulesMode: 'advanced', tune: { aiAgg: 1.08, aiBuf: 5, aiInt: 30, flowInt: 14 }, hint: 'Anomali ne cikarsa ciksin pulse penceresini ilk sen ac.' },
-    { id: 11, name: 'Kapan', blurb: 'Hard girisi. Erken hata oyunu aninda dondurur.', seed: 'camp-11-trap', nc: 18, diff: 'hard', aiCount: 3, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 1.12, aiBuf: 4, aiInt: 25, flowInt: 13 }, hint: 'Cap strain ile dolu bekleme; fazla birimi cepheye cevir.' },
-    { id: 12, name: 'Yari Yol Savasi', blurb: 'Wormhole merkezli bolunmus cephe.', seed: 'camp-12-halfway', nc: 19, diff: 'hard', aiCount: 3, fog: false, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 1.16, aiBuf: 4, aiInt: 24, flowInt: 13 }, hint: 'Uzun hatta bekleme, wormhole-pulse senkronu ile vur.' },
-    { id: 13, name: 'Kor Nokta', blurb: 'Hard + fog + barrier. Yanlis rota oyunu bitirir.', seed: 'camp-13-blind', nc: 20, diff: 'hard', aiCount: 3, fog: true, mapFeature: 'barrier', rulesMode: 'advanced', tune: { aiAgg: 1.18, aiBuf: 4, aiInt: 24, flowInt: 12 }, hint: 'Fog + barrier altinda pulse bilgisi dogrudan hedef rehberi olur.' },
-    { id: 14, name: 'Demir Kusatma', blurb: 'Dort AI ile cevreleme. Cikis koridoru ac.', seed: 'camp-14-iron', nc: 21, diff: 'hard', aiCount: 4, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 1.22, aiBuf: 4, aiInt: 23, flowInt: 12 }, hint: 'Defense\'i sadece durmak icin degil, taze fetihleri kilitlemek icin kullan.' },
-    { id: 15, name: 'Yogun Cekim', blurb: 'Gravity alani altinda hizli akincilar.', seed: 'camp-15-pull', nc: 22, diff: 'hard', aiCount: 4, fog: false, mapFeature: 'gravity', rulesMode: 'advanced', tune: { aiAgg: 1.26, aiBuf: 3, aiInt: 22, flowInt: 11 }, hint: 'Gravity alaninda pulse sahibi olan oyuncu zincir saldiriya cikabilir.' },
-    { id: 16, name: 'Kirilan Ag', blurb: 'Fog ve wormhole birlikte. Gorus + tempo savasi.', seed: 'camp-16-shard', nc: 23, diff: 'hard', aiCount: 4, fog: true, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 1.3, aiBuf: 3, aiInt: 21, flowInt: 11 }, hint: 'Siste relay agi ve ucuz upgrade seni oyunda tutar.' },
-    { id: 17, name: 'Dar Bogaz', blurb: 'Yuksek node sayisi, dar ekonomik pencere ve gecit savasi.', seed: 'camp-17-bottle', nc: 24, diff: 'hard', aiCount: 4, fog: false, mapFeature: 'barrier', rulesMode: 'advanced', tune: { aiAgg: 1.33, aiBuf: 3, aiInt: 20, flowInt: 10 }, hint: 'Gate kontrolu olmadan ekonomi yetmez; once gecit, sonra tasma.' },
-    { id: 18, name: 'Yildiz Mezarligi', blurb: 'Bes AI. Uzun savunma ve karsi akina dayan.', seed: 'camp-18-grave', nc: 25, diff: 'hard', aiCount: 5, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 1.36, aiBuf: 3, aiInt: 19, flowInt: 10 }, hint: 'Bes rakipte temiz ekonomi yerine hizli donen pulse alanlari sayi yaratir.' },
-    { id: 19, name: 'Son Anomali', blurb: 'Fog, gravity ve hizli AI baskisi bir arada.', seed: 'camp-19-anomaly', nc: 26, diff: 'hard', aiCount: 5, fog: true, mapFeature: 'gravity', rulesMode: 'advanced', tune: { aiAgg: 1.4, aiBuf: 2, aiInt: 18, flowInt: 10 }, hint: 'Gorus, strain ve gravity ayni anda baski kurar; asiri stok yapma.' },
-    { id: 20, name: 'Solarmax Protocol', blurb: 'Final bolum: tam baski, tam sis, maksimum kaos.', seed: 'camp-20-solarmax', nc: 28, diff: 'hard', aiCount: 5, fog: true, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 1.45, aiBuf: 2, aiInt: 17, flowInt: 9 }, hint: 'Finalde butun sistemler birlikte calisir; pulse pencereyi kacirma.' },
+    { id: 1, name: 'Acilis Hatti', blurb: 'Temel cephe kontrolu. Tek AI, sakin baslangic.', seed: 'camp-01-awake', nc: 10, diff: 'easy', aiCount: 1, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 0.76, aiBuf: 10, aiInt: 46, flowInt: 22 }, hint: 'Ilk hedefin merkezdeki strategic hub olsun. Pulse oraya dondugunde yakin iki node daha alip ekonomi farki kur.' },
+    { id: 2, name: 'Kenar Cizgisi', blurb: 'Harita genisliyor. Iki yonde savunma kur.', seed: 'camp-02-ridge', nc: 11, diff: 'easy', aiCount: 1, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 0.8, aiBuf: 9, aiInt: 44, flowInt: 21 }, hint: 'Yeni aldigin node\'da defense ac ve garnizonu kacirma. Asimilasyon bitince savunma alani cepheyi kendi kendine yumusatir.' },
+    { id: 3, name: 'Yildiz Koprusu', blurb: 'Ilk wormhole dersi. Hizli rota avantajini kap.', seed: 'camp-03-bridge', nc: 12, diff: 'easy', aiCount: 1, fog: false, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 0.84, aiBuf: 8, aiInt: 42, flowInt: 20 }, hint: 'Wormhole ucunu erken al. Sonra pulse acildiginda wormhole uzerinden hizli baskin at; uzun yoldan gitme.' },
+    { id: 4, name: 'Cift Baskin', blurb: 'Iki AI ayni anda sikistirir. Erken genisleme kritik.', seed: 'camp-04-dual', nc: 13, diff: 'easy', aiCount: 2, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 0.9, aiBuf: 8, aiInt: 40, flowInt: 18 }, hint: 'Iki cepheyi supply zinciriyle bagla. Kopuk node sadece zayif uretmez; upgrade de pahaliya kalir ve kolay dusurulur.' },
+    { id: 5, name: 'Cekim Cukuru', blurb: 'Merkezde gravity alani var. Rotalari hiz ile kir.', seed: 'camp-05-grav', nc: 14, diff: 'easy', aiCount: 2, fog: false, mapFeature: 'gravity', rulesMode: 'advanced', tune: { aiAgg: 0.93, aiBuf: 7, aiInt: 38, flowInt: 17 }, hint: 'Merkez gravity alanini kestirme olarak kullan. Pulse merkezdeyse savunmak yerine hizli dalga ile rakip ekonomisini del.' },
+    { id: 6, name: 'Gecis Koridoru', blurb: 'Normal zorluga giris. Ekonomi ve savunma dengesi.', seed: 'camp-06-lane', nc: 14, diff: 'normal', aiCount: 2, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 0.98, aiBuf: 6, aiInt: 34, flowInt: 16 }, hint: 'Cap strain gorunurse stok tutmayi kes. Fazla birimi ya upgrade\'e cevir ya da cepheye it; dolu bekleyen ekonomi yavaslar.' },
+    { id: 7, name: 'Relay Rupture', blurb: 'Wormhole ile ani baskin pencereleri acilir.', seed: 'camp-07-relay', nc: 15, diff: 'normal', aiCount: 2, fog: false, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 1.01, aiBuf: 6, aiInt: 32, flowInt: 15 }, hint: 'Relay node\'larini supply altinda ucuz upgrade et. Sonra flow + wormhole ile tek cepheden degil, iki hizli hatta baski kur.' },
+    { id: 8, name: 'Sis Perdesi', blurb: 'Fog acik. Gorus kontrolu olmadan saldiri pahali.', seed: 'camp-08-fog', nc: 16, diff: 'normal', aiCount: 2, fog: true, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 1.02, aiBuf: 6, aiInt: 33, flowInt: 16 }, hint: 'Sis altinda uzak hedef kovalamak yerine pulse hub ve ara baglantilari tut. Gorus almadan buyuk filo cikarma.' },
+    { id: 9, name: 'Uc Cephe', blurb: 'Uc AI ile kaynak dagitimi zorlasir. Gate kontrolu burada oyunu acar.', seed: 'camp-09-triad', nc: 17, diff: 'normal', aiCount: 3, fog: false, mapFeature: 'barrier', rulesMode: 'advanced', tune: { aiAgg: 1.05, aiBuf: 5, aiInt: 31, flowInt: 15 }, hint: 'Ilk buyuk amac GATE olsun. Fethettikten sonra hemen gecis bekleme; asimilasyon tamamlaninca karsi tarafa pulse destekli dalga gonder.' },
+    { id: 10, name: 'Anomali Avi', blurb: 'Mapte kesin bir anomali var. Kim once kullanacak?', seed: 'camp-10-hunt', nc: 18, diff: 'normal', aiCount: 3, fog: false, mapFeature: { type: 'auto', chance: 1 }, rulesMode: 'advanced', tune: { aiAgg: 1.08, aiBuf: 5, aiInt: 30, flowInt: 14 }, hint: 'Ilk 30 saniyede anomaliyi oku ve plana hemen don. Hangi ozellik cikarsa ciksin pulse zamani senin hizli ikinci hamlen olsun.' },
+    { id: 11, name: 'Kapan', blurb: 'Hard girisi. Erken hata oyunu aninda dondurur.', seed: 'camp-11-trap', nc: 18, diff: 'hard', aiCount: 3, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 1.12, aiBuf: 4, aiInt: 25, flowInt: 13 }, hint: 'Tek hatta sisme yapma. Bir cepheyi defense + field ile tutarken bosalan gucu diger tarafta temiz avantaja cevir.' },
+    { id: 12, name: 'Yari Yol Savasi', blurb: 'Wormhole merkezli bolunmus cephe.', seed: 'camp-12-halfway', nc: 19, diff: 'hard', aiCount: 3, fog: false, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 1.16, aiBuf: 4, aiInt: 24, flowInt: 13 }, hint: 'Uzun hatta oyalanma. Wormhole cikisini tut, pulse acildiginda ayni anda iki koldan saldir; tek rota kolay kapanir.' },
+    { id: 13, name: 'Kor Nokta', blurb: 'Hard + fog + barrier. Yanlis rota oyunu bitirir.', seed: 'camp-13-blind', nc: 20, diff: 'hard', aiCount: 3, fog: true, mapFeature: 'barrier', rulesMode: 'advanced', tune: { aiAgg: 1.18, aiBuf: 4, aiInt: 24, flowInt: 12 }, hint: 'Fog altinda ana rehberin GATE ve pulse. Karsi tarafi acmadan once kendi tarafta supply zincirini tamamla ve savunma alanlarini kur.' },
+    { id: 14, name: 'Demir Kusatma', blurb: 'Dort AI ile cevreleme. Cikis koridoru ac.', seed: 'camp-14-iron', nc: 21, diff: 'hard', aiCount: 4, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 1.22, aiBuf: 4, aiInt: 23, flowInt: 12 }, hint: 'Defense\'i sadece beklemek icin kullanma. Yeni fetihte defense ac, asimilasyon bitince field ile koridoru tutup ana ordunu serbest birak.' },
+    { id: 15, name: 'Yogun Cekim', blurb: 'Gravity alani altinda hizli akincilar.', seed: 'camp-15-pull', nc: 22, diff: 'hard', aiCount: 4, fog: false, mapFeature: 'gravity', rulesMode: 'advanced', tune: { aiAgg: 1.26, aiBuf: 3, aiInt: 22, flowInt: 11 }, hint: 'Gravity alaninda duran degil, gecen kazanir. Kisa aralikli dalgalar gonder; tek dev filo yerine hizla ust uste vur.' },
+    { id: 16, name: 'Kirilan Ag', blurb: 'Fog ve wormhole birlikte. Gorus + tempo savasi.', seed: 'camp-16-shard', nc: 23, diff: 'hard', aiCount: 4, fog: true, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 1.3, aiBuf: 3, aiInt: 21, flowInt: 11 }, hint: 'Relay agin yoksa siste gec kalirsin. Once gorus zinciri kur, sonra wormhole cikislarini field ile kapat.' },
+    { id: 17, name: 'Dar Bogaz', blurb: 'Yuksek node sayisi, dar ekonomik pencere ve gecit savasi.', seed: 'camp-17-bottle', nc: 24, diff: 'hard', aiCount: 4, fog: false, mapFeature: 'barrier', rulesMode: 'advanced', tune: { aiAgg: 1.33, aiBuf: 3, aiInt: 20, flowInt: 10 }, hint: 'GATE olmadan ekonomi yetmez. Once gecidi al, sonra karsi tarafta tek bir tutunma node\'u savunma moduyla kilitle ve supply ac.' },
+    { id: 18, name: 'Yildiz Mezarligi', blurb: 'Bes AI. Uzun savunma ve karsi akina dayan.', seed: 'camp-18-grave', nc: 25, diff: 'hard', aiCount: 5, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 1.36, aiBuf: 3, aiInt: 19, flowInt: 10 }, hint: 'Bes rakipte her yere yetisemezsin. Pulse donen hatta agirlik ver, diger cepheleri defense field ile ucuz sekilde oyalat.' },
+    { id: 19, name: 'Son Anomali', blurb: 'Fog, gravity ve hizli AI baskisi bir arada.', seed: 'camp-19-anomaly', nc: 26, diff: 'hard', aiCount: 5, fog: true, mapFeature: 'gravity', rulesMode: 'advanced', tune: { aiAgg: 1.4, aiBuf: 2, aiInt: 18, flowInt: 10 }, hint: 'Gorus, gravity ve strain ayni anda cezalandirir. Asiri stok yapma; merkezden gecen saldirilari asimile field halkalariyla incelt.' },
+    { id: 20, name: 'Solarmax Protocol', blurb: 'Final bolum: tam baski, tam sis, maksimum kaos.', seed: 'camp-20-solarmax', nc: 28, diff: 'hard', aiCount: 5, fog: true, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 1.45, aiBuf: 2, aiInt: 17, flowInt: 9 }, hint: 'Finalde her sistem birlikte calisir. Erken relay + pulse + wormhole ucunu birlestir; cap strain\'e dusmeden once oyunun temposunu sen belirle.' },
 ];
 var campaignSelectedLevel = 0;
 
@@ -2969,21 +3071,33 @@ function campaignFeatureName(feature) {
 }
 function campaignSystemsSummary(level) {
     var parts = [
-        'Pulse hubs active',
-        'Strain starts at ' + Math.round(CAP_SOFT_START * 100) + '% cap',
-        'Defense boosts assimilation',
+        'Pulse hublari gecici tempo bonusu verir',
+        'Strain capin %' + Math.round(CAP_SOFT_START * 100) + '\'inde baslar',
+        'Defense asimilasyonu hizlandirir ama uretimi keser',
+        'Asimile gezegenler yakin savunma alani acar',
+        'Turretler artik daha sert kusatma hedefidir',
     ];
     var rulesMode = (level && level.rulesMode) || 'advanced';
-    if (rulesMode === 'advanced') parts.push('Supply cuts upgrade cost');
+    if (rulesMode === 'advanced') parts.push('Supply altindaki node daha ucuza upgrade olur');
     return parts.join(' | ');
+}
+function campaignFeatureHint(level) {
+    var feature = level ? level.mapFeature : null;
+    var featureType = typeof feature === 'string' ? feature : ((feature && feature.type) || 'none');
+    if (featureType === 'wormhole') return 'Wormhole: bagli iki uc arasinda filolar 2.0x hizla gider. Uzun rota yerine wormhole eksenini tut.';
+    if (featureType === 'gravity') return 'Gravity: merkez alani filolari 1.35x hizlandirir. Merkezden gecen rota hem baskin hem savunmada avantaja doner.';
+    if (featureType === 'barrier') return 'Barrier: karsi tarafa gecmek icin GATE gezegenini al ve asimilasyon tamamlanana kadar tut.';
+    if (featureType === 'auto') return 'Anomali: harita tek bir ozel mekanikle acilir. Ilk dakikada ne oldugunu gozleyip plana hizla don.';
+    return 'Standart harita: supply zinciri, pulse zamani ve savunma alani kullanimi macin temposunu belirler.';
 }
 function campaignLevelSummary(level) {
     return 'Bolum ' + level.id + ': ' + level.name + '\n' +
         level.blurb + '\n' +
         'Nodes: ' + level.nc + ' | AI: ' + level.aiCount + ' | Diff: ' + level.diff.toUpperCase() +
         ' | Feature: ' + campaignFeatureName(level.mapFeature) + (level.fog ? ' | Fog ON' : ' | Fog OFF') + '\n' +
+        'Harita Dersi: ' + campaignFeatureHint(level) + '\n' +
         'Systems: ' + campaignSystemsSummary(level) + '\n' +
-        'Focus: ' + (level.hint || 'Map temposunu pulse ve supply ile yonet.');
+        'Plan: ' + (level.hint || 'Map temposunu pulse, supply ve savunma alani ile yonet.');
 }
 function applyCampaignLevelSelection(levelIndex) {
     var unlocked = G.campaign.unlocked || 1;
@@ -3078,6 +3192,11 @@ function startCampaignLevel(levelIndex) {
     if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
     closeScenarioMenu();
     showUI('playing');
+    if (lvl.hint) {
+        setTimeout(function () {
+            if (G.campaign.active && G.campaign.levelIndex === idx && G.state === 'playing') showGameToast('Bolum ipucu: ' + lvl.hint);
+        }, 1200);
+    }
     refreshCampaignUI();
 }
 function completeCampaignLevel() {

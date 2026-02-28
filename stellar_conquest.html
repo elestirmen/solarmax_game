@@ -1269,11 +1269,12 @@
                         <li><b>Bos alanda surukle:</b> Dikdortgen kutu secimi yapar; icindeki kendi gezegenlerini secer.</li>
                         <li><b>Ctrl + bos alanda surukle:</b> Secili kaynaklardan hedefe birakinca toplu birlik gonderir. Cok hizli hamle icin idealdir.</li>
                         <li><b>Seciliyken hedefe sol tik:</b> Secili gezegenlerden hedefe, HUD'daki <b>Send %</b> kadar birlik yollar (ornegin %50 = yarisi).</li>
-                        <li><b>Transfer:</b> Secili grup icindeyken baska kendi gezegenine sol tikla birlik transferi yapabilirsin.</li>
+                        <li><b>Transfer:</b> Secili grup icindeyken baska kendi gezegenine sol tikla birlik transferi yapabilirsin. Dolu hedefe fazla takviye basarsan bir kisim geri donmeye calisir.</li>
                         <li><b>Sag tik (kendi gezegen):</b> Hedef seciliyse savunma modunu ac/kapat. Baska kendi kaynaklarin seciliyken secili olmayan kendi hedefe sag tik, otomatik transferi (flow) ac/kapatir.</li>
-                        <li><b>Sag tik (dusman veya tarafsiz):</b> Secili kaynaklardan hedefe <b>Flow</b> baglantisi ac/kapat.</li>
-                        <li><b>HUD orta bilgi satiri:</b> Secili node icin upgrade maliyeti, defense tradeoff'u, supply indirimi ve aktif pulse bonuslari gosterilir.</li>
-                        <li><b>Barrier haritasi:</b> Bariyeri acan gezegenler artik <b>GATE</b> etiketiyle haritada acikca gosterilir.</li>
+                        <li><b>Sag tik (dusman veya tarafsiz):</b> Secili kaynaklardan hedefe <b>Flow</b> baglantisi ac/kapat. Bu, tek saldiri degil, surekli baski emridir.</li>
+                        <li><b>HUD orta bilgi satiri:</b> Secili node icin upgrade maliyeti, defense tradeoff'u, supply indirimi, savunma alani, gate ve aktif pulse bonuslari gosterilir.</li>
+                        <li><b>Yeni savunma kurali:</b> Asimile olmus sahipli gezegenler yakin bir savunma alani uretir; icine giren dusman filolari yavas yavas eritir. Defense modu bu alani da guclendirir.</li>
+                        <li><b>Barrier haritasi:</b> Bariyeri acan gezegenler <b>GATE</b> etiketiyle gosterilir. Sadece fethetmek yetmez; gecis asimilasyon tamamlaninca acilir.</li>
                         <li><b>Orta tus + surukle:</b> Kamerayi kaydir. <b>Mouse tekeri:</b> Zoom in/out.</li>
                     </ul>
                 </div>
@@ -1298,34 +1299,39 @@
 
                 <div class="tutorial-section" id="tut-flow">
                     <h3>4) Flow (Otomatik Akis)</h3>
-                    <p>Flow, bir gezegenden digerine periyodik otomatik birlik transferi saglar. Dusman veya tarafsiz hedefe sag tikla Flow ac; kendi gezegenine sag tikla kapat.</p>
+                    <p>Flow, bir gezegenden digerine periyodik otomatik birlik transferi saglar. Tek tik saldiri yerine "bu hatti surekli besle" emridir.</p>
                     <ul>
-                        <li><b>Nasil calisir:</b> Her birkac tick'te kaynak gezegenden hedefe birlik gonderilir (yaklasik %8 oraninda).</li>
-                        <li><b>Ne zaman kullan:</b> Uzun mesafe destegi, surekli baskı veya asimilasyon destegi icin idealdir.</li>
-                        <li><b>Relay gezegenleri</b> Flow icin bonus verir; filo hizi da artar.</li>
+                        <li><b>Nasil calisir:</b> Her birkac tick'te kaynak gezegenden hedefe birlik gonderilir (yaklasik %8 oraninda). Kaynak zayiflarsa akis da kendiliginden kuculur.</li>
+                        <li><b>Ne zaman kullan:</b> Uzun mesafe destek, asimilasyon bittikten sonra cephe besleme ve wormhole/relay hattina surekli trafik kurmak icin idealdir.</li>
+                        <li><b>Ne zaman kapat:</b> Hedef doluysa, cephe degistiyse veya yeni fetihte garnizon kaciyorsa flow'u kapat. Aksi halde kendi ekonomini bosaltirsin.</li>
+                        <li><b>Relay gezegenleri:</b> Flow verimini ve filo hizini artirir; hizli lojistik omurgasi kurmak icin en iyi tiptir.</li>
                     </ul>
-                    <div class="tutorial-tip"><strong>Strateji:</strong> Dusman sinirina Flow ac, fetih sonrasi kendi gezegenine sag tikla Flow'u kapat.</div>
+                    <div class="tutorial-tip"><strong>Strateji:</strong> Once node'u normal saldiriyla al, sonra ayni hatti Flow'a cevir. Fetih sonrasi garnizon dusuyorsa flow'u hemen kapat.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-asimilasyon">
                     <h3>5) Asimilasyon (Fetih Sonrasi Kontrol)</h3>
                     <p>Bir gezegeni fethettiginde hemen tam uretim yapamazsin. Iki asamali surec vardir:</p>
                     <ul>
-                        <li><b>Kilit asaması (~6 saniye):</b> Fetih sonrasi gezegen kilitte bekler; bu surede uretim yok.</li>
-                        <li><b>Asimilasyon asaması:</b> Kilit bittikten sonra ilerleme cubugu dolana kadar kismi kontrol. Tam dolunca normal uretim baslar.</li>
+                        <li><b>Kilit asamasi (~6 saniye):</b> Fetih sonrasi gezegen kilitte bekler; bu surede uretim yok, savunma alani yok, gate acilmaz.</li>
+                        <li><b>Asimilasyon asamasi:</b> Kilit bittikten sonra ilerleme cubugu dolana kadar kismi kontrol vardir. Tam dolunca uretim, gate ve savunma alani tamamen acilir.</li>
                         <li><b>Garnizon etkisi:</b> Gezegendeki birlik orani ne kadar yuksekse asimilasyon o kadar hizli. Birlik gondermek garnizonu dusurur, asimilasyonu yavaslatir.</li>
-                        <li><b>Direnc:</b> Yuksek seviye gezegenler ve Bulwark tipi daha yavas asimile olur.</li>
+                        <li><b>Defense etkisi:</b> Defense modu asimilasyonu hizlandirir ama uretimi keser. Yeni fetihte kisa sureli defense acmak genelde dogrudur.</li>
+                        <li><b>Direnc:</b> Yuksek seviye gezegenler ve Bulwark tipi daha yavas asimile olur. Turret istasyonlari ise ele gecirmesi ayri olarak daha zordur.</li>
                     </ul>
-                    <div class="tutorial-warning">Fethettikten hemen sonra cok birlik gondermek asimilasyonu yavaslatir. Garnizonu yuksek tut.</div>
+                    <div class="tutorial-warning">Fethettikten hemen sonra cok birlik gondermek en yaygin hata. Once node'u oturt, sonra ileri hatta asker cek.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-savas">
                     <h3>6) Savas, Uretim ve Tedarik</h3>
                     <ul>
-                        <li><b>Savunma modu:</b> Savunma gucu %25 artar; uretim %25 ceza alir. Kritik sinirlarda kullan.</li>
-                        <li><b>Tedarik hatti:</b> Baskente (veya bagli gezegenlere) 220 birim mesafede bagli olmayan gezegenler %40 uretim cezasi alir.</li>
-                        <li><b>Upgrade:</b> Gezegen seviyesi 2 ve 3'e cikar; uretim ve kapasite artar. Maliyet: ~18 + yaricap + (seviye-1)*14 birlik.</li>
-                        <li><b>Zafer:</b> Tum rakipleri haritadan silen oyuncu kazanir.</li>
+                        <li><b>Savunma modu:</b> Savunma gucu %25 artar, asimilasyon hizlanir; uretim %25 ceza alir. Yeni fetihte ve dar bogazda cok gucludur.</li>
+                        <li><b>Savunma alani:</b> Asimile olmus sahipli gezegenler yakin cevresindeki dusman filolari eritir. Bu alan cepheyi yumusatir ama tek basina dev armadayi durdurmaz.</li>
+                        <li><b>Turretler:</b> Daha uzun menzilli, daha yuksek hasarli ve ele gecirmesi zor istasyonlardir. Tek bir dalga yerine toplu kusatma gerekir.</li>
+                        <li><b>Tedarik hatti:</b> Baskente veya bagli gezegenlere 220 birim mesafede bagli olmayan node'lar %40 uretim cezasi alir. Supply altindaki node'lar daha ucuza upgrade olur.</li>
+                        <li><b>Cap strain:</b> Toplam birlik sayin capin %82'sine yaklasinca uretim yavaslar. Dolu beklemek yerine birlikleri cepheye, flow'a veya upgrade'e cevir.</li>
+                        <li><b>Upgrade:</b> Gezegen seviyesi 2 ve 3'e cikar; uretim, kapasite ve savunma etkisi artar. Supply altinda yapmak daha verimlidir.</li>
+                        <li><b>Zafer:</b> Tum rakiplerin hem node'larini hem aktif filolarini bitiren oyuncu kazanir.</li>
                     </ul>
                 </div>
 
@@ -1353,17 +1359,22 @@
                             <strong class="color-nexus">N - Nexus</strong>
                             <p>Tum alanlarda +10-15% bonus. En dengeli ozel tip.</p>
                         </div>
+                        <div class="node-type-card">
+                            <strong class="color-relay">T - Turret</strong>
+                            <p>Uretim yapmaz ama agir savunur. Kusatmadan once cevresini temizle, tek filo gonderip eritme.</p>
+                        </div>
                     </div>
                 </div>
 
                 <div class="tutorial-section" id="tut-harita">
                     <h3>8) Harita Olaylari</h3>
                     <ul>
-                        <li><b>Wormhole:</b> Bagli iki nokta arasinda filolar 1.75x hizla gider. Uzun mesafeleri kisaltir.</li>
-                        <li><b>Gravity alan:</b> Merkezdeki ~170 birim yaricaptaki alandan gecen filolar 1.35x hiz kazanir.</li>
-                        <li><b>Stratejik noktalar:</b> Altin cerceveli gezegenler cok komsulu gecit noktalaridir. Kontrol etmek harita hakimiyeti saglar.</li>
+                        <li><b>Wormhole:</b> Bagli iki nokta arasinda filolar 2.0x hizla gider. Haritanin en iyi baskin ve yardim koridorudur.</li>
+                        <li><b>Gravity alan:</b> Merkezdeki ~170 birim yaricaptaki alandan gecen filolar 1.35x hiz kazanir. Uzun yolu kisaltmak icin rotayi icinden gecir.</li>
+                        <li><b>Barrier:</b> Haritayi ikiye ayirir. Karsi tarafa gecmek icin <b>GATE</b> etiketli gezegeni alip asimilasyonun bitmesini beklersin.</li>
+                        <li><b>Stratejik noktalar:</b> Altin cerceveli gezegenler pulse adayidir. Pulse aktifken o node gecici uretim, hiz, asimilasyon ve cap bonusu verir.</li>
                     </ul>
-                    <div class="tutorial-tip"><strong>Strateji:</strong> Wormhole uclarina erken ulas, dusmanin hizli transferini kes.</div>
+                    <div class="tutorial-tip"><strong>Strateji:</strong> Harita ozelligi neyse ilk planini onun etrafinda kur. Wormhole, GATE ve pulse genelde "ilk buyuk hedef" olmalidir.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-hud">
@@ -1371,7 +1382,9 @@
                     <ul>
                         <li><b>Power paneli (sag ust):</b> Oyuncularin anlik guc siralamasini gosterir. Renkler oyuncuya gore.</li>
                         <li><b>Send % / Slider:</b> Her tiklamada gonderilecek birlik orani. 1-0 tuslariyla da degistirilebilir.</li>
-                        <li><b>Tick / Ping:</b> Oyun temposu ve (cok oyunculuda) ag gecikmesi.</li>
+                        <li><b>Tick / Ping:</b> Oyun temposu, pulse suresi ve (cok oyunculuda) ag gecikmesi.</li>
+                        <li><b>Cap satiri:</b> Toplam birlik/cap oranini ve strain baslangicini gosterir. Yuzde yukseliyorsa ekonomi daraliyor demektir.</li>
+                        <li><b>Orta bilgi satiri:</b> Secili node'un upgrade maliyeti, field menzili, gate durumu, asimilasyon yuzdesi ve pulse bonuslarini tek satirda okursun.</li>
                         <li><b>Minimap:</b> Genel durumu hizli okumak icin. CHAT ile sohbet paneli acilir.</li>
                         <li><b>THEME:</b> Acik/koyu tema degistirir.</li>
                     </ul>
