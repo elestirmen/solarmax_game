@@ -536,13 +536,31 @@
 
         #hudCenter {
             display: flex;
+            flex-direction: column;
             align-items: center;
+            gap: 4px;
+            max-width: 52vw;
+        }
+
+        .hud-center-top {
+            display: flex;
+            align-items: center;
+            justify-content: center;
             gap: 10px;
+            flex-wrap: wrap;
         }
 
         #hudCap {
             color: var(--text-dim);
             font-size: .78rem;
+        }
+
+        #hudMeta {
+            color: var(--text-dim);
+            font-size: .72rem;
+            line-height: 1.2;
+            text-align: center;
+            min-height: 1.2em;
         }
 
         #hudRight button {
@@ -1254,6 +1272,7 @@
                         <li><b>Transfer:</b> Secili grup icindeyken baska kendi gezegenine sol tikla birlik transferi yapabilirsin.</li>
                         <li><b>Sag tik (kendi gezegen):</b> Savunma modunu ac/kapat. Secili grup varsa hepsine uygulanir.</li>
                         <li><b>Sag tik (dusman veya tarafsiz):</b> Secili kaynaklardan hedefe <b>Flow</b> baglantisi ac/kapat.</li>
+                        <li><b>HUD orta bilgi satiri:</b> Secili node icin upgrade maliyeti, defense tradeoff'u, supply indirimi ve aktif pulse bonuslari gosterilir.</li>
                         <li><b>Orta tus + surukle:</b> Kamerayi kaydir. <b>Mouse tekeri:</b> Zoom in/out.</li>
                     </ul>
                 </div>
@@ -1410,7 +1429,10 @@
                 <button type="button" class="send-quick-btn" data-send-pct="100">100%</button>
             </div>
         </div>
-        <div id="hudCenter"><span id="hudTick">Tick: 0</span><span id="hudCap">Cap 0/0</span><span id="pingDisplay" class="ping-display"></span></div>
+        <div id="hudCenter">
+            <div class="hud-center-top"><span id="hudTick">Tick: 0</span><span id="hudCap">Cap 0/0</span><span id="pingDisplay" class="ping-display"></span></div>
+            <span id="hudMeta">Secili node bilgisi burada gorunur.</span>
+        </div>
         <div id="hudRight"><button id="pauseBtn" title="Pause">||</button><button id="speedBtn" title="Speed">1x</button><button id="themeBtn" title="Tema">THEME</button><button id="chatToggle" title="Chat">CHAT</button>
         </div>
     </div>

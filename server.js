@@ -40,9 +40,36 @@ const leaderboard = [];
 const EMOTES = ['gg', 'gl', 'hf', 'wp', 'oops', 'nice', 'wait'];
 const ALLOWED_COMMAND_TYPES = new Set(['send', 'flow', 'rmFlow', 'upgrade', 'toggleDefense']);
 const MAX_COMMAND_DELAY_TICKS = 300;
+const COMMAND_RATE_WINDOW_MS = 1000;
+const MAX_COMMANDS_PER_WINDOW = 120;
+const commandRate = new Map();
 
 function nowTick(startEpochMs) {
     return Math.max(0, Math.floor((Date.now() - startEpochMs) / (1000 / TICK_RATE)));
+}
+
+function getMatchRoster(room) {
+    if (room && Array.isArray(room.matchPlayers) && room.matchPlayers.length > 0) {
+        return room.matchPlayers;
+    }
+    return room && Array.isArray(room.players) ? room.players : [];
+}
+
+function getMatchPlayerByIndex(room, index) {
+    const roster = getMatchRoster(room);
+    return roster.find(player => player.index === index) || null;
+}
+
+function consumeRateLimit(bucketMap, key, limit, windowMs) {
+    const now = Date.now();
+    const current = bucketMap.get(key);
+    if (!current || now - current.startedAt >= windowMs) {
+        bucketMap.set(key, { startedAt: now, count: 1 });
+        return true;
+    }
+    if (current.count >= limit) return false;
+    current.count += 1;
+    return true;
 }
 
 function normalizeDifficulty(raw) {
@@ -141,7 +168,7 @@ function normalizeWinnerIndex(raw, room) {
     const value = toFiniteInt(raw);
     if (value === null) return null;
     if (value === -1) return -1; // draw
-    return room.players.some(p => p.index === value) ? value : null;
+    return getMatchPlayerByIndex(room, value) ? value : null;
 }
 
 function recordMatchResult(room, winnerIndex) {
@@ -181,6 +208,7 @@ function createRoom(configPayload = {}) {
         startedAt: 0,
         players: [],
         config: normalizeRoomConfig(configPayload),
+        matchPlayers: [],
         rematchVotes: new Set(),
         resultReports: new Map(),
         resultCommitted: false,
@@ -255,6 +283,13 @@ function startRoomMatch(room) {
 
     room.started = true;
     room.startedAt = Date.now();
+    room.matchPlayers = room.players.map(p => ({
+        socketId: p.socketId,
+        name: p.name,
+        index: p.index,
+        connected: true,
+        botControlled: false,
+    }));
     room.rematchVotes = new Set();
     room.resultReports = new Map();
     room.resultCommitted = false;
@@ -297,6 +332,7 @@ function cleanupPlayer(socketId) {
     if (!code) return;
     const room = rooms.get(code);
     socketToRoom.delete(socketId);
+    commandRate.delete(socketId);
 
     const socket = io.of('/').sockets.get(socketId);
     if (socket) socket.leave(code);
@@ -320,12 +356,19 @@ function cleanupPlayer(socketId) {
     }
 
     if (room.started) {
+        const matchPlayer = room.matchPlayers.find(p => p.socketId === socketId);
+        if (matchPlayer) {
+            matchPlayer.connected = false;
+            matchPlayer.botControlled = true;
+            matchPlayer.socketId = '';
+        }
         if (leavingPlayer) {
             io.to(code).emit('playerLeft', { index: leavingPlayer.index, name: leavingPlayer.name });
         }
         if (room.players.length < 2) {
             room.started = false;
             room.startedAt = 0;
+            room.matchPlayers = [];
             room.rematchVotes = new Set();
             room.resultReports = new Map();
             room.resultCommitted = false;
@@ -460,6 +503,7 @@ io.on('connection', (socket) => {
         if (!room || !room.started) return;
         const player = room.players.find(p => p.socketId === socket.id);
         if (!player) return;
+        if (!consumeRateLimit(commandRate, socket.id, MAX_COMMANDS_PER_WINDOW, COMMAND_RATE_WINDOW_MS)) return;
 
         const type = String(payload.type || '');
         if (!ALLOWED_COMMAND_TYPES.has(type)) return;
@@ -579,10 +623,10 @@ io.on('connection', (socket) => {
         const confirmedWinner = reportedWinners[0];
         recordMatchResult(room, confirmedWinner);
 
-        const winnerPlayer = room.players.find(p => p.index === confirmedWinner);
+        const winnerPlayer = getMatchPlayerByIndex(room, confirmedWinner);
         io.to(code).emit('matchResultConfirmed', {
             winnerIndex: confirmedWinner,
-            winnerName: winnerPlayer ? winnerPlayer.name : null,
+            winnerName: winnerPlayer ? (winnerPlayer.botControlled ? 'AI' : winnerPlayer.name) : null,
             draw: confirmedWinner < 0,
         });
     });
@@ -611,7 +655,23 @@ server.on('error', (err) => {
     throw err;
 });
 
-server.listen(PORT, () => {
-    const rootMode = HAS_DIST_BUILD ? 'dist' : 'source';
-    console.log(`Stellar server listening on http://localhost:${PORT} (${rootMode} mode)`);
-});
+const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === __filename;
+
+if (isMainModule) {
+    server.listen(PORT, () => {
+        const rootMode = HAS_DIST_BUILD ? 'dist' : 'source';
+        console.log(`Stellar server listening on http://localhost:${PORT} (${rootMode} mode)`);
+    });
+}
+
+export {
+    rooms,
+    socketToRoom,
+    leaderboard,
+    createRoom,
+    startRoomMatch,
+    cleanupPlayer,
+    normalizeWinnerIndex,
+    recordMatchResult,
+    getMatchRoster,
+};
