@@ -8,6 +8,7 @@ import { computeSendCount } from './assets/sim/dispatch_math.js';
 import { applyTurretDamage } from './assets/sim/turret.js';
 import { shouldStartDragSend, resolveRightClickAction } from './assets/sim/input_policy.js';
 import { isDispatchAllowed } from './assets/sim/barrier.js';
+import { selectBarrierGateIds } from './assets/sim/barrier_layout.js';
 import { computePlayerUnitCount, computeGlobalCap } from './assets/sim/cap.js';
 import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } from './assets/sim/ruleset.js';
 import { computeFriendlyReinforcementRoom, resolveFriendlyArrival } from './assets/sim/reinforcement.js';
@@ -471,28 +472,26 @@ function placeBarrierFeature() {
     });
 
     var targetGateCount = candidates.length > 12 && G.rng.next() < 0.55 ? 2 : 1;
-    var gateIds = [];
-    for (var ci = 0; ci < candidates.length && gateIds.length < targetGateCount; ci++) {
-        var cand = candidates[ci];
-        if (!gateIds.length) {
-            gateIds.push(cand.id);
-            continue;
-        }
-        var tooClose = false;
-        for (var gi = 0; gi < gateIds.length; gi++) {
-            var gateNode = G.nodes[gateIds[gi]];
-            if (Math.abs(gateNode.pos.y - cand.pos.y) < 120) { tooClose = true; break; }
-        }
-        if (!tooClose) gateIds.push(cand.id);
-    }
-    if (!gateIds.length) gateIds.push(candidates[0].id);
+    var gateIds = selectBarrierGateIds({
+        nodes: G.nodes,
+        barrierX: barrierX,
+        targetGateCount: targetGateCount,
+        minVerticalGap: 120,
+    });
+    if (!gateIds.length) return false;
 
     for (var ni = 0; ni < G.nodes.length; ni++) G.nodes[ni].gate = false;
     for (var g = 0; g < gateIds.length; g++) {
         var gate = G.nodes[gateIds[g]];
+        if (gate.kind === 'turret') {
+            gate.kind = normalizeNodeKindForRuleset('core', G.rulesMode);
+            gate.level = 1;
+        }
         gate.gate = true;
         gate.assimilationProgress = 1;
         gate.assimilationLock = 0;
+        gate.maxUnits = nodeCapacity(gate);
+        if (gate.units > gate.maxUnits) gate.units = gate.maxUnits;
     }
     G.mapFeature = { type: 'barrier', x: barrierX, gateIds: gateIds.slice() };
     return true;
@@ -606,6 +605,7 @@ function initGame(seedStr, nc, diff, opts) {
     if (!keepReplay) G.rec = { events: [], seed: G.seed, nc: nc, diff: diff, rulesMode: G.rulesMode };
     if (!keepReplay) G.rep = null;
     G.state = keepReplay ? 'replay' : 'playing';
+    if (!keepReplay && G.mapFeature.type === 'barrier') showGameToast(barrierGatePromptText());
 }
 function genMap(nc) {
     G.nodes = []; var att = 0, placed = 0, minDist = NODE_MINDIST;
@@ -773,7 +773,7 @@ function dispatch(owner, srcIds, tgtId, pct) {
         if (typeof AudioFX !== 'undefined') AudioFX.send();
     }
     if (blockedByBarrier && owner === G.human) {
-        showGameToast('Gecit kilitli: once bir gate ele gecir.');
+        showGameToast('Gecit kilitli: ' + barrierGateObjectiveText() + '.');
     } else if (!didSend && friendlyRoom !== null && owner === G.human) {
         showGameToast('Hedef dolu: takviye beklemeye alindi.');
     }
@@ -1840,15 +1840,29 @@ function render(ctx, cv, tick) {
                 ctx.fillText('PULSE', n.pos.x, n.pos.y - n.radius - 10);
             }
         }
-        if ((vis || n.owner === G.human) && n.gate) {
+        var gateVisible = n.gate && (vis || n.owner === G.human || (G.mapFeature && G.mapFeature.type === 'barrier'));
+        if (gateVisible) {
+            var gatePulse = 0.55 + 0.45 * Math.sin(tick * 0.08 + n.id);
+            var gateAlpha = (vis || n.owner === G.human) ? 0.95 : 0.62;
+            ctx.save();
             ctx.beginPath();
-            ctx.moveTo(n.pos.x, n.pos.y - n.radius - 6);
-            ctx.lineTo(n.pos.x + 4, n.pos.y - n.radius - 2);
-            ctx.lineTo(n.pos.x, n.pos.y - n.radius + 2);
-            ctx.lineTo(n.pos.x - 4, n.pos.y - n.radius - 2);
+            ctx.arc(n.pos.x, n.pos.y, n.radius + 9, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,220,140,' + (0.28 + gatePulse * 0.24) * gateAlpha + ')';
+            ctx.lineWidth = 1.8;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(n.pos.x, n.pos.y - n.radius - 8);
+            ctx.lineTo(n.pos.x + 5, n.pos.y - n.radius - 2);
+            ctx.lineTo(n.pos.x, n.pos.y - n.radius + 4);
+            ctx.lineTo(n.pos.x - 5, n.pos.y - n.radius - 2);
             ctx.closePath();
-            ctx.fillStyle = 'rgba(255,220,140,0.9)';
+            ctx.fillStyle = 'rgba(255,220,140,' + gateAlpha + ')';
             ctx.fill();
+            ctx.font = 'bold 10px Outfit,sans-serif';
+            ctx.fillStyle = 'rgba(255,232,180,' + gateAlpha + ')';
+            ctx.textAlign = 'center';
+            ctx.fillText('GATE', n.pos.x, n.pos.y + n.radius + 13);
+            ctx.restore();
         }
         if ((vis || n.owner === G.human) && n.owner >= 0 && n.assimilationProgress !== undefined && n.assimilationProgress < 1) {
             var ringR = n.radius + 7;
@@ -2158,6 +2172,10 @@ function drawMapFeature(ctx, tick) {
             ctx.strokeStyle = 'rgba(255,210,120,' + (0.2 + pulse * 0.3) + ')';
             ctx.lineWidth = 1.5;
             ctx.stroke();
+            ctx.font = 'bold 10px Outfit,sans-serif';
+            ctx.fillStyle = 'rgba(255,225,160,0.92)';
+            ctx.textAlign = gateNode.pos.x <= bx ? 'right' : 'left';
+            ctx.fillText('GATE', bx + (gateNode.pos.x <= bx ? -16 : 16), gateNode.pos.y + 3);
         }
     }
 }
@@ -2301,13 +2319,58 @@ function pulseBonusSummary() {
     return 'Pulse: Prod +' + Math.round((STRATEGIC_PULSE_PROD - 1) * 100) + '% | Fleet +' + Math.round((STRATEGIC_PULSE_SPEED - 1) * 100) + '% | Assim +' + Math.round((STRATEGIC_PULSE_ASSIM - 1) * 100) + '% | Cap +' + STRATEGIC_PULSE_CAP;
 }
 
+function barrierGateNodes() {
+    if (!G.mapFeature || G.mapFeature.type !== 'barrier' || !Array.isArray(G.mapFeature.gateIds)) return [];
+    var gates = [];
+    for (var gi = 0; gi < G.mapFeature.gateIds.length; gi++) {
+        var gate = G.nodes[G.mapFeature.gateIds[gi]];
+        if (gate && gate.gate) gates.push(gate);
+    }
+    gates.sort(function (a, b) {
+        if (a.pos.y !== b.pos.y) return a.pos.y - b.pos.y;
+        return a.id - b.id;
+    });
+    return gates;
+}
+
+function barrierGateLabel(index, total) {
+    if (total <= 1) return 'Merkez GATE';
+    if (total === 2) return index === 0 ? 'Ust GATE' : 'Alt GATE';
+    return 'GATE ' + (index + 1);
+}
+
+function barrierGateObjectiveText() {
+    var gates = barrierGateNodes();
+    if (!gates.length) return 'haritadaki GATE gezegeni bulunamadi';
+    if (gates.length === 1) return 'haritadaki GATE etiketli gezegeni ele gecir';
+    return 'haritadaki GATE etiketli gezegenlerden birini ele gecir';
+}
+
+function barrierGatePromptText() {
+    return 'Barrier aktif: ' + barrierGateObjectiveText() + '.';
+}
+
+function barrierGateStatusText() {
+    var gates = barrierGateNodes();
+    if (!gates.length) return 'Barrier aktif ama GATE gezegeni bulunamadi.';
+    var parts = [];
+    for (var i = 0; i < gates.length; i++) {
+        var gate = gates[i];
+        var ownerText = gate.owner < 0 ? 'Neutral' : labelForPlayer(gate.owner);
+        var statusText = gate.owner >= 0 ? (isNodeAssimilated(gate) ? 'hazir' : 'asimile oluyor') : 'bos';
+        parts.push(barrierGateLabel(i, gates.length) + ': ' + ownerText + ' ' + statusText);
+    }
+    return 'Barrier | ' + parts.join(' | ');
+}
+
 function selectionMetaText() {
     if (!hudMeta || !inp || !inp.sel) return '';
     var ids = Array.from(inp.sel).filter(function (id) { return !!G.nodes[id]; });
     if (!ids.length) {
-        if (G.strategicPulse && G.strategicPulse.active) {
-            return pulseBonusSummary();
-        }
+        var idleParts = [];
+        if (G.mapFeature && G.mapFeature.type === 'barrier') idleParts.push(barrierGateStatusText());
+        if (G.strategicPulse && G.strategicPulse.active) idleParts.push(pulseBonusSummary());
+        if (idleParts.length) return idleParts.join(' | ');
         return 'Secili node yok. Upgrade maliyeti, savunma tradeofflari ve pulse bonusu burada gorunur.';
     }
 
@@ -2328,6 +2391,7 @@ function selectionMetaText() {
         } else if (node.strategic) {
             parts.push('Strategic hub');
         }
+        if (node.gate) parts.push(node.owner === G.human && isNodeAssimilated(node) ? 'GATE ready: gecit acik' : 'GATE: bariyer gecidi');
         if (strategicPulseAppliesToNode(node.id)) parts.push(pulseBonusSummary());
         else if (node.strategic) parts.push('Strategic hub: pulse buraya donunce tempo kazanir');
         return parts.join(' | ');
@@ -2354,8 +2418,10 @@ function selectionMetaText() {
         summary.push('Upgrade OFF');
     }
     var suppliedCount = owned.filter(function (node) { return node.supplied === true; }).length;
+    var gateCount = owned.filter(function (node) { return node.gate && isNodeAssimilated(node); }).length;
     var pulseCount = owned.filter(function (node) { return strategicPulseAppliesToNode(node.id); }).length;
     summary.push('Supply ' + suppliedCount + '/' + owned.length);
+    if (gateCount > 0) summary.push('Gate x' + gateCount);
     if (pulseCount > 0) summary.push('Pulse x' + pulseCount);
     return summary.join(' | ');
 }
