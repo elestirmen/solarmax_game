@@ -1,9 +1,9 @@
-<!DOCTYPE html>
-<html lang="en">
+﻿<!DOCTYPE html>
+<html lang="tr">
 
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover" />
     <title>Stellar Conquest</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
@@ -281,7 +281,7 @@
         }
 
         .scenario-bubble.done::after {
-            content: 'âœ“';
+            content: 'v';
             position: absolute;
             right: -2px;
             bottom: -3px;
@@ -308,7 +308,56 @@
             font-size: .76rem;
             color: var(--text-dim);
             line-height: 1.4;
-            white-space: pre-line;
+        }
+
+        .mission-title {
+            font-size: .84rem;
+            font-weight: 700;
+            color: #dfe7ff;
+            margin-bottom: 4px;
+        }
+
+        .mission-subtitle {
+            font-size: .73rem;
+            color: var(--text-dim);
+            line-height: 1.35;
+            margin-bottom: 8px;
+        }
+
+        .mission-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 10px;
+            margin: 5px 0;
+            padding: 7px 8px;
+            border: 1px solid rgba(80, 140, 255, 0.12);
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.035);
+        }
+
+        .mission-row.complete {
+            border-color: rgba(39, 174, 96, 0.35);
+        }
+
+        .mission-row.failed {
+            border-color: rgba(231, 76, 60, 0.35);
+        }
+
+        .mission-row.optional {
+            opacity: 0.9;
+        }
+
+        .mission-label {
+            flex: 1;
+            min-width: 0;
+            color: var(--text);
+        }
+
+        .mission-progress {
+            white-space: nowrap;
+            font-size: .72rem;
+            color: var(--text-dim);
+            font-weight: 600;
         }
 
         .scenario-modal {
@@ -1123,7 +1172,10 @@
         }
 
         .game-stats { margin: 12px 0; padding: 10px; background: rgba(255,255,255,0.05); border-radius: var(--radius); font-size: .9rem; }
-        .stats-row { margin: 4px 0; color: var(--text-dim); }
+        .stats-row { margin: 4px 0; color: var(--text-dim); display: flex; justify-content: space-between; gap: 12px; }
+        .stats-row.emphasis { color: #d9f6e7; }
+        .stats-label { color: var(--text-dim); }
+        .stats-value { color: var(--text); font-weight: 600; }
         .minimap { position: fixed; top: 12px; right: 12px; width: 140px; height: 90px; border: 1px solid var(--panel-border); border-radius: var(--radius); overflow: hidden; z-index: 45; background: rgba(8,12,21,0.9); }
         .minimap canvas { width: 100%; height: 100%; display: block; }
         .ping-display { margin-left: 12px; font-size: .75rem; color: var(--text-dim); }
@@ -1136,6 +1188,16 @@
         .emote-bar { display: flex; gap: 2px; }
         .emote-btn { padding: 4px 8px; font-size: .7rem; background: rgba(255,255,255,0.08); border: 1px solid var(--panel-border); border-radius: 4px; color: var(--text); cursor: pointer; }
         .achievement-toast { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); padding: 12px 24px; background: linear-gradient(135deg, #4a8eff, #6366f1); border-radius: var(--radius); color: #fff; font-weight: 600; z-index: 200; animation: fadeIn .3s ease; }
+        #campaignMissionHud { position: fixed; top: 12px; left: 12px; width: 320px; max-width: calc(100vw - 180px); padding: 10px; background: rgba(12, 18, 34, 0.9); border: 1px solid var(--panel-border); border-radius: 12px; z-index: 46; backdrop-filter: blur(8px); }
+        #campaignMissionHud.hidden { display: none; }
+        @media (max-width: 900px) {
+            #campaignMissionHud { top: auto; bottom: 128px; left: 12px; right: 12px; width: auto; max-width: none; }
+            .chat-panel { width: calc(100vw - 24px); max-width: 360px; bottom: 128px; }
+            .minimap { top: auto; bottom: 48px; width: 112px; height: 72px; }
+            #hud { flex-wrap: wrap; gap: 8px; }
+            #hudLeft, #hudCenter, #hudRight { width: 100%; min-width: 0; }
+            #hudRight { justify-content: flex-end; }
+        }
     </style>
 </head>
 
@@ -1198,14 +1260,14 @@
                     <div class="room-row" style="flex:1; margin:0">
                         <input type="text" id="joinRoomCodeInput" placeholder="Oda Kodu (5 hane)" maxlength="6"
                             style="text-transform: uppercase; flex:1" />
-                        <button id="joinRoomBtn" class="secondary-btn" style="margin:0">Koda KatÄ±l</button>
+                        <button id="joinRoomBtn" class="secondary-btn" style="margin:0">Koda Katil</button>
                     </div>
                 </div>
                 <div class="room-row" style="display:none; margin-top:12px" id="hostControls">
-                    <button id="startRoomBtn" class="primary-btn" style="margin:0; flex:1">Oyunu BaÅŸlat (Host)</button>
+                    <button id="startRoomBtn" class="primary-btn" style="margin:0; flex:1">Oyunu Baslat (Host)</button>
                 </div>
-                <button id="leaveRoomBtn" class="secondary-btn" style="display:none; margin-top:8px">Odadan AyrÄ±l</button>
-                <p id="roomStatus" class="room-status"></p>
+                <button id="leaveRoomBtn" class="secondary-btn" style="display:none; margin-top:8px">Odadan Ayril</button>
+                <p id="roomStatus" class="room-status" aria-live="polite"></p>
                 <div id="roomPlayers" class="room-players"></div>
             </div>
 
@@ -1276,6 +1338,7 @@
                         <li><b>Yeni savunma kurali:</b> Asimile olmus sahipli gezegenler yakin bir savunma alani uretir; icine giren dusman filolari yavas yavas eritir. Defense modu bu alani da guclendirir.</li>
                         <li><b>Barrier haritasi:</b> Bariyeri acan gezegenler <b>GATE</b> etiketiyle gosterilir. Sadece fethetmek yetmez; gecis asimilasyon tamamlaninca acilir.</li>
                         <li><b>Orta tus + surukle:</b> Kamerayi kaydir. <b>Mouse tekeri:</b> Zoom in/out.</li>
+                        <li><b>Mobil:</b> Tek parmakla sec ve surukle. Iki parmakla haritayi pan/zoom yap.</li>
                     </ul>
                 </div>
 
@@ -1398,30 +1461,31 @@
     </div>
     <div id="pauseOverlay" class="overlay hidden">
         <div class="menu-panel">
-            <h2>Paused</h2><button id="resumeBtn" class="primary-btn">Resume</button><button id="quitBtn"
-                class="secondary-btn">Quit to Menu</button>
+            <h2>Duraklatildi</h2><button id="resumeBtn" class="primary-btn">Devam</button><button id="quitBtn"
+                class="secondary-btn">Ana Menu</button>
         </div>
     </div>
     <div id="gameOverOverlay" class="overlay hidden">
         <div class="menu-panel">
-            <h2 id="gameOverTitle">Victory!</h2>
+            <h2 id="gameOverTitle">Zafer</h2>
             <p id="gameOverMsg"></p>
             <div id="gameOverStats" class="game-stats"></div>
             <button id="rematchBtn" class="primary-btn" style="display:none">Tekrar Oyna</button>
             <button id="nextLevelBtn" class="primary-btn" style="display:none">Sonraki Bolum</button>
-            <button id="replayBtn" class="primary-btn">Watch Replay</button><button
-                id="exportReplayBtn" class="secondary-btn">Export Replay</button><button id="restartBtn"
-                class="secondary-btn">New Game</button>
+            <button id="replayBtn" class="primary-btn">Replay Izle</button><button
+                id="exportReplayBtn" class="secondary-btn">Replay Disa Aktar</button><button id="restartBtn"
+                class="secondary-btn">Yeni Oyun</button>
         </div>
     </div>
     <div id="replayBar" class="hidden"><span id="replayLabel">REPLAY</span><button id="replaySlower">&lt;&lt;</button><button
             id="replayPause">||</button><button id="replayFaster">&gt;&gt;</button><span id="replaySpeedLabel">1x</span><span
-            id="replayTickLabel">Tick: 0</span><button id="replayStop" class="secondary-btn">Exit Replay</button></div>
+            id="replayTickLabel">Tick: 0</span><button id="replayStop" class="secondary-btn">Replay'den Cik</button></div>
     <div id="minimap" class="minimap hidden">
         <canvas id="minimapCanvas"></canvas>
     </div>
+    <div id="campaignMissionHud" class="hidden" aria-live="polite"></div>
     <div id="powerSidebar" class="hidden">
-        <div id="powerTitle">Power</div>
+        <div id="powerTitle">Guc</div>
         <div id="powerList"></div>
     </div>
     <div id="chatPanel" class="chat-panel hidden">
@@ -1447,12 +1511,12 @@
             <div class="hud-center-top"><span id="hudTick">Tick: 0</span><span id="hudCap">Cap 0/0</span><span id="pingDisplay" class="ping-display"></span></div>
             <span id="hudMeta">Secili node bilgisi burada gorunur.</span>
         </div>
-        <div id="hudRight"><button id="pauseBtn" title="Pause">||</button><button id="speedBtn" title="Speed">1x</button><button id="themeBtn" title="Tema">THEME</button><button id="chatToggle" title="Chat">CHAT</button>
+        <div id="hudRight"><button id="pauseBtn" title="Duraklat">||</button><button id="speedBtn" title="Hiz">1x</button><button id="themeBtn" title="Tema">TEMA</button><button id="chatToggle" title="Sohbet">SOHBET</button>
         </div>
     </div>
     <div id="tuningPanel" class="hidden">
-        <h3>âš™ Tuning</h3>
-        <div class="tune-field"><label>Production Ã—</label><input type="range" id="tuneProduction" min="0.1" max="5"
+        <h3>Tuning</h3>
+        <div class="tune-field"><label>Production x</label><input type="range" id="tuneProduction" min="0.1" max="5"
                 step="0.1" value="1" /><span id="tuneProductionVal">1.0</span></div>
         <div class="tune-field"><label>Fleet Speed</label><input type="range" id="tuneFleetSpeed" min="20" max="300"
                 step="10" value="80" /><span id="tuneFleetSpeedVal">80</span></div>
@@ -1471,13 +1535,14 @@
         <div class="tune-toggle"><label>Fog of War</label><label class="switch"><input type="checkbox"
                     id="tuneFogOfWar" /><span class="slider"></span></label></div>
         <button id="tuneResetBtn" class="secondary-btn">Reset Defaults</button>
-        <button id="tuneToggleBtn" class="toggle-btn">â—€</button>
+        <button id="tuneToggleBtn" class="toggle-btn">-</button>
     </div>
-    <button id="tuneOpenBtn" class="toggle-btn hidden">âš™</button>
+    <button id="tuneOpenBtn" class="toggle-btn hidden">Tuning</button>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
     <script type="module" src="./assets/audio.js"></script>
     <script type="module" src="./game.js"></script>
 </body>
 
 </html>
+
 

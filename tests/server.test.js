@@ -10,6 +10,8 @@ import {
     cleanupPlayer,
     normalizeWinnerIndex,
     recordMatchResult,
+    sanitizePlayerName,
+    recordStateHash,
 } from '../server.js';
 
 function resetServerState() {
@@ -62,4 +64,28 @@ test('recordMatchResult does not award a win to a disconnected AI takeover slot'
             { name: 'Closer', wins: 0, games: 1 },
         ]
     );
+});
+
+test('sanitizePlayerName strips html brackets and collapses whitespace', function () {
+    assert.equal(sanitizePlayerName('  <b> A  B \n\tC </b>  '), 'b A B C /b');
+});
+
+test('recordStateHash reports a sync issue when active clients disagree', function () {
+    resetServerState();
+    var room = createStartedRoom();
+
+    assert.equal(recordStateHash(room, 's0', { matchId: room.matchId, tick: 90, hash: 'aaaaaaaa' }), null);
+    assert.equal(recordStateHash(room, 's1', { matchId: room.matchId, tick: 90, hash: 'bbbbbbbb' }), null);
+
+    var issue = recordStateHash(room, 's2', { matchId: room.matchId, tick: 90, hash: 'aaaaaaaa' });
+
+    assert.deepEqual(issue, {
+        tick: 90,
+        majorityHash: 'aaaaaaaa',
+        majorityCount: 2,
+        hashCounts: [
+            { hash: 'aaaaaaaa', count: 2 },
+            { hash: 'bbbbbbbb', count: 1 },
+        ],
+    });
 });

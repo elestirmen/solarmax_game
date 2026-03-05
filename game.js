@@ -14,6 +14,10 @@ import { computePlayerUnitCount, computeGlobalCap } from './assets/sim/cap.js';
 import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } from './assets/sim/ruleset.js';
 import { computeFriendlyReinforcementRoom, resolveFriendlyArrival } from './assets/sim/reinforcement.js';
 import { getStrategicPulseState, isStrategicPulseActiveForNode } from './assets/sim/strategic_pulse.js';
+import { computeSyncHash } from './assets/sim/state_hash.js';
+import { CAMPAIGN_LEVELS } from './assets/campaign/levels.js';
+import { describeCampaignObjectives, evaluateCampaignObjectives } from './assets/campaign/objectives.js';
+import { renderLeaderboardUI, renderMissionPanel, renderRoomListUI, renderStatRows } from './assets/ui/renderers.js';
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ CONSTANTS Ã¢â€â‚¬Ã¢â€â‚¬
 var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
@@ -64,6 +68,7 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     CAP_SOFT_FLOOR = 0.28,
     DEFENSE_ASSIM_BONUS = 1.18,
     SUPPLIED_UPGRADE_DISCOUNT = 0.94;
+var SYNC_HASH_INTERVAL_TICKS = 90, TICK_RATE = Math.round(1 / TICK_DT);
 
 var NODE_TYPE_DEFS = {
     core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#8db3ff' },
@@ -205,7 +210,7 @@ var G = {
     playerCapital: {}, strategicNodes: [],
     strategicPulse: { active: false, nodeId: -1, cycle: 0, phase: 0, remainingTicks: 0, announcedCycle: -1 },
     powerByPlayer: {}, capByPlayer: {}, unitByPlayer: {},
-    campaign: { active: false, levelIndex: -1, unlocked: 1, completed: 0 },
+    campaign: { active: false, levelIndex: -1, unlocked: 1, completed: 0, reminderShown: {} },
 };
 var ACHIEVEMENTS = [
     { id: 'first_win', name: 'Ilk Zafer', check: function () { return G.winner === G.human; } },
@@ -266,6 +271,11 @@ var net = {
     pendingJoin: false,
     localPlayerIndex: 0,
     pendingCommands: [],
+    matchId: '',
+    lastAppliedSeq: -1,
+    syncHashSentTick: -1,
+    syncWarningTick: -99999,
+    syncWarningText: '',
 };
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ FOG Ã¢â€â‚¬Ã¢â€â‚¬
@@ -578,7 +588,19 @@ function initGame(seedStr, nc, diff, opts) {
     }
     G.flowId = 0;
     G.fleetSerial = 0;
-    G.stats = { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0 };
+    G.stats = {
+        nodesCaptured: 0,
+        fleetsSent: 0,
+        upgrades: 0,
+        unitsProduced: 0,
+        flowLinksCreated: 0,
+        defenseActivations: 0,
+        gateCaptures: 0,
+        wormholeDispatches: 0,
+        pulseControlTicks: 0,
+        peakCapPressure: 0,
+        peakPower: 0,
+    };
     G.particles = [];
     G.turretBeams = [];
     G.fieldBeams = [];
@@ -615,6 +637,7 @@ function initGame(seedStr, nc, diff, opts) {
     if (!keepReplay) G.rec = { events: [], seed: G.seed, nc: nc, diff: diff, rulesMode: G.rulesMode };
     if (!keepReplay) G.rep = null;
     G.state = keepReplay ? 'replay' : 'playing';
+    G.campaign.reminderShown = {};
     if (!keepReplay && G.mapFeature.type === 'barrier') showGameToast(barrierGatePromptText());
 }
 function genMap(nc) {
@@ -777,6 +800,7 @@ function dispatch(owner, srcIds, tgtId, pct) {
         f.trail = [];
         f.dmgAcc = 0;
         G.fleets.push(f);
+        if (owner === G.human && hasWormholeLink) G.stats.wormholeDispatches++;
     }
     if (didSend && owner === G.human) {
         G.stats.fleetsSent++;
@@ -816,7 +840,11 @@ function combat(fleet, tgt) {
         tgt.assimilationLock = ASSIM_LOCK_TICKS;
         G.flows = G.flows.filter(function (fl) { return !(fl.tgtId === tgt.id && fl.owner !== fleet.owner); });
         spawnParticles(tgt.pos.x, tgt.pos.y, 12, col, true);
-        if (G.human === fleet.owner) { G.stats.nodesCaptured++; if (typeof AudioFX !== 'undefined') AudioFX.capture(); }
+        if (G.human === fleet.owner) {
+            G.stats.nodesCaptured++;
+            if (tgt.gate) G.stats.gateCaptures++;
+            if (typeof AudioFX !== 'undefined') AudioFX.capture();
+        }
         else if (humanInvolved && typeof AudioFX !== 'undefined') AudioFX.combat();
     } else {
         tgt.units = Math.max(0, (def - atk) / defMult);
@@ -835,12 +863,14 @@ function addFlow(owner, srcId, tgtId) {
     if (srcNode.owner !== owner) return;
     for (var i = 0; i < G.flows.length; i++) { var f = G.flows[i]; if (f.srcId === srcId && f.tgtId === tgtId && f.owner === owner) { f.active = !f.active; return; } }
     G.flows.push({ id: G.flowId++, srcId: srcId, tgtId: tgtId, owner: owner, tickAcc: 0, active: true });
+    if (owner === G.human) G.stats.flowLinksCreated++;
 }
 function rmFlow(owner, srcId, tgtId) { G.flows = G.flows.filter(function (f) { return !(f.srcId === srcId && f.tgtId === tgtId && f.owner === owner); }); }
 function toggleDefense(owner, nodeId) {
     var node = G.nodes[nodeId];
     if (!node || node.owner !== owner) return false;
     node.defense = !node.defense;
+    if (owner === G.human && node.defense) G.stats.defenseActivations++;
     return true;
 }
 function upgradeNode(owner, nodeId) {
@@ -1108,12 +1138,19 @@ function gameTick() {
         }
 
         if (net.pendingCommands.length > 0) {
-            net.pendingCommands.sort(function (a, b) { return a.tick - b.tick; });
+            net.pendingCommands.sort(function (a, b) {
+                var tickDelta = (a.tick || 0) - (b.tick || 0);
+                if (tickDelta !== 0) return tickDelta;
+                return (a.seq || 0) - (b.seq || 0);
+            });
             var remaining = [];
             for (var qi = 0; qi < net.pendingCommands.length; qi++) {
                 var cmd = net.pendingCommands[qi];
+                if (cmd && cmd.matchId && net.matchId && cmd.matchId !== net.matchId) continue;
                 if ((cmd.tick || 0) <= G.tick + 1) { // Apply when due
+                    if (typeof cmd.seq === 'number' && cmd.seq <= net.lastAppliedSeq) continue;
                     applyPlayerCommand(cmd.playerIndex, cmd.type, cmd.data);
+                    if (typeof cmd.seq === 'number') net.lastAppliedSeq = cmd.seq;
                 } else {
                     remaining.push(cmd);
                 }
@@ -1149,6 +1186,15 @@ function gameTick() {
     }
     G.unitByPlayer = ownerUnits;
     G.capByPlayer = ownerCaps;
+    if (ownerCaps[G.human] > 0) {
+        var humanCapPressureTick = ownerUnits[G.human] / ownerCaps[G.human];
+        if (humanCapPressureTick > G.stats.peakCapPressure) G.stats.peakCapPressure = humanCapPressureTick;
+    }
+    if ((power[G.human] || 0) > G.stats.peakPower) G.stats.peakPower = power[G.human] || 0;
+    var livePulseNode = G.nodes[G.strategicPulse.nodeId];
+    if (G.strategicPulse.active && livePulseNode && livePulseNode.owner === G.human && isNodeAssimilated(livePulseNode)) {
+        G.stats.pulseControlTicks++;
+    }
     for (var i = 0; i < G.nodes.length; i++) {
         var n = G.nodes[i]; if (n.owner < 0) continue;
         var td = nodeTypeOf(n);
@@ -1347,6 +1393,9 @@ function gameTick() {
     }
     // fog
     for (var p = 0; p < G.players.length; p++)updateVis(G.fog, p, G.nodes, G.tick);
+    if (net.online) sendOnlineStateHash();
+    maybeShowCampaignObjectiveReminder();
+    refreshCampaignMissionPanels();
     // particles
     for (var pi = G.particles.length - 1; pi >= 0; pi--) {
         var p = G.particles[pi];
@@ -2267,9 +2316,36 @@ function drawMapFeature(ctx, tick) {
 var inp = {
     sel: new Set(), marqActive: false, marqStart: { x: 0, y: 0 }, marqEnd: { x: 0, y: 0 }, dragActive: false, dragStart: { x: 0, y: 0 }, dragEnd: { x: 0, y: 0 }, dragSrcs: [],
     dragPending: false, dragDownNodeId: -1, dragDownScreen: { x: 0, y: 0 }, dragThreshold: 6,
-    panActive: false, panLast: { x: 0, y: 0 }, mw: { x: 0, y: 0 }, ms: { x: 0, y: 0 }, sendPct: 50, shift: false
+    panActive: false, panLast: { x: 0, y: 0 }, mw: { x: 0, y: 0 }, ms: { x: 0, y: 0 }, sendPct: 50, shift: false,
+    pinchActive: false, pinchStartDist: 0, pinchStartZoom: 1, pinchWorldCenter: { x: 0, y: 0 }
 };
 function s2w(sx, sy) { return { x: (sx - cv.width / 2) / G.cam.zoom + G.cam.x, y: (sy - cv.height / 2) / G.cam.zoom + G.cam.y }; }
+function touchScreenPos(touch) {
+    var r = cv.getBoundingClientRect();
+    return {
+        x: (touch.clientX - r.left) * (cv.width / r.width),
+        y: (touch.clientY - r.top) * (cv.height / r.height),
+    };
+}
+function screenMidpoint(a, b) { return { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 }; }
+function screenDistance(a, b) { var dx = b.x - a.x, dy = b.y - a.y; return Math.sqrt(dx * dx + dy * dy); }
+function beginTouchPinch(a, b) {
+    var center = screenMidpoint(a, b);
+    inp.pinchActive = true;
+    inp.pinchStartDist = Math.max(1, screenDistance(a, b));
+    inp.pinchStartZoom = G.cam.zoom;
+    inp.pinchWorldCenter = s2w(center.x, center.y);
+    inp.dragActive = false;
+    inp.dragPending = false;
+    inp.marqActive = false;
+}
+function updateTouchPinch(a, b) {
+    var center = screenMidpoint(a, b);
+    var distNow = Math.max(1, screenDistance(a, b));
+    G.cam.zoom = clamp(inp.pinchStartZoom * (distNow / Math.max(1, inp.pinchStartDist)), ZOOM_MIN, ZOOM_MAX);
+    G.cam.x = inp.pinchWorldCenter.x - (center.x - cv.width / 2) / G.cam.zoom;
+    G.cam.y = inp.pinchWorldCenter.y - (center.y - cv.height / 2) / G.cam.zoom;
+}
 function hitNode(wp) { for (var i = 0; i < G.nodes.length; i++) { var n = G.nodes[i]; if (dist(wp, n.pos) <= n.radius + 5) return n; } return null; }
 function nodesInRect(s, e, pi) {
     var x0 = Math.min(s.x, e.x), x1 = Math.max(s.x, e.x), y0 = Math.min(s.y, e.y), y1 = Math.max(s.y, e.y), r = [];
@@ -2368,6 +2444,7 @@ var hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent
 var sendPctQuickBtns = Array.prototype.slice.call(document.querySelectorAll('.send-quick-btn'));
 var powerSidebar = $('powerSidebar'), powerListEl = $('powerList');
 var scenarioOv = $('scenarioOverlay'), scenarioStartBtn = $('scenarioStartBtn'), scenarioCloseBtn = $('scenarioCloseBtn'), scenarioProgressEl = $('scenarioProgress'), scenarioBubbleListEl = $('scenarioBubbleList'), scenarioMissionEl = $('scenarioMission');
+var campaignMissionHud = $('campaignMissionHud');
 var repSlower = $('replaySlower'), repPauseBtn = $('replayPause'), repFaster = $('replayFaster'), repSpdLbl = $('replaySpeedLabel'), repTickLbl = $('replayTickLabel'), repStopBtn = $('replayStop');
 var tuneProd = $('tuneProduction'), tuneFSpd = $('tuneFleetSpeed'), tuneDef = $('tuneDefense'), tuneFlowInt = $('tuneFlowInterval');
 var tuneAiAgg = $('tuneAIAggression'), tuneAiBuf = $('tuneAIBuffer'), tuneAiDec = $('tuneAIDecision');
@@ -2391,7 +2468,7 @@ function labelForPlayer(idx) {
             for (var p = 0; p <= idx; p++) if (G.players[p] && G.players[p].isAI) aiN++;
             label = 'AI ' + aiN;
         } else {
-            label = 'Player ' + (idx + 1);
+            label = 'Oyuncu ' + (idx + 1);
         }
     }
     if (idx === G.human && label.indexOf('You') === -1) label += ' (You)';
@@ -2457,7 +2534,7 @@ function barrierGateStatusText() {
     var parts = [];
     for (var i = 0; i < gates.length; i++) {
         var gate = gates[i];
-        var ownerText = gate.owner < 0 ? 'Neutral' : labelForPlayer(gate.owner);
+        var ownerText = gate.owner < 0 ? 'Tarafsiz' : labelForPlayer(gate.owner);
         var statusText = gate.owner >= 0 ? (isNodeAssimilated(gate) ? 'hazir, gecit acik' : 'asimile oluyor, gecit kapali') : 'bos, once fethet';
         parts.push(barrierGateLabel(i, gates.length) + ': ' + ownerText + ' ' + statusText);
     }
@@ -2477,7 +2554,7 @@ function selectionMetaText() {
 
     if (ids.length === 1) {
         var node = G.nodes[ids[0]];
-        var ownerLabel = node.owner >= 0 ? labelForPlayer(node.owner) : 'Neutral';
+        var ownerLabel = node.owner >= 0 ? labelForPlayer(node.owner) : 'Tarafsiz';
         var parts = [nodeTypeOf(node).label + ' L' + node.level, ownerLabel];
         if (node.owner === G.human) {
             if (G.rules && G.rules.allowUpgrade) {
@@ -2577,6 +2654,126 @@ function updatePowerSidebar() {
     }
     powerListEl.replaceChildren(frag);
 }
+
+function countOwnedNodes(owner) {
+    var total = 0;
+    for (var i = 0; i < G.nodes.length; i++) {
+        if (G.nodes[i].owner === owner) total++;
+    }
+    return total;
+}
+
+function currentCampaignLevel() {
+    if (!G.campaign.active || G.campaign.levelIndex < 0) return null;
+    return CAMPAIGN_LEVELS[G.campaign.levelIndex] || null;
+}
+
+function currentCampaignSnapshot() {
+    return {
+        tick: G.tick,
+        didWin: G.winner === G.human,
+        gameOver: G.state === 'gameOver',
+        ownedNodes: countOwnedNodes(G.human),
+        stats: G.stats || {},
+    };
+}
+
+function currentCampaignObjectiveRows() {
+    var level = currentCampaignLevel();
+    if (!level) return [];
+    return evaluateCampaignObjectives(level, currentCampaignSnapshot(), { tickRate: TICK_RATE });
+}
+
+function refreshCampaignMissionPanels() {
+    var level = currentCampaignLevel();
+    var rows = level ? currentCampaignObjectiveRows() : [];
+
+    if (scenarioMissionEl && level) {
+        renderMissionPanel(scenarioMissionEl, {
+            title: 'Bolum ' + level.id + ': ' + level.name,
+            subtitle: level.blurb,
+            items: rows.map(function (row) {
+                return { label: row.label, progressText: row.progressText, complete: row.complete, failed: row.failed, optional: row.optional };
+            }),
+        });
+    }
+
+    if (campaignMissionHud) {
+        if (!level || G.state !== 'playing') {
+            campaignMissionHud.classList.add('hidden');
+        } else {
+            campaignMissionHud.classList.remove('hidden');
+            renderMissionPanel(campaignMissionHud, {
+                title: 'Misyon',
+                subtitle: 'Bolum ' + level.id + ' | ' + level.name,
+                items: rows.map(function (row) {
+                    return { label: row.label, progressText: row.progressText, complete: row.complete, failed: row.failed, optional: row.optional };
+                }),
+            });
+        }
+    }
+}
+
+function maybeShowCampaignObjectiveReminder() {
+    var level = currentCampaignLevel();
+    if (!level || G.state !== 'playing') return;
+    var rows = currentCampaignObjectiveRows();
+    if (!rows.length) return;
+    if (!G.campaign.reminderShown) G.campaign.reminderShown = {};
+
+    for (var i = 0; i < rows.length; i++) {
+        var row = rows[i];
+        if (row.complete || row.failed) continue;
+        if (!row.remindAt || G.tick < row.remindAt) continue;
+        if (G.campaign.reminderShown[row.id]) continue;
+        G.campaign.reminderShown[row.id] = true;
+        if (row.coach) showGameToast('Misyon ipucu: ' + row.coach);
+        break;
+    }
+}
+
+function humanGameOverStatRows() {
+    var rows = [
+        { label: 'Fethedilen', value: G.stats.nodesCaptured },
+        { label: 'Filo emri', value: G.stats.fleetsSent },
+        { label: 'Upgrade', value: G.stats.upgrades },
+        { label: 'Uretim', value: G.stats.unitsProduced },
+        { label: 'Flow kurulum', value: G.stats.flowLinksCreated },
+        { label: 'Savunma aktivasyonu', value: G.stats.defenseActivations },
+        { label: 'Pulse kontrol', value: (Math.round((G.stats.pulseControlTicks / TICK_RATE) * 10) / 10) + 's' },
+        { label: 'Wormhole sevkiyat', value: G.stats.wormholeDispatches },
+        { label: 'Peak power', value: Math.round(G.stats.peakPower || 0) },
+        { label: 'Peak strain', value: Math.round((G.stats.peakCapPressure || 0) * 100) + '%' },
+    ];
+    if (G.stats.gateCaptures > 0) rows.push({ label: 'GATE fetih', value: G.stats.gateCaptures });
+
+    var missionRows = currentCampaignObjectiveRows();
+    for (var i = 0; i < missionRows.length; i++) {
+        rows.push({
+            label: (missionRows[i].optional ? 'Bonus' : 'Gorev') + ' ' + (i + 1),
+            value: missionRows[i].complete ? 'Tamam' : (missionRows[i].failed ? 'Kacirildi' : missionRows[i].progressText),
+            emphasis: missionRows[i].complete && !missionRows[i].optional,
+        });
+    }
+    return rows;
+}
+
+function sendOnlineStateHash() {
+    if (!net.online || !net.socket || !net.matchId) return;
+    if (net.syncHashSentTick >= 0 && G.tick - net.syncHashSentTick < SYNC_HASH_INTERVAL_TICKS) return;
+    net.syncHashSentTick = G.tick;
+    net.socket.emit('stateHash', {
+        matchId: net.matchId,
+        tick: G.tick,
+        hash: computeSyncHash({
+            tick: G.tick,
+            nodes: G.nodes,
+            fleets: G.fleets,
+            players: G.players,
+        }),
+    });
+}
+
 function closeScenarioMenu() {
     if (scenarioOv) scenarioOv.classList.add('hidden');
 }
@@ -2628,6 +2825,7 @@ function showUI(st) {
     if (st === 'playing' && tuningOpen) { tunePanel.classList.remove('hidden'); tuneOpen.classList.add('hidden'); }
     else if (st === 'playing') { tunePanel.classList.add('hidden'); tuneOpen.classList.remove('hidden'); }
     else { tunePanel.classList.add('hidden'); tuneOpen.classList.add('hidden'); }
+    refreshCampaignMissionPanels();
 }
 
 function setRoomStatus(msg, error) {
@@ -2639,7 +2837,7 @@ function setRoomStatus(msg, error) {
 var CHAT_LOG_LIMIT = 120;
 function clearChatMessages() {
     if (!chatMessagesEl) return;
-    chatMessagesEl.innerHTML = '';
+    chatMessagesEl.replaceChildren();
 }
 function appendChatMessage(text, color) {
     if (!chatMessagesEl || !text) return;
@@ -2655,7 +2853,7 @@ function appendChatMessage(text, color) {
 
 function renderRoomPlayers(players, hostId) {
     if (!roomPlayersEl) return;
-    roomPlayersEl.innerHTML = '';
+    roomPlayersEl.replaceChildren();
     if (!players || players.length === 0) return;
     for (var i = 0; i < players.length; i++) {
         var p = players[i];
@@ -2676,22 +2874,7 @@ function roomButtonState() {
 }
 
 function renderRoomList(rooms) {
-    if (!roomListEl) return;
-    roomListEl.innerHTML = '';
-    if (!rooms || rooms.length === 0) {
-        var empty = document.createElement('div');
-        empty.className = 'room-list-empty';
-        empty.textContent = net.connected ? 'Henuz oda yok.' : 'Sunucuya baglaniliyor...';
-        roomListEl.appendChild(empty);
-        return;
-    }
-    for (var i = 0; i < rooms.length; i++) {
-        var r = rooms[i];
-        var item = document.createElement('div');
-        item.className = 'room-item';
-        item.innerHTML = '<div class="room-item-main"><span class="room-item-code">' + r.code + '</span><span class="room-item-meta">' + (r.hostName || 'Host') + ' | ' + r.players + '/' + r.maxPlayers + ' | ' + (r.difficulty || 'normal') + '</span></div><button class="room-join-btn secondary-btn" data-room-code="' + r.code + '">Katil</button>';
-        roomListEl.appendChild(item);
-    }
+    renderRoomListUI(roomListEl, rooms, { connected: net.connected });
 }
 
 function clearRoomState(message) {
@@ -2701,6 +2884,11 @@ function clearRoomState(message) {
     net.isHost = false;
     net.localPlayerIndex = 0;
     net.pendingCommands = [];
+    net.matchId = '';
+    net.lastAppliedSeq = -1;
+    net.syncHashSentTick = -1;
+    net.syncWarningTick = -99999;
+    net.syncWarningText = '';
     clearChatMessages();
     renderRoomPlayers([], null);
     if (message) setRoomStatus(message, false);
@@ -2724,7 +2912,7 @@ function doCreateRoom() {
     if (net.roomCode) return;
 
     var chosen = (playerNameIn && playerNameIn.value.trim()) || '';
-    if (!chosen) { setRoomStatus('Ã–nce nick seÃ§melisin.', true); return; }
+    if (!chosen) { setRoomStatus('Once nick secmelisin.', true); return; }
     net.playerName = chosen;
 
     setRoomStatus('Oda kuruluyor...', false);
@@ -2747,14 +2935,14 @@ function doJoinRoom() {
     if (net.roomCode) return;
 
     var chosen = (playerNameIn && playerNameIn.value.trim()) || '';
-    if (!chosen) { setRoomStatus('Ã–nce nick seÃ§melisin.', true); return; }
+    if (!chosen) { setRoomStatus('Once nick secmelisin.', true); return; }
     net.playerName = chosen;
 
     var code = (joinRoomCodeInput && joinRoomCodeInput.value.trim().toUpperCase()) || '';
     if (!code || code.length !== 5) { setRoomStatus('Gecerli bir oda kodu girin (5 karakter).', true); return; }
 
     net.pendingJoin = false;
-    setRoomStatus('Odaya baÄŸlanÄ±yor...', false);
+    setRoomStatus('Odaya baglaniliyor...', false);
     net.socket.emit('joinRoom', {
         action: 'join',
         playerName: net.playerName,
@@ -2768,7 +2956,7 @@ function issueOnlineCommand(type, data) {
         // iki oyuncuda da aynÄ± tick'te eÅŸzamanlÄ± iÅŸletilmesini saÄŸla (Command Delay)
         var rtt = typeof net.lastPingMs === 'number' && net.lastPingMs > 0 ? net.lastPingMs : 180;
         var delayTicks = clamp(Math.round((rtt / 2) / 33.33) + 4, 6, 18);
-        net.socket.emit('playerCommand', { type: type, data: data || {}, tick: G.tick + delayTicks });
+        net.socket.emit('playerCommand', { type: type, data: data || {}, tick: G.tick + delayTicks, matchId: net.matchId });
         return true;
     }
     return false;
@@ -2788,20 +2976,20 @@ function ensureSocket() {
 
     net.socket.on('connect', function () {
         net.connected = true;
-        setRoomStatus('BaÄŸlantÄ± kuruldu. Oda Kur veya KatÄ±l.', false);
+        setRoomStatus('Baglanti kuruldu. Oda Kur veya Katil.', false);
         requestLobby();
         roomButtonState();
     });
 
     net.socket.on('connect_error', function () {
         net.connected = false;
-        setRoomStatus('Cannot reach multiplayer server. Start it with "npm run server".', true);
+        setRoomStatus('Cok oyunculu sunucuya ulasilamadi. "npm run server" ile baslat.', true);
         roomButtonState();
     });
 
     net.socket.on('disconnect', function () {
         net.connected = false;
-        clearRoomState('Disconnected from multiplayer server.');
+        clearRoomState('Cok oyunculu sunucudan baglanti koptu.');
     });
 
     net.socket.on('lobbyState', function (payload) {
@@ -2858,7 +3046,7 @@ function ensureSocket() {
     net.socket.on('playerLeft', function (payload) {
         if (G.state === 'playing' && G.players && G.players[payload.index]) {
             G.players[payload.index].isAI = true;
-            console.log(payload.name + ' ayrÄ±ldÄ±. Yerine Yapay Zeka geÃ§ti.');
+            console.log(payload.name + ' ayrildi. Yerine Yapay Zeka gecti.');
         } else if (net.players) {
             net.players = net.players.filter(function (p) { return p.index !== payload.index; });
             renderRoomPlayers(net.players, net.isHost ? net.socket.id : null);
@@ -2877,12 +3065,17 @@ function ensureSocket() {
         var players = payload.players || [];
         net.players = players;
         net.pendingJoin = false;
+        net.matchId = payload.matchId || '';
         var self = players.find(function (p) { return p.socketId === net.socket.id; });
         net.localPlayerIndex = self ? self.index : 0;
         net.online = true;
         net.pendingCommands = [];
         net.syncDrift = 0;
         net.lastPingTick = 0;
+        net.lastAppliedSeq = -1;
+        net.syncHashSentTick = -1;
+        net.syncWarningTick = -99999;
+        net.syncWarningText = '';
 
         initGame(payload.seed || '42', Number(payload.nodeCount || 16), payload.difficulty || 'normal', {
             keepReplay: false,
@@ -2902,14 +3095,24 @@ function ensureSocket() {
         spdBtn.textContent = '1x';
         tuneFogCb.checked = G.tune.fogEnabled;
         if (menuFogCb) menuFogCb.checked = G.tune.fogEnabled;
-        setRoomStatus('Online match started. You are P' + (net.localPlayerIndex + 1) + '.', false);
+        setRoomStatus('Online mac basladi. Sen P' + (net.localPlayerIndex + 1) + ' oldun.', false);
         if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
         showUI('playing');
     });
 
     net.socket.on('roomCommand', function (cmd) {
         if (!net.online) return;
+        if (cmd && cmd.matchId && net.matchId && cmd.matchId !== net.matchId) return;
         net.pendingCommands.push(cmd);
+    });
+
+    net.socket.on('syncIssue', function (payload) {
+        if (!net.online) return;
+        if (!payload) return;
+        net.syncWarningTick = G.tick;
+        net.syncWarningText = 'Sync uyusmazligi tespit edildi (tick ' + payload.tick + '). Mac sonucu dogrulanmayabilir.';
+        showGameToast(net.syncWarningText);
+        setRoomStatus(net.syncWarningText, true);
     });
 
     net.socket.on('chat', function (payload) {
@@ -2931,15 +3134,7 @@ function ensureSocket() {
     net.socket.on('leaderboard', function (payload) {
         var el = document.getElementById('leaderboardList');
         if (!el) return;
-        el.innerHTML = '';
-        var list = payload.list || [];
-        for (var i = 0; i < list.length; i++) {
-            var r = document.createElement('div');
-            r.textContent = (i + 1) + '. ' + list[i].name + ' - ' + list[i].wins + ' galibiyet (' + list[i].games + ' mac)';
-            r.style.marginBottom = '6px';
-            el.appendChild(r);
-        }
-        if (list.length === 0) el.textContent = 'Henuz veri yok.';
+        renderLeaderboardUI(el, payload.list || []);
     });
 }
 function normalizeReplay(raw) {
@@ -2969,7 +3164,7 @@ function startReplayFromData(raw) {
     spIdx = 0;
     spdBtn.textContent = '1x';
     repSpdLbl.textContent = '1x';
-    repPauseBtn.textContent = 'Pause';
+    repPauseBtn.textContent = 'Duraklat';
     showUI('replay');
 }
 // Menu
@@ -2984,28 +3179,6 @@ rndSeedBtn.addEventListener('click', function () { seedIn.value = '' + Math.floo
 var SCENARIO_UNLOCKED_KEY = 'stellar_scenario_unlocked_v1';
 var SCENARIO_COMPLETED_KEY = 'stellar_scenario_completed_v1';
 var LEGACY_CAMPAIGN_UNLOCKED_KEY = 'stellar_campaign_unlocked_v2';
-var CAMPAIGN_LEVELS = [
-    { id: 1, name: 'Acilis Hatti', blurb: 'Temel cephe kontrolu. Tek AI, sakin baslangic.', seed: 'camp-01-awake', nc: 10, diff: 'easy', aiCount: 1, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 0.76, aiBuf: 10, aiInt: 46, flowInt: 22 }, hint: 'Ilk hedefin merkezdeki strategic hub olsun. Pulse oraya dondugunde yakin iki node daha alip ekonomi farki kur.' },
-    { id: 2, name: 'Kenar Cizgisi', blurb: 'Harita genisliyor. Iki yonde savunma kur.', seed: 'camp-02-ridge', nc: 11, diff: 'easy', aiCount: 1, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 0.8, aiBuf: 9, aiInt: 44, flowInt: 21 }, hint: 'Yeni aldigin node\'da defense ac ve garnizonu kacirma. Asimilasyon bitince savunma alani cepheyi kendi kendine yumusatir.' },
-    { id: 3, name: 'Yildiz Koprusu', blurb: 'Ilk wormhole dersi. Hizli rota avantajini kap.', seed: 'camp-03-bridge', nc: 12, diff: 'easy', aiCount: 1, fog: false, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 0.84, aiBuf: 8, aiInt: 42, flowInt: 20 }, hint: 'Wormhole ucunu erken al. Sonra pulse acildiginda wormhole uzerinden hizli baskin at; uzun yoldan gitme.' },
-    { id: 4, name: 'Cift Baskin', blurb: 'Iki AI ayni anda sikistirir. Erken genisleme kritik.', seed: 'camp-04-dual', nc: 13, diff: 'easy', aiCount: 2, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 0.9, aiBuf: 8, aiInt: 40, flowInt: 18 }, hint: 'Iki cepheyi supply zinciriyle bagla. Kopuk node sadece zayif uretmez; upgrade de pahaliya kalir ve kolay dusurulur.' },
-    { id: 5, name: 'Cekim Cukuru', blurb: 'Merkezde gravity alani var. Rotalari hiz ile kir.', seed: 'camp-05-grav', nc: 14, diff: 'easy', aiCount: 2, fog: false, mapFeature: 'gravity', rulesMode: 'advanced', tune: { aiAgg: 0.93, aiBuf: 7, aiInt: 38, flowInt: 17 }, hint: 'Merkez gravity alanini kestirme olarak kullan. Pulse merkezdeyse savunmak yerine hizli dalga ile rakip ekonomisini del.' },
-    { id: 6, name: 'Gecis Koridoru', blurb: 'Normal zorluga giris. Ekonomi ve savunma dengesi.', seed: 'camp-06-lane', nc: 14, diff: 'normal', aiCount: 2, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 0.98, aiBuf: 6, aiInt: 34, flowInt: 16 }, hint: 'Cap strain gorunurse stok tutmayi kes. Fazla birimi ya upgrade\'e cevir ya da cepheye it; dolu bekleyen ekonomi yavaslar.' },
-    { id: 7, name: 'Relay Rupture', blurb: 'Wormhole ile ani baskin pencereleri acilir.', seed: 'camp-07-relay', nc: 15, diff: 'normal', aiCount: 2, fog: false, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 1.01, aiBuf: 6, aiInt: 32, flowInt: 15 }, hint: 'Relay node\'larini supply altinda ucuz upgrade et. Sonra flow + wormhole ile tek cepheden degil, iki hizli hatta baski kur.' },
-    { id: 8, name: 'Sis Perdesi', blurb: 'Fog acik. Gorus kontrolu olmadan saldiri pahali.', seed: 'camp-08-fog', nc: 16, diff: 'normal', aiCount: 2, fog: true, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 1.02, aiBuf: 6, aiInt: 33, flowInt: 16 }, hint: 'Sis altinda uzak hedef kovalamak yerine pulse hub ve ara baglantilari tut. Gorus almadan buyuk filo cikarma.' },
-    { id: 9, name: 'Uc Cephe', blurb: 'Uc AI ile kaynak dagitimi zorlasir. Gate kontrolu burada oyunu acar.', seed: 'camp-09-triad', nc: 17, diff: 'normal', aiCount: 3, fog: false, mapFeature: 'barrier', rulesMode: 'advanced', tune: { aiAgg: 1.05, aiBuf: 5, aiInt: 31, flowInt: 15 }, hint: 'Ilk buyuk amac GATE olsun. Fethettikten sonra hemen gecis bekleme; asimilasyon tamamlaninca karsi tarafa pulse destekli dalga gonder.' },
-    { id: 10, name: 'Anomali Avi', blurb: 'Mapte kesin bir anomali var. Kim once kullanacak?', seed: 'camp-10-hunt', nc: 18, diff: 'normal', aiCount: 3, fog: false, mapFeature: { type: 'auto', chance: 1 }, rulesMode: 'advanced', tune: { aiAgg: 1.08, aiBuf: 5, aiInt: 30, flowInt: 14 }, hint: 'Ilk 30 saniyede anomaliyi oku ve plana hemen don. Hangi ozellik cikarsa ciksin pulse zamani senin hizli ikinci hamlen olsun.' },
-    { id: 11, name: 'Kapan', blurb: 'Hard girisi. Erken hata oyunu aninda dondurur.', seed: 'camp-11-trap', nc: 18, diff: 'hard', aiCount: 3, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 1.12, aiBuf: 4, aiInt: 25, flowInt: 13 }, hint: 'Tek hatta sisme yapma. Bir cepheyi defense + field ile tutarken bosalan gucu diger tarafta temiz avantaja cevir.' },
-    { id: 12, name: 'Yari Yol Savasi', blurb: 'Wormhole merkezli bolunmus cephe.', seed: 'camp-12-halfway', nc: 19, diff: 'hard', aiCount: 3, fog: false, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 1.16, aiBuf: 4, aiInt: 24, flowInt: 13 }, hint: 'Uzun hatta oyalanma. Wormhole cikisini tut, pulse acildiginda ayni anda iki koldan saldir; tek rota kolay kapanir.' },
-    { id: 13, name: 'Kor Nokta', blurb: 'Hard + fog + barrier. Yanlis rota oyunu bitirir.', seed: 'camp-13-blind', nc: 20, diff: 'hard', aiCount: 3, fog: true, mapFeature: 'barrier', rulesMode: 'advanced', tune: { aiAgg: 1.18, aiBuf: 4, aiInt: 24, flowInt: 12 }, hint: 'Fog altinda ana rehberin GATE ve pulse. Karsi tarafi acmadan once kendi tarafta supply zincirini tamamla ve savunma alanlarini kur.' },
-    { id: 14, name: 'Demir Kusatma', blurb: 'Dort AI ile cevreleme. Cikis koridoru ac.', seed: 'camp-14-iron', nc: 21, diff: 'hard', aiCount: 4, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 1.22, aiBuf: 4, aiInt: 23, flowInt: 12 }, hint: 'Defense\'i sadece beklemek icin kullanma. Yeni fetihte defense ac, asimilasyon bitince field ile koridoru tutup ana ordunu serbest birak.' },
-    { id: 15, name: 'Yogun Cekim', blurb: 'Gravity alani altinda hizli akincilar.', seed: 'camp-15-pull', nc: 22, diff: 'hard', aiCount: 4, fog: false, mapFeature: 'gravity', rulesMode: 'advanced', tune: { aiAgg: 1.26, aiBuf: 3, aiInt: 22, flowInt: 11 }, hint: 'Gravity alaninda duran degil, gecen kazanir. Kisa aralikli dalgalar gonder; tek dev filo yerine hizla ust uste vur.' },
-    { id: 16, name: 'Kirilan Ag', blurb: 'Fog ve wormhole birlikte. Gorus + tempo savasi.', seed: 'camp-16-shard', nc: 23, diff: 'hard', aiCount: 4, fog: true, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 1.3, aiBuf: 3, aiInt: 21, flowInt: 11 }, hint: 'Relay agin yoksa siste gec kalirsin. Once gorus zinciri kur, sonra wormhole cikislarini field ile kapat.' },
-    { id: 17, name: 'Dar Bogaz', blurb: 'Yuksek node sayisi, dar ekonomik pencere ve gecit savasi.', seed: 'camp-17-bottle', nc: 24, diff: 'hard', aiCount: 4, fog: false, mapFeature: 'barrier', rulesMode: 'advanced', tune: { aiAgg: 1.33, aiBuf: 3, aiInt: 20, flowInt: 10 }, hint: 'GATE olmadan ekonomi yetmez. Once gecidi al, sonra karsi tarafta tek bir tutunma node\'u savunma moduyla kilitle ve supply ac.' },
-    { id: 18, name: 'Yildiz Mezarligi', blurb: 'Bes AI. Uzun savunma ve karsi akina dayan.', seed: 'camp-18-grave', nc: 25, diff: 'hard', aiCount: 5, fog: false, mapFeature: 'none', rulesMode: 'advanced', tune: { aiAgg: 1.36, aiBuf: 3, aiInt: 19, flowInt: 10 }, hint: 'Bes rakipte her yere yetisemezsin. Pulse donen hatta agirlik ver, diger cepheleri defense field ile ucuz sekilde oyalat.' },
-    { id: 19, name: 'Son Anomali', blurb: 'Fog, gravity ve hizli AI baskisi bir arada.', seed: 'camp-19-anomaly', nc: 26, diff: 'hard', aiCount: 5, fog: true, mapFeature: 'gravity', rulesMode: 'advanced', tune: { aiAgg: 1.4, aiBuf: 2, aiInt: 18, flowInt: 10 }, hint: 'Gorus, gravity ve strain ayni anda cezalandirir. Asiri stok yapma; merkezden gecen saldirilari asimile field halkalariyla incelt.' },
-    { id: 20, name: 'Solarmax Protocol', blurb: 'Final bolum: tam baski, tam sis, maksimum kaos.', seed: 'camp-20-solarmax', nc: 28, diff: 'hard', aiCount: 5, fog: true, mapFeature: 'wormhole', rulesMode: 'advanced', tune: { aiAgg: 1.45, aiBuf: 2, aiInt: 17, flowInt: 9 }, hint: 'Finalde her sistem birlikte calisir. Erken relay + pulse + wormhole ucunu birlestir; cap strain\'e dusmeden once oyunun temposunu sen belirle.' },
-];
 var campaignSelectedLevel = 0;
 
 function clampCampaignUnlocked(v) {
@@ -3055,19 +3228,19 @@ function saveCampaignCompleted(v) {
     try { localStorage.setItem(SCENARIO_COMPLETED_KEY, '' + clamped); } catch (e) {}
 }
 function campaignFeatureName(feature) {
-    if (!feature) return 'Standard';
+    if (!feature) return 'Standart';
     if (typeof feature === 'string') {
         if (feature === 'wormhole') return 'Wormhole';
         if (feature === 'gravity') return 'Gravity';
         if (feature === 'barrier') return 'Barrier';
-        if (feature === 'none') return 'None';
-        return 'Random';
+        if (feature === 'none') return 'Yok';
+        return 'Rastgele';
     }
     if (feature.type === 'wormhole') return 'Wormhole';
     if (feature.type === 'gravity') return 'Gravity';
     if (feature.type === 'barrier') return 'Barrier';
-    if (feature.type === 'none') return 'None';
-    return 'Random';
+    if (feature.type === 'none') return 'Yok';
+    return 'Rastgele';
 }
 function campaignSystemsSummary(level) {
     var parts = [
@@ -3097,6 +3270,7 @@ function campaignLevelSummary(level) {
         ' | Feature: ' + campaignFeatureName(level.mapFeature) + (level.fog ? ' | Fog ON' : ' | Fog OFF') + '\n' +
         'Harita Dersi: ' + campaignFeatureHint(level) + '\n' +
         'Systems: ' + campaignSystemsSummary(level) + '\n' +
+        'Objectives: ' + describeCampaignObjectives(level, { tickRate: TICK_RATE }) + '\n' +
         'Plan: ' + (level.hint || 'Map temposunu pulse, supply ve savunma alani ile yonet.');
 }
 function applyCampaignLevelSelection(levelIndex) {
@@ -3119,7 +3293,7 @@ function refreshCampaignUI() {
     applyCampaignLevelSelection(campaignSelectedLevel);
 
     scenarioProgressEl.textContent = 'Gecilen: ' + completed + ' / ' + CAMPAIGN_LEVELS.length + '  |  Acilan: ' + unlocked + ' / ' + CAMPAIGN_LEVELS.length;
-    scenarioBubbleListEl.innerHTML = '';
+    scenarioBubbleListEl.replaceChildren();
     for (var i = 0; i < CAMPAIGN_LEVELS.length; i++) {
         var lvl = CAMPAIGN_LEVELS[i];
         var bubble = document.createElement('button');
@@ -3146,7 +3320,19 @@ function refreshCampaignUI() {
     }
     var selected = CAMPAIGN_LEVELS[campaignSelectedLevel];
     var selectedDone = campaignSelectedLevel < completed;
-    scenarioMissionEl.textContent = campaignLevelSummary(selected) + '\nDurum: ' + (selectedDone ? 'Gecildi' : 'Hazir');
+    renderMissionPanel(scenarioMissionEl, {
+        title: 'Bolum ' + selected.id + ': ' + selected.name,
+        subtitle: selected.blurb + ' | AI ' + selected.aiCount + ' | ' + selected.diff.toUpperCase() + ' | ' + campaignFeatureName(selected.mapFeature) + ' | ' + (selectedDone ? 'Durum: Gecildi' : 'Durum: Hazir'),
+        items: evaluateCampaignObjectives(selected, {
+            tick: 0,
+            didWin: false,
+            gameOver: false,
+            ownedNodes: 0,
+            stats: {},
+        }, { tickRate: TICK_RATE }).map(function (row) {
+            return { label: row.label, progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
+        }),
+    });
     if (scenarioStartBtn) scenarioStartBtn.textContent = 'Bolum ' + selected.id + ' Baslat';
 }
 function resetSelectionAndSpeed() {
@@ -3186,6 +3372,7 @@ function startCampaignLevel(levelIndex) {
     });
     G.campaign.active = true;
     G.campaign.levelIndex = idx;
+    G.campaign.reminderShown = {};
     if (menuFogCb) menuFogCb.checked = !!lvl.fog;
     if (tuneFogCb) tuneFogCb.checked = !!lvl.fog;
     resetSelectionAndSpeed();
@@ -3197,6 +3384,7 @@ function startCampaignLevel(levelIndex) {
             if (G.campaign.active && G.campaign.levelIndex === idx && G.state === 'playing') showGameToast('Bolum ipucu: ' + lvl.hint);
         }, 1200);
     }
+    refreshCampaignMissionPanels();
     refreshCampaignUI();
 }
 function completeCampaignLevel() {
@@ -3291,10 +3479,15 @@ quitBtn.addEventListener('click', function () {
 var speeds = [1, 2, 4], spIdx = 0;
 spdBtn.addEventListener('click', function () { if (net.online) return; spIdx = (spIdx + 1) % 3; G.speed = speeds[spIdx]; spdBtn.textContent = G.speed + 'x'; recEvt('speed', { speed: G.speed }); });
 var themeBtn = $('themeBtn');
+function syncThemeButton() {
+    if (!themeBtn) return;
+    themeBtn.textContent = document.body.classList.contains('theme-light') ? 'KOYU' : 'ACIK';
+}
 if (themeBtn) themeBtn.addEventListener('click', function () {
     document.body.classList.toggle('theme-light');
-    themeBtn.textContent = document.body.classList.contains('theme-light') ? 'â˜€' : 'ğŸŒ™';
+    syncThemeButton();
 });
+syncThemeButton();
 var chatPanel = $('chatPanel'), chatInput = $('chatInput'), chatToggle = $('chatToggle');
 if (chatToggle) chatToggle.addEventListener('click', function () {
     if (chatPanel) chatPanel.classList.toggle('hidden');
@@ -3362,7 +3555,7 @@ if (nextLevelBtn) nextLevelBtn.addEventListener('click', function () {
 restartBtn.addEventListener('click', function () { G.state = 'mainMenu'; showUI('mainMenu'); });
 repSlower.addEventListener('click', function () { if (G.rep) G.rep.speed = Math.max(0.25, G.rep.speed / 2); repSpdLbl.textContent = (G.rep ? G.rep.speed : 1) + 'x'; });
 repFaster.addEventListener('click', function () { if (G.rep) G.rep.speed = Math.min(8, G.rep.speed * 2); repSpdLbl.textContent = (G.rep ? G.rep.speed : 1) + 'x'; });
-repPauseBtn.addEventListener('click', function () { if (G.rep) { G.rep.paused = !G.rep.paused; repPauseBtn.textContent = G.rep.paused ? 'Play' : 'Pause'; } });
+repPauseBtn.addEventListener('click', function () { if (G.rep) { G.rep.paused = !G.rep.paused; repPauseBtn.textContent = G.rep.paused ? 'Oynat' : 'Duraklat'; } });
 repStopBtn.addEventListener('click', function () { G.state = 'mainMenu'; showUI('mainMenu'); });
 function syncTune() {
     tuneProd.value = G.tune.prod; tuneFSpd.value = G.tune.fspeed; tuneDef.value = G.tune.def; tuneFlowInt.value = G.tune.flowInt;
@@ -3509,10 +3702,15 @@ cv.addEventListener('wheel', function (e) {
 }, { passive: false });
 cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 cv.addEventListener('touchstart', function (e) {
+    if ((G.state === 'playing' || G.state === 'replay') && e.touches.length === 2) {
+        beginTouchPinch(touchScreenPos(e.touches[0]), touchScreenPos(e.touches[1]));
+        e.preventDefault();
+        return;
+    }
     if (e.touches.length === 1 && G.state === 'playing') {
-        var r = cv.getBoundingClientRect();
-        var pos = { x: (e.touches[0].clientX - r.left) * (cv.width / r.width), y: (e.touches[0].clientY - r.top) * (cv.height / r.height) };
+        var pos = touchScreenPos(e.touches[0]);
         inp.touchStart = pos;
+        inp.pinchActive = false;
         inp.dragPending = false;
         inp.dragDownNodeId = -1;
         var w = s2w(pos.x, pos.y); var cn = hitNode(w);
@@ -3551,9 +3749,16 @@ cv.addEventListener('touchstart', function (e) {
     }
 }, { passive: false });
 cv.addEventListener('touchmove', function (e) {
+    if ((G.state === 'playing' || G.state === 'replay') && e.touches.length === 2) {
+        var posA = touchScreenPos(e.touches[0]);
+        var posB = touchScreenPos(e.touches[1]);
+        if (!inp.pinchActive) beginTouchPinch(posA, posB);
+        updateTouchPinch(posA, posB);
+        e.preventDefault();
+        return;
+    }
     if (e.touches.length === 1 && G.state === 'playing') {
-        var r = cv.getBoundingClientRect();
-        var pos = { x: (e.touches[0].clientX - r.left) * (cv.width / r.width), y: (e.touches[0].clientY - r.top) * (cv.height / r.height) };
+        var pos = touchScreenPos(e.touches[0]);
         var w = s2w(pos.x, pos.y);
         if (inp.dragPending && !inp.dragActive) {
             var mdx = pos.x - inp.dragDownScreen.x;
@@ -3569,9 +3774,15 @@ cv.addEventListener('touchmove', function (e) {
     }
 }, { passive: false });
 cv.addEventListener('touchend', function (e) {
+    if (inp.pinchActive && e.touches.length < 2) {
+        inp.pinchActive = false;
+        if (e.touches.length === 1) {
+            inp.dragPending = false;
+            inp.dragActive = false;
+        }
+    }
     if (e.changedTouches.length === 1 && G.state === 'playing') {
-        var r = cv.getBoundingClientRect();
-        var pos = { x: (e.changedTouches[0].clientX - r.left) * (cv.width / r.width), y: (e.changedTouches[0].clientY - r.top) * (cv.height / r.height) };
+        var pos = touchScreenPos(e.changedTouches[0]);
         var w = s2w(pos.x, pos.y);
         if (inp.dragActive) {
             var tn = hitNode(w);
@@ -3622,8 +3833,8 @@ function loop(ts) {
         showUI(G.state); if (G.state === 'gameOver') {
             if (prevSt === 'playing') lastRepData = JSON.parse(JSON.stringify(G.rec));
             if (nextLevelBtn) nextLevelBtn.style.display = 'none';
-            goTitle.textContent = G.winner === G.human ? 'Victory!' : 'Defeat';
-            goMsg.textContent = G.winner === G.human ? 'Conquered all stars in ' + G.tick + ' ticks!' : 'Eliminated at tick ' + G.tick + '.';
+            goTitle.textContent = G.winner === G.human ? 'Zafer' : 'Maglubiyet';
+            goMsg.textContent = G.winner === G.human ? (G.tick + ' tickte tum yildizlari fethettin.') : ('Tick ' + G.tick + ' civarinda oyundan dustun.');
             if (G.campaign.active && G.campaign.levelIndex >= 0) {
                 var level = CAMPAIGN_LEVELS[G.campaign.levelIndex];
                 if (G.winner === G.human) {
@@ -3645,7 +3856,7 @@ function loop(ts) {
                     goMsg.textContent = 'Ayni bolumu tekrar dene veya stratejini degistir.';
                 }
             }
-            if (goStatsEl) goStatsEl.innerHTML = '<div class="stats-row">Fethedilen: ' + G.stats.nodesCaptured + '</div><div class="stats-row">Filo: ' + G.stats.fleetsSent + '</div><div class="stats-row">Upgrade: ' + G.stats.upgrades + '</div>';
+            if (goStatsEl) renderStatRows(goStatsEl, humanGameOverStatRows());
             if (typeof AudioFX !== 'undefined') { AudioFX.stopMusic(); G.winner === G.human ? AudioFX.victory() : AudioFX.defeat(); }
             checkAchievements();
             var rematchBtn = document.getElementById('rematchBtn');
@@ -3656,12 +3867,12 @@ function loop(ts) {
     if (G.state === 'playing' || G.state === 'replay') {
         var es = G.state === 'replay' && G.rep ? (G.rep.paused ? 0 : G.rep.speed) : G.speed; acc += rawDt * es;
         while (acc >= TICK_DT) { gameTick(); acc -= TICK_DT; }
-        var featureName = G.mapFeature.type === 'wormhole' ? 'Wormhole' : (G.mapFeature.type === 'gravity' ? 'Gravity' : (G.mapFeature.type === 'barrier' ? 'Barrier' : 'Standard'));
+        var featureName = G.mapFeature.type === 'wormhole' ? 'Wormhole' : (G.mapFeature.type === 'gravity' ? 'Gravity' : (G.mapFeature.type === 'barrier' ? 'Barrier' : 'Standart'));
         var pulseText = '';
         if (G.strategicPulse && G.strategicPulse.active) {
             var pulseNode = G.nodes[G.strategicPulse.nodeId];
             var pulseOwner = pulseNode ? pulseNode.owner : -1;
-            var pulseOwnerText = pulseOwner < 0 ? 'Neutral' : (pulseOwner === G.human ? 'Yours' : ('P' + (pulseOwner + 1)));
+            var pulseOwnerText = pulseOwner < 0 ? 'Tarafsiz' : (pulseOwner === G.human ? 'Sen' : ('P' + (pulseOwner + 1)));
             pulseText = ' | Pulse: ' + pulseOwnerText + ' ' + Math.max(1, Math.ceil((G.strategicPulse.remainingTicks || 0) / 30)) + 's';
         }
         hudTick.textContent = 'Tick: ' + G.tick + ' | ' + G.diff + pulseText;
@@ -3677,7 +3888,13 @@ function loop(ts) {
         }
         if (hudMeta) hudMeta.textContent = selectionMetaText();
         var pingEl = document.getElementById('pingDisplay');
-        if (pingEl) pingEl.textContent = net.online && net.lastPingMs !== undefined ? ('Ping: ' + Math.round(net.lastPingMs) + 'ms') : '';
+        if (pingEl) {
+            var pingText = net.online && net.lastPingMs !== undefined ? ('Ping: ' + Math.round(net.lastPingMs) + 'ms') : '';
+            if (net.online && net.syncWarningText && G.tick - net.syncWarningTick < SYNC_HASH_INTERVAL_TICKS * 2) {
+                pingText += (pingText ? ' | ' : '') + 'SYNC';
+            }
+            pingEl.textContent = pingText;
+        }
         if (G.state === 'replay') repTickLbl.textContent = 'Tick: ' + G.tick;
     }
     if (G.state === 'playing' || G.state === 'paused') updatePowerSidebar();
@@ -3686,4 +3903,5 @@ function loop(ts) {
 }
 showUI('mainMenu');
 requestAnimationFrame(function (ts) { lastT = ts; loop(ts); });
+
 

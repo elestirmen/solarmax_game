@@ -42,6 +42,7 @@ const ALLOWED_COMMAND_TYPES = new Set(['send', 'flow', 'rmFlow', 'upgrade', 'tog
 const MAX_COMMAND_DELAY_TICKS = 300;
 const COMMAND_RATE_WINDOW_MS = 1000;
 const MAX_COMMANDS_PER_WINDOW = 120;
+const SYNC_REPORT_TTL_TICKS = 240;
 const commandRate = new Map();
 
 function nowTick(startEpochMs) {
@@ -100,7 +101,11 @@ function normalizeRoomConfig(payload = {}) {
 }
 
 function sanitizePlayerName(name) {
-    return String(name || '').trim().slice(0, 20);
+    return String(name || '')
+        .replace(/[\u0000-\u001F\u007F<>]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 20);
 }
 
 function toFiniteInt(value) {
@@ -197,6 +202,10 @@ function generateRoomCode() {
     return code;
 }
 
+function buildMatchId() {
+    return 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
 function createRoom(configPayload = {}) {
     const code = generateRoomCode();
     const room = {
@@ -212,9 +221,80 @@ function createRoom(configPayload = {}) {
         rematchVotes: new Set(),
         resultReports: new Map(),
         resultCommitted: false,
+        matchId: '',
+        commandSeq: 0,
+        syncReports: new Map(),
     };
     rooms.set(code, room);
     return room;
+}
+
+function pruneSyncReports(room, currentTick) {
+    if (!room || !(room.syncReports instanceof Map)) return;
+    for (const tick of Array.from(room.syncReports.keys())) {
+        if (tick < currentTick - SYNC_REPORT_TTL_TICKS) {
+            room.syncReports.delete(tick);
+        }
+    }
+}
+
+function recordStateHash(room, socketId, payload = {}) {
+    if (!room || !room.started) return null;
+    if (!room.matchId || String(payload.matchId || '') !== room.matchId) return null;
+
+    const tick = toFiniteInt(payload.tick);
+    const hash = String(payload.hash || '').trim().toLowerCase();
+    if (tick === null || tick < 0) return null;
+    if (!/^[a-f0-9]{8,32}$/.test(hash)) return null;
+
+    if (!(room.syncReports instanceof Map)) room.syncReports = new Map();
+    pruneSyncReports(room, tick);
+
+    let report = room.syncReports.get(tick);
+    if (!report) {
+        report = { hashes: new Map(), emitted: false };
+        room.syncReports.set(tick, report);
+    }
+    report.hashes.set(socketId, hash);
+
+    const activeIds = room.players.map(player => player.socketId).filter(Boolean);
+    if (activeIds.length < 2) return null;
+
+    for (const reporterId of Array.from(report.hashes.keys())) {
+        if (!activeIds.includes(reporterId)) {
+            report.hashes.delete(reporterId);
+        }
+    }
+    if (report.hashes.size < activeIds.length) return null;
+
+    const counts = new Map();
+    for (const activeId of activeIds) {
+        const value = report.hashes.get(activeId);
+        if (!value) return null;
+        counts.set(value, (counts.get(value) || 0) + 1);
+    }
+    if (counts.size <= 1 || report.emitted) return null;
+
+    report.emitted = true;
+
+    let majorityHash = '';
+    let majorityCount = 0;
+    const hashCounts = [];
+    for (const [value, count] of counts.entries()) {
+        hashCounts.push({ hash: value, count });
+        if (count > majorityCount) {
+            majorityHash = value;
+            majorityCount = count;
+        }
+    }
+    hashCounts.sort((a, b) => b.count - a.count || String(a.hash).localeCompare(String(b.hash)));
+
+    return {
+        tick,
+        majorityHash,
+        majorityCount,
+        hashCounts,
+    };
 }
 
 function getRoom(code) {
@@ -293,9 +373,13 @@ function startRoomMatch(room) {
     room.rematchVotes = new Set();
     room.resultReports = new Map();
     room.resultCommitted = false;
+    room.matchId = buildMatchId();
+    room.commandSeq = 0;
+    room.syncReports = new Map();
 
     const players = room.players.map(p => ({ socketId: p.socketId, name: p.name, index: p.index }));
     io.to(room.code).emit('matchStarted', {
+        matchId: room.matchId,
         roomCode: room.code,
         seed: room.config.seed,
         nodeCount: room.config.nodeCount,
@@ -372,6 +456,9 @@ function cleanupPlayer(socketId) {
             room.rematchVotes = new Set();
             room.resultReports = new Map();
             room.resultCommitted = false;
+            room.matchId = '';
+            room.commandSeq = 0;
+            room.syncReports = new Map();
             io.to(code).emit('roomClosed', { message: 'Yeterli oyuncu kalmadi. Oda lobiye dondu.' });
             emitLobbyState();
         }
@@ -501,6 +588,7 @@ io.on('connection', (socket) => {
         if (!code) return;
         const room = rooms.get(code);
         if (!room || !room.started) return;
+        if (payload.matchId && String(payload.matchId) !== room.matchId) return;
         const player = room.players.find(p => p.socketId === socket.id);
         if (!player) return;
         if (!consumeRateLimit(commandRate, socket.id, MAX_COMMANDS_PER_WINDOW, COMMAND_RATE_WINDOW_MS)) return;
@@ -523,12 +611,32 @@ io.on('connection', (socket) => {
         }
 
         const command = {
+            matchId: room.matchId,
+            seq: room.commandSeq++,
             playerIndex: player.index,
             tick: targetTick,
             type,
             data,
         };
         io.to(code).emit('roomCommand', command);
+    });
+
+    socket.on('stateHash', (payload = {}) => {
+        const code = socketToRoom.get(socket.id);
+        if (!code) return;
+        const room = rooms.get(code);
+        if (!room || !room.started) return;
+
+        const issue = recordStateHash(room, socket.id, payload);
+        if (!issue) return;
+
+        io.to(code).emit('syncIssue', {
+            tick: issue.tick,
+            majorityHash: issue.majorityHash,
+            majorityCount: issue.majorityCount,
+            total: room.players.length,
+            hashCounts: issue.hashCounts,
+        });
     });
 
     socket.on('pingTick', (payload = {}) => {
@@ -674,4 +782,6 @@ export {
     normalizeWinnerIndex,
     recordMatchResult,
     getMatchRoster,
+    sanitizePlayerName,
+    recordStateHash,
 };
