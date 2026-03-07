@@ -310,6 +310,26 @@
             line-height: 1.4;
         }
 
+        .menu-action-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .menu-action-grid .secondary-btn,
+        .menu-action-grid .primary-btn {
+            margin-top: 0;
+        }
+
+        .menu-status-note {
+            margin-top: 8px;
+            font-size: .82rem;
+            color: var(--text-dim);
+            text-align: left;
+            line-height: 1.45;
+        }
+
         .mission-title {
             font-size: .84rem;
             font-weight: 700;
@@ -1231,8 +1251,16 @@
                     </select></div>
                 <div id="menuFogField" class="tune-toggle" style="margin-top:4px"><label>Fog of War</label><label class="switch"><input
                             type="checkbox" id="menuFogOfWar" /><span class="slider"></span></label></div>
+                <div id="dailyChallengeCard" class="scenario-mission"></div>
                 <button id="startBtn" class="primary-btn">Oyuna Basla</button>
                 <button id="sandboxBtn" class="secondary-btn" style="margin-top:8px">Sandbox Baslat</button>
+                <div class="menu-action-grid">
+                    <button id="campaignBtn" class="secondary-btn">Senaryo Menusu</button>
+                    <button id="dailyChallengeBtn" class="secondary-btn">Gunluk Challenge</button>
+                    <button id="importMapBtn" class="secondary-btn">Ozel Harita Yukle</button>
+                    <button id="exportMapBtn" class="secondary-btn">Haritayi Disa Aktar</button>
+                </div>
+                <div id="customMapStatus" class="menu-status-note">Custom map yukleyip baslangic duzenini, anomalileri ve acilis node sahipliklerini sabitleyebilirsin.</div>
             </div>
 
             <div id="panelMulti" class="menu-panel-content hidden">
@@ -1280,6 +1308,7 @@
                 <div class="menu-panel"><h3>Liderlik Tablosu</h3><div id="leaderboardList"></div><button id="leaderboardClose" class="secondary-btn">Kapat</button></div>
             </div>
             <input type="file" id="replayFileInput" accept=".json" style="display:none;" />
+            <input type="file" id="customMapFileInput" accept=".json" style="display:none;" />
         </div>
     </div>
     <div id="scenarioOverlay" class="overlay hidden">
@@ -1511,7 +1540,7 @@
             <div class="hud-center-top"><span id="hudTick">Tick: 0</span><span id="hudCap">Cap 0/0</span><span id="pingDisplay" class="ping-display"></span></div>
             <span id="hudMeta">Secili node bilgisi burada gorunur.</span>
         </div>
-        <div id="hudRight"><button id="pauseBtn" title="Duraklat">||</button><button id="speedBtn" title="Hiz">1x</button><button id="themeBtn" title="Tema">TEMA</button><button id="chatToggle" title="Sohbet">SOHBET</button>
+        <div id="hudRight"><button id="pauseBtn" title="Duraklat">||</button><button id="speedBtn" title="Hiz">1x</button><button id="themeBtn" title="Tema">TEMA</button><button id="chatToggle" title="Sohbet">SOHBET</button><button id="exportMapHudBtn" title="Haritayi Disa Aktar">MAP</button>
         </div>
     </div>
     <div id="tuningPanel" class="hidden">

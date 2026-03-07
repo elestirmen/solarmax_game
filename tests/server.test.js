@@ -12,6 +12,9 @@ import {
     recordMatchResult,
     sanitizePlayerName,
     recordStateHash,
+    createSyncSnapshotRequest,
+    recordStateSummary,
+    commitRoomResult,
 } from '../server.js';
 
 function resetServerState() {
@@ -87,5 +90,42 @@ test('recordStateHash reports a sync issue when active clients disagree', functi
             { hash: 'aaaaaaaa', count: 2 },
             { hash: 'bbbbbbbb', count: 1 },
         ],
+    });
+});
+
+test('createSyncSnapshotRequest targets a majority client after hash disagreement', function () {
+    resetServerState();
+    var room = createStartedRoom();
+
+    recordStateHash(room, 's0', { matchId: room.matchId, tick: 90, hash: 'aaaaaaaa' });
+    recordStateHash(room, 's1', { matchId: room.matchId, tick: 90, hash: 'bbbbbbbb' });
+    var issue = recordStateHash(room, 's2', { matchId: room.matchId, tick: 90, hash: 'aaaaaaaa' });
+
+    var request = createSyncSnapshotRequest(room, issue);
+
+    assert.equal(request.tick, 90);
+    assert.equal(request.majorityHash, 'aaaaaaaa');
+    assert.equal(request.sourceSocketId, 's0');
+    assert.match(request.requestId, /^s/);
+});
+
+test('recordStateSummary can finalize a winner without explicit reportResult consensus', function () {
+    resetServerState();
+    var room = createStartedRoom();
+
+    assert.equal(recordStateSummary(room, 's0', { matchId: room.matchId, tick: 420, gameOver: true, aliveIndices: [2] }), null);
+    assert.equal(recordStateSummary(room, 's1', { matchId: room.matchId, tick: 426, gameOver: true, aliveIndices: [2] }), null);
+
+    var result = recordStateSummary(room, 's2', { matchId: room.matchId, tick: 430, gameOver: true, aliveIndices: [2] });
+
+    assert.deepEqual(result, { winnerIndex: 2, tick: 430 });
+
+    var confirmed = commitRoomResult(room, 2);
+
+    assert.equal(room.resultCommitted, true);
+    assert.deepEqual(confirmed, {
+        winnerIndex: 2,
+        winnerName: 'Closer',
+        draw: false,
     });
 });

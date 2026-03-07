@@ -43,6 +43,8 @@ const MAX_COMMAND_DELAY_TICKS = 300;
 const COMMAND_RATE_WINDOW_MS = 1000;
 const MAX_COMMANDS_PER_WINDOW = 120;
 const SYNC_REPORT_TTL_TICKS = 240;
+const SYNC_REQUEST_TTL_MS = 4000;
+const SUMMARY_TICK_TOLERANCE = 45;
 const commandRate = new Map();
 
 function nowTick(startEpochMs) {
@@ -206,6 +208,10 @@ function buildMatchId() {
     return 'm' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+function buildSyncRequestId() {
+    return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
 function createRoom(configPayload = {}) {
     const code = generateRoomCode();
     const room = {
@@ -224,6 +230,8 @@ function createRoom(configPayload = {}) {
         matchId: '',
         commandSeq: 0,
         syncReports: new Map(),
+        pendingSyncRequest: null,
+        stateSummaries: new Map(),
     };
     rooms.set(code, room);
     return room;
@@ -295,6 +303,147 @@ function recordStateHash(room, socketId, payload = {}) {
         majorityCount,
         hashCounts,
     };
+}
+
+function createSyncSnapshotRequest(room, issue) {
+    if (!room || !room.started || !issue || !issue.majorityHash) return null;
+    if (
+        room.pendingSyncRequest &&
+        room.pendingSyncRequest.tick === issue.tick &&
+        room.pendingSyncRequest.majorityHash === issue.majorityHash &&
+        Date.now() - room.pendingSyncRequest.createdAt < SYNC_REQUEST_TTL_MS
+    ) {
+        return null;
+    }
+
+    const report = room.syncReports instanceof Map ? room.syncReports.get(issue.tick) : null;
+    if (!report || !(report.hashes instanceof Map)) return null;
+
+    const activeIds = room.players.map(player => player.socketId).filter(Boolean);
+    let sourceSocketId = '';
+    for (const activeId of activeIds) {
+        if (report.hashes.get(activeId) === issue.majorityHash) {
+            sourceSocketId = activeId;
+            break;
+        }
+    }
+    if (!sourceSocketId) return null;
+
+    const request = {
+        requestId: buildSyncRequestId(),
+        tick: issue.tick,
+        majorityHash: issue.majorityHash,
+        sourceSocketId,
+        createdAt: Date.now(),
+    };
+    room.pendingSyncRequest = request;
+    return request;
+}
+
+function sanitizeAliveIndices(room, rawAlive) {
+    const roster = getMatchRoster(room);
+    const validIndices = new Set(roster.map(player => player.index));
+    const result = [];
+    const seen = new Set();
+    if (!Array.isArray(rawAlive)) return result;
+    for (const value of rawAlive) {
+        const index = toFiniteInt(value);
+        if (index === null || seen.has(index) || !validIndices.has(index)) continue;
+        seen.add(index);
+        result.push(index);
+        if (result.length >= roster.length) break;
+    }
+    result.sort((a, b) => a - b);
+    return result;
+}
+
+function maybeFinalizeMatchFromSummaries(room) {
+    if (!room || !room.started || room.resultCommitted) return null;
+    if (!(room.stateSummaries instanceof Map)) return null;
+
+    const activeIds = room.players.map(player => player.socketId).filter(Boolean);
+    if (activeIds.length < 2) return null;
+
+    const summaries = [];
+    for (const activeId of activeIds) {
+        const summary = room.stateSummaries.get(activeId);
+        if (!summary) return null;
+        summaries.push(summary);
+    }
+
+    let minTick = summaries[0].tick;
+    let maxTick = summaries[0].tick;
+    for (const summary of summaries) {
+        if (summary.tick < minTick) minTick = summary.tick;
+        if (summary.tick > maxTick) maxTick = summary.tick;
+    }
+    if (maxTick - minTick > SUMMARY_TICK_TOLERANCE) return null;
+    if (!summaries.every(summary => summary.gameOver === true)) return null;
+
+    const winnerValues = summaries.map(summary => summary.winnerIndex);
+    const explicitWinner = winnerValues.every(value => value === winnerValues[0]) ? winnerValues[0] : null;
+    if (explicitWinner !== null && explicitWinner !== undefined) {
+        return { winnerIndex: explicitWinner, tick: maxTick };
+    }
+
+    const aliveKey = summaries[0].aliveIndices.join(',');
+    if (!summaries.every(summary => summary.aliveIndices.join(',') === aliveKey)) return null;
+
+    if (summaries[0].aliveIndices.length === 1) {
+        return { winnerIndex: summaries[0].aliveIndices[0], tick: maxTick };
+    }
+    if (summaries[0].aliveIndices.length === 0) {
+        return { winnerIndex: -1, tick: maxTick };
+    }
+    return null;
+}
+
+function recordStateSummary(room, socketId, payload = {}) {
+    if (!room || !room.started) return null;
+    if (!room.matchId || String(payload.matchId || '') !== room.matchId) return null;
+
+    const tick = toFiniteInt(payload.tick);
+    if (tick === null || tick < 0) return null;
+
+    let winnerIndex = null;
+    if (payload.winnerIndex !== undefined && payload.winnerIndex !== null && payload.winnerIndex !== '') {
+        winnerIndex = normalizeWinnerIndex(payload.winnerIndex, room);
+        if (winnerIndex === null) return null;
+    }
+
+    const summary = {
+        tick,
+        gameOver: payload.gameOver === true,
+        winnerIndex,
+        aliveIndices: sanitizeAliveIndices(room, payload.aliveIndices),
+    };
+
+    if (!(room.stateSummaries instanceof Map)) room.stateSummaries = new Map();
+    room.stateSummaries.set(socketId, summary);
+
+    for (const reporterId of Array.from(room.stateSummaries.keys())) {
+        if (!room.players.some(player => player.socketId === reporterId)) {
+            room.stateSummaries.delete(reporterId);
+        }
+    }
+
+    return maybeFinalizeMatchFromSummaries(room);
+}
+
+function buildConfirmedResultPayload(room, winnerIndex) {
+    const winnerPlayer = getMatchPlayerByIndex(room, winnerIndex);
+    return {
+        winnerIndex,
+        winnerName: winnerPlayer ? (winnerPlayer.botControlled ? 'AI' : winnerPlayer.name) : null,
+        draw: winnerIndex < 0,
+    };
+}
+
+function commitRoomResult(room, winnerIndex) {
+    if (!room || room.resultCommitted) return null;
+    room.resultCommitted = true;
+    recordMatchResult(room, winnerIndex);
+    return buildConfirmedResultPayload(room, winnerIndex);
 }
 
 function getRoom(code) {
@@ -376,6 +525,8 @@ function startRoomMatch(room) {
     room.matchId = buildMatchId();
     room.commandSeq = 0;
     room.syncReports = new Map();
+    room.pendingSyncRequest = null;
+    room.stateSummaries = new Map();
 
     const players = room.players.map(p => ({ socketId: p.socketId, name: p.name, index: p.index }));
     io.to(room.code).emit('matchStarted', {
@@ -424,6 +575,10 @@ function cleanupPlayer(socketId) {
 
     if (room.rematchVotes instanceof Set) room.rematchVotes.delete(socketId);
     if (room.resultReports instanceof Map) room.resultReports.delete(socketId);
+    if (room.stateSummaries instanceof Map) room.stateSummaries.delete(socketId);
+    if (room.pendingSyncRequest && room.pendingSyncRequest.sourceSocketId === socketId) {
+        room.pendingSyncRequest = null;
+    }
 
     // We kept their info before filtering
     const leavingPlayer = room.players.find(p => p.socketId === socketId);
@@ -459,6 +614,8 @@ function cleanupPlayer(socketId) {
             room.matchId = '';
             room.commandSeq = 0;
             room.syncReports = new Map();
+            room.pendingSyncRequest = null;
+            room.stateSummaries = new Map();
             io.to(code).emit('roomClosed', { message: 'Yeterli oyuncu kalmadi. Oda lobiye dondu.' });
             emitLobbyState();
         }
@@ -637,6 +794,58 @@ io.on('connection', (socket) => {
             total: room.players.length,
             hashCounts: issue.hashCounts,
         });
+
+        const syncRequest = createSyncSnapshotRequest(room, issue);
+        if (syncRequest) {
+            io.to(syncRequest.sourceSocketId).emit('requestSyncSnapshot', {
+                matchId: room.matchId,
+                requestId: syncRequest.requestId,
+                tick: syncRequest.tick,
+                hash: syncRequest.majorityHash,
+            });
+        }
+    });
+
+    socket.on('syncSnapshot', (payload = {}) => {
+        const code = socketToRoom.get(socket.id);
+        if (!code) return;
+        const room = rooms.get(code);
+        if (!room || !room.started || !room.pendingSyncRequest) return;
+
+        const request = room.pendingSyncRequest;
+        if (request.sourceSocketId !== socket.id) return;
+        if (String(payload.requestId || '') !== request.requestId) return;
+        if (String(payload.matchId || '') !== room.matchId) return;
+        if (toFiniteInt(payload.tick) !== request.tick) return;
+
+        const hash = String(payload.hash || '').trim().toLowerCase();
+        if (hash !== request.majorityHash) return;
+        if (!payload.snapshot || typeof payload.snapshot !== 'object') return;
+
+        const serialized = JSON.stringify(payload.snapshot);
+        if (serialized.length > 300000) return;
+
+        room.pendingSyncRequest = null;
+        socket.to(code).emit('syncSnapshot', {
+            matchId: room.matchId,
+            requestId: request.requestId,
+            tick: request.tick,
+            hash,
+            snapshot: JSON.parse(serialized),
+        });
+    });
+
+    socket.on('stateSummary', (payload = {}) => {
+        const code = socketToRoom.get(socket.id);
+        if (!code) return;
+        const room = rooms.get(code);
+        if (!room || !room.started) return;
+
+        const result = recordStateSummary(room, socket.id, payload);
+        if (!result) return;
+
+        const confirmed = commitRoomResult(room, result.winnerIndex);
+        if (confirmed) io.to(code).emit('matchResultConfirmed', confirmed);
     });
 
     socket.on('pingTick', (payload = {}) => {
@@ -685,6 +894,8 @@ io.on('connection', (socket) => {
             room.rematchVotes = new Set();
             room.resultReports = new Map();
             room.resultCommitted = false;
+            room.pendingSyncRequest = null;
+            room.stateSummaries = new Map();
             startRoomMatch(room);
         } else if (room.players.length >= 2) {
             io.to(code).emit('rematchVote', { name: player ? player.name : '?', count: room.rematchVotes.size, total: room.players.length });
@@ -725,18 +936,9 @@ io.on('connection', (socket) => {
             io.to(code).emit('resultConflict', { message: 'Sonuc raporlari uyusmadi. Lutfen tekrar raporlayin.' });
             return;
         }
-        if (room.resultCommitted) return;
-        room.resultCommitted = true;
-
         const confirmedWinner = reportedWinners[0];
-        recordMatchResult(room, confirmedWinner);
-
-        const winnerPlayer = getMatchPlayerByIndex(room, confirmedWinner);
-        io.to(code).emit('matchResultConfirmed', {
-            winnerIndex: confirmedWinner,
-            winnerName: winnerPlayer ? (winnerPlayer.botControlled ? 'AI' : winnerPlayer.name) : null,
-            draw: confirmedWinner < 0,
-        });
+        const confirmed = commitRoomResult(room, confirmedWinner);
+        if (confirmed) io.to(code).emit('matchResultConfirmed', confirmed);
     });
 
     socket.on('requestLeaderboard', () => {
@@ -784,4 +986,8 @@ export {
     getMatchRoster,
     sanitizePlayerName,
     recordStateHash,
+    createSyncSnapshotRequest,
+    recordStateSummary,
+    maybeFinalizeMatchFromSummaries,
+    commitRoomResult,
 };

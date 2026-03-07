@@ -16,7 +16,9 @@ import { computeFriendlyReinforcementRoom, resolveFriendlyArrival } from './asse
 import { getStrategicPulseState, isStrategicPulseActiveForNode } from './assets/sim/strategic_pulse.js';
 import { computeSyncHash } from './assets/sim/state_hash.js';
 import { CAMPAIGN_LEVELS } from './assets/campaign/levels.js';
+import { buildDailyChallenge, dailyChallengeKey } from './assets/campaign/daily_challenge.js';
 import { describeCampaignObjectives, evaluateCampaignObjectives } from './assets/campaign/objectives.js';
+import { buildCustomMapExport, normalizeCustomMapConfig } from './assets/sim/custom_map.js';
 import { renderLeaderboardUI, renderMissionPanel, renderRoomListUI, renderStatRows } from './assets/ui/renderers.js';
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ CONSTANTS Ã¢â€â‚¬Ã¢â€â‚¬
@@ -211,6 +213,7 @@ var G = {
     strategicPulse: { active: false, nodeId: -1, cycle: 0, phase: 0, remainingTicks: 0, announcedCycle: -1 },
     powerByPlayer: {}, capByPlayer: {}, unitByPlayer: {},
     campaign: { active: false, levelIndex: -1, unlocked: 1, completed: 0, reminderShown: {} },
+    daily: { active: false, challenge: null, reminderShown: {}, bestTick: 0, completed: false },
 };
 var ACHIEVEMENTS = [
     { id: 'first_win', name: 'Ilk Zafer', check: function () { return G.winner === G.human; } },
@@ -276,6 +279,10 @@ var net = {
     syncHashSentTick: -1,
     syncWarningTick: -99999,
     syncWarningText: '',
+    syncHistory: [],
+    commandHistory: [],
+    resyncRequestId: '',
+    lastSummaryTick: -1,
 };
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ FOG Ã¢â€â‚¬Ã¢â€â‚¬
@@ -546,6 +553,80 @@ function applyMapFeature(cfg) {
     }
 }
 
+function applyCustomMapDefinition(customMap) {
+    customMap = normalizeCustomMapConfig(customMap || {});
+    G.nodes = [];
+    G.wormholes = [];
+    G.mapFeature = customMap.mapFeature || { type: 'none' };
+    G.mapMode = 'custom';
+
+    for (var i = 0; i < customMap.nodes.length; i++) {
+        var rawNode = customMap.nodes[i];
+        var node = {
+            id: i,
+            pos: { x: rawNode.pos.x, y: rawNode.pos.y },
+            radius: rawNode.radius,
+            owner: rawNode.owner,
+            units: rawNode.units,
+            prodAcc: rawNode.prodAcc || 0,
+            maxUnits: MAX_UNITS,
+            visionR: VISION_R + rawNode.radius * 2,
+            selected: false,
+            kind: rawNode.kind,
+            level: rawNode.level,
+            defense: rawNode.defense === true,
+            strategic: rawNode.strategic === true,
+            gate: rawNode.gate === true,
+            assimilationProgress: rawNode.assimilationProgress,
+            assimilationLock: rawNode.assimilationLock,
+        };
+        node.maxUnits = nodeCapacity(node);
+        node.units = clamp(node.units, 0, node.maxUnits);
+        if (node.owner >= 0 && node.units < 1) node.units = 1;
+        G.nodes.push(node);
+    }
+
+    G.wormholes = Array.isArray(customMap.wormholes) ? customMap.wormholes.map(function (pair) {
+        return { a: pair.a, b: pair.b };
+    }) : [];
+
+    G.strategicNodes = [];
+    var strategicSet = {};
+    var strategicIds = Array.isArray(customMap.strategicNodes) ? customMap.strategicNodes : [];
+    for (var si = 0; si < strategicIds.length; si++) strategicSet[strategicIds[si]] = true;
+    for (var ni = 0; ni < G.nodes.length; ni++) {
+        G.nodes[ni].strategic = !!strategicSet[G.nodes[ni].id];
+        if (G.nodes[ni].strategic) G.strategicNodes.push(G.nodes[ni].id);
+    }
+
+    if (G.mapFeature.type === 'barrier') {
+        var gateSet = {};
+        var gateIds = Array.isArray(G.mapFeature.gateIds) ? G.mapFeature.gateIds.slice() : [];
+        G.mapFeature.gateIds = gateIds;
+        for (var gi = 0; gi < gateIds.length; gi++) gateSet[gateIds[gi]] = true;
+        for (var bi = 0; bi < G.nodes.length; bi++) G.nodes[bi].gate = !!gateSet[G.nodes[bi].id];
+    } else {
+        for (var ng = 0; ng < G.nodes.length; ng++) G.nodes[ng].gate = false;
+    }
+
+    if (G.mapFeature.type === 'gravity' && G.mapFeature.nodeId >= 0 && G.nodes[G.mapFeature.nodeId]) {
+        G.mapFeature.x = G.nodes[G.mapFeature.nodeId].pos.x;
+        G.mapFeature.y = G.nodes[G.mapFeature.nodeId].pos.y;
+    }
+
+    G.playerCapital = {};
+    for (var p = 0; p < G.players.length; p++) {
+        var capitalId = customMap.playerCapital && customMap.playerCapital[p] !== undefined ? Number(customMap.playerCapital[p]) : -1;
+        if (!isFinite(capitalId) || !G.nodes[capitalId] || G.nodes[capitalId].owner !== p) capitalId = -1;
+        if (capitalId < 0) {
+            for (var ci = 0; ci < G.nodes.length; ci++) {
+                if (G.nodes[ci].owner === p) { capitalId = G.nodes[ci].id; break; }
+            }
+        }
+        if (capitalId >= 0) G.playerCapital[p] = capitalId;
+    }
+}
+
 // Ã¢â€â‚¬Ã¢â€â‚¬ INIT GAME Ã¢â€â‚¬Ã¢â€â‚¬
 function initGame(seedStr, nc, diff, opts) {
     opts = opts || {};
@@ -554,6 +635,7 @@ function initGame(seedStr, nc, diff, opts) {
     var menuFog = typeof opts.fogEnabled === 'boolean' ? opts.fogEnabled : null;
     var rulesMode = normalizeRulesetMode(opts.rulesMode || 'advanced');
     var mapFeatureCfg = null;
+    var customMapCfg = opts.customMap ? normalizeCustomMapConfig(opts.customMap) : null;
     if (typeof opts.mapFeature === 'string') mapFeatureCfg = { type: opts.mapFeature };
     else if (opts.mapFeature && typeof opts.mapFeature === 'object') mapFeatureCfg = opts.mapFeature;
     G.seed = (isNaN(Number(seedStr)) ? hashSeed(seedStr) : Number(seedStr)) || 42;
@@ -610,7 +692,7 @@ function initGame(seedStr, nc, diff, opts) {
     var aiDefault = diff === 'easy' ? 1 : diff === 'normal' ? 2 : 3;
     var humanCount = Math.max(1, Math.floor(Number(opts.humanCount || 1)));
     var aic = opts.aiCount !== undefined ? Math.max(0, Math.floor(Number(opts.aiCount))) : aiDefault;
-    var totalPlayers = humanCount + aic;
+    var totalPlayers = customMapCfg ? customMapCfg.playerCount : (humanCount + aic);
     G.players = [];
     for (var pi = 0; pi < totalPlayers; pi++) {
         G.players.push({ idx: pi, color: PLAYER_COLORS[pi % PLAYER_COLORS.length], isAI: pi >= humanCount, alive: true });
@@ -623,8 +705,13 @@ function initGame(seedStr, nc, diff, opts) {
         G.aiTicks.push(0);
         if (G.players[ai].isAI) G.aiProfiles[ai] = pickAIProfile(ai);
     }
-    genMap(nc);
-    applyMapFeature(mapFeatureCfg || {});
+    if (customMapCfg) {
+        applyCustomMapDefinition(customMapCfg);
+    } else {
+        G.mapMode = 'random';
+        genMap(nc);
+        applyMapFeature(mapFeatureCfg || {});
+    }
     applyRulesetNodeKinds();
     G.fog = initFog(G.players.length, G.nodes.length);
     for (var p = 0; p < G.players.length; p++) updateVis(G.fog, p, G.nodes, 0);
@@ -638,6 +725,7 @@ function initGame(seedStr, nc, diff, opts) {
     if (!keepReplay) G.rep = null;
     G.state = keepReplay ? 'replay' : 'playing';
     G.campaign.reminderShown = {};
+    G.daily.reminderShown = {};
     if (!keepReplay && G.mapFeature.type === 'barrier') showGameToast(barrierGatePromptText());
 }
 function genMap(nc) {
@@ -1113,28 +1201,31 @@ function applyRep(evt) {
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ TICK Ã¢â€â‚¬Ã¢â€â‚¬
-function gameTick() {
+function gameTick(runtimeOpts) {
+    runtimeOpts = runtimeOpts || {};
     if (G.state !== 'playing' && G.state !== 'replay') return;
 
     // Lockstep determinism: Throttle simulation to stay synced with server ticks
     if (net.online) {
-        if (!net.lastPingTick || G.tick - net.lastPingTick >= 45) {
-            net.lastPingTick = G.tick;
-            net.socket.emit('pingTick', { clientTs: Date.now() });
-        }
+        if (!runtimeOpts.skipNetworkSync) {
+            if (!net.lastPingTick || G.tick - net.lastPingTick >= 45) {
+                net.lastPingTick = G.tick;
+                net.socket.emit('pingTick', { clientTs: Date.now() });
+            }
 
-        if (net.syncDrift !== undefined) {
-            net.syncDrift += (G.speed - 1.0);
+            if (net.syncDrift !== undefined) {
+                net.syncDrift += (G.speed - 1.0);
 
-            // Hard-catchup for background tabs or extreme lag
-            if (net.syncDrift > 30) G.speed = 0.1;
-            else if (net.syncDrift > 10) G.speed = 0.5;
-            else if (net.syncDrift > 3) G.speed = 0.85;
-            else if (net.syncDrift < -90) G.speed = 10.0;
-            else if (net.syncDrift < -30) G.speed = 4.0;
-            else if (net.syncDrift < -10) G.speed = 2.0;
-            else if (net.syncDrift < -3) G.speed = 1.15;
-            else G.speed = 1.0;
+                // Hard-catchup for background tabs or extreme lag
+                if (net.syncDrift > 30) G.speed = 0.1;
+                else if (net.syncDrift > 10) G.speed = 0.5;
+                else if (net.syncDrift > 3) G.speed = 0.85;
+                else if (net.syncDrift < -90) G.speed = 10.0;
+                else if (net.syncDrift < -30) G.speed = 4.0;
+                else if (net.syncDrift < -10) G.speed = 2.0;
+                else if (net.syncDrift < -3) G.speed = 1.15;
+                else G.speed = 1.0;
+            }
         }
 
         if (net.pendingCommands.length > 0) {
@@ -1393,7 +1484,7 @@ function gameTick() {
     }
     // fog
     for (var p = 0; p < G.players.length; p++)updateVis(G.fog, p, G.nodes, G.tick);
-    if (net.online) sendOnlineStateHash();
+    if (net.online && !runtimeOpts.skipNetworkSync) sendOnlineStateHash();
     maybeShowCampaignObjectiveReminder();
     refreshCampaignMissionPanels();
     // particles
@@ -2414,13 +2505,14 @@ var $ = function (id) { return document.getElementById(id); };
 var mainMenu = $('mainMenu'), pauseOv = $('pauseOverlay'), goOv = $('gameOverOverlay'), hud = $('hud'), repBar = $('replayBar'), tunePanel = $('tuningPanel'), tuneOpen = $('tuneOpenBtn');
 var seedIn = $('seedInput'), rndSeedBtn = $('randomSeedBtn'), ncIn = $('nodeCountInput'), ncLbl = $('nodeCountLabel'), diffSel = $('difficultySelect');
 var gameModeSel = $('gameModeSelect'), multiModeSel = $('multiModeSelect');
-var startBtn = $('startBtn'), sandboxBtn = $('sandboxBtn'), loadRepBtn = $('loadReplayBtn'), repFileIn = $('replayFileInput');
+var startBtn = $('startBtn'), sandboxBtn = $('sandboxBtn'), campaignBtn = $('campaignBtn'), dailyChallengeBtn = $('dailyChallengeBtn'), importMapBtn = $('importMapBtn'), exportMapBtn = $('exportMapBtn'), loadRepBtn = $('loadReplayBtn'), repFileIn = $('replayFileInput'), customMapFileIn = $('customMapFileInput');
 var playerNameIn = $('playerNameInput');
 var startRoomBtn = $('startRoomBtn');
 var createRoomBtn = $('createRoomBtn');
 var joinRoomCodeInput = $('joinRoomCodeInput');
 var joinRoomBtn = $('joinRoomBtn');
 var hostControls = $('hostControls'), leaveRoomBtn = $('leaveRoomBtn');
+var customMapStatusEl = $('customMapStatus');
 var howToPlayBtn = $('howToPlayBtn');
 var howToPlayOv = $('howToPlayOverlay');
 var closeHowToPlayBtn = $('closeHowToPlayBtn');
@@ -2444,12 +2536,13 @@ var hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent
 var sendPctQuickBtns = Array.prototype.slice.call(document.querySelectorAll('.send-quick-btn'));
 var powerSidebar = $('powerSidebar'), powerListEl = $('powerList');
 var scenarioOv = $('scenarioOverlay'), scenarioStartBtn = $('scenarioStartBtn'), scenarioCloseBtn = $('scenarioCloseBtn'), scenarioProgressEl = $('scenarioProgress'), scenarioBubbleListEl = $('scenarioBubbleList'), scenarioMissionEl = $('scenarioMission');
-var campaignMissionHud = $('campaignMissionHud');
+var campaignMissionHud = $('campaignMissionHud'), dailyChallengeCard = $('dailyChallengeCard');
 var repSlower = $('replaySlower'), repPauseBtn = $('replayPause'), repFaster = $('replayFaster'), repSpdLbl = $('replaySpeedLabel'), repTickLbl = $('replayTickLabel'), repStopBtn = $('replayStop');
 var tuneProd = $('tuneProduction'), tuneFSpd = $('tuneFleetSpeed'), tuneDef = $('tuneDefense'), tuneFlowInt = $('tuneFlowInterval');
 var tuneAiAgg = $('tuneAIAggression'), tuneAiBuf = $('tuneAIBuffer'), tuneAiDec = $('tuneAIDecision');
 var tuneResetBtn = $('tuneResetBtn'), tuneTogBtn = $('tuneToggleBtn');
 var tuneFogCb = $('tuneFogOfWar'), tuneAiAssistCb = $('tuneAiAssist'), menuFogCb = $('menuFogOfWar');
+var exportMapHudBtn = $('exportMapHudBtn');
 var tuneVals = { p: $('tuneProductionVal'), f: $('tuneFleetSpeedVal'), d: $('tuneDefenseVal'), fi: $('tuneFlowIntervalVal'), aa: $('tuneAIAggressionVal'), ab: $('tuneAIBufferVal'), ad: $('tuneAIDecisionVal') };
 var tuningOpen = false, lastRepData = null, powerRenderKey = '';
 
@@ -2668,7 +2761,18 @@ function currentCampaignLevel() {
     return CAMPAIGN_LEVELS[G.campaign.levelIndex] || null;
 }
 
-function currentCampaignSnapshot() {
+function currentMissionDefinition() {
+    if (G.daily.active && G.daily.challenge) return G.daily.challenge;
+    return currentCampaignLevel();
+}
+
+function currentMissionMode() {
+    if (G.daily.active && G.daily.challenge) return 'daily';
+    if (currentCampaignLevel()) return 'campaign';
+    return '';
+}
+
+function currentMissionSnapshot() {
     return {
         tick: G.tick,
         didWin: G.winner === G.human,
@@ -2679,24 +2783,33 @@ function currentCampaignSnapshot() {
 }
 
 function currentCampaignObjectiveRows() {
-    var level = currentCampaignLevel();
+    var level = currentMissionDefinition();
     if (!level) return [];
-    return evaluateCampaignObjectives(level, currentCampaignSnapshot(), { tickRate: TICK_RATE });
+    return evaluateCampaignObjectives(level, currentMissionSnapshot(), { tickRate: TICK_RATE });
+}
+
+function currentMissionPanelTitle(level) {
+    if (!level) return 'Misyon';
+    if (currentMissionMode() === 'daily') return 'Gunluk Challenge';
+    return 'Bolum ' + level.id + ': ' + level.name;
+}
+
+function currentMissionPanelSubtitle(level) {
+    if (!level) return '';
+    if (currentMissionMode() === 'daily') {
+        var statusBits = [];
+        statusBits.push(level.title || 'Gunluk');
+        statusBits.push(level.blurb || '');
+        if (G.daily.completed) statusBits.push('Durum: Tamamlandi');
+        else if (G.daily.bestTick > 0) statusBits.push('En iyi: ' + G.daily.bestTick + ' tick');
+        return statusBits.filter(Boolean).join(' | ');
+    }
+    return level.blurb || '';
 }
 
 function refreshCampaignMissionPanels() {
-    var level = currentCampaignLevel();
+    var level = currentMissionDefinition();
     var rows = level ? currentCampaignObjectiveRows() : [];
-
-    if (scenarioMissionEl && level) {
-        renderMissionPanel(scenarioMissionEl, {
-            title: 'Bolum ' + level.id + ': ' + level.name,
-            subtitle: level.blurb,
-            items: rows.map(function (row) {
-                return { label: row.label, progressText: row.progressText, complete: row.complete, failed: row.failed, optional: row.optional };
-            }),
-        });
-    }
 
     if (campaignMissionHud) {
         if (!level || G.state !== 'playing') {
@@ -2704,8 +2817,8 @@ function refreshCampaignMissionPanels() {
         } else {
             campaignMissionHud.classList.remove('hidden');
             renderMissionPanel(campaignMissionHud, {
-                title: 'Misyon',
-                subtitle: 'Bolum ' + level.id + ' | ' + level.name,
+                title: currentMissionPanelTitle(level),
+                subtitle: currentMissionPanelSubtitle(level),
                 items: rows.map(function (row) {
                     return { label: row.label, progressText: row.progressText, complete: row.complete, failed: row.failed, optional: row.optional };
                 }),
@@ -2715,19 +2828,23 @@ function refreshCampaignMissionPanels() {
 }
 
 function maybeShowCampaignObjectiveReminder() {
-    var level = currentCampaignLevel();
+    var level = currentMissionDefinition();
     if (!level || G.state !== 'playing') return;
     var rows = currentCampaignObjectiveRows();
     if (!rows.length) return;
-    if (!G.campaign.reminderShown) G.campaign.reminderShown = {};
+    var mode = currentMissionMode();
+    var reminderShown = mode === 'daily' ? G.daily.reminderShown : G.campaign.reminderShown;
+    if (!reminderShown) reminderShown = {};
+    if (mode === 'daily') G.daily.reminderShown = reminderShown;
+    else G.campaign.reminderShown = reminderShown;
 
     for (var i = 0; i < rows.length; i++) {
         var row = rows[i];
         if (row.complete || row.failed) continue;
         if (!row.remindAt || G.tick < row.remindAt) continue;
-        if (G.campaign.reminderShown[row.id]) continue;
-        G.campaign.reminderShown[row.id] = true;
-        if (row.coach) showGameToast('Misyon ipucu: ' + row.coach);
+        if (reminderShown[row.id]) continue;
+        reminderShown[row.id] = true;
+        if (row.coach) showGameToast((mode === 'daily' ? 'Challenge' : 'Misyon') + ' ipucu: ' + row.coach);
         break;
     }
 }
@@ -2758,20 +2875,262 @@ function humanGameOverStatRows() {
     return rows;
 }
 
+function currentAlivePlayerIndices() {
+    var alive = [];
+    for (var i = 0; i < G.players.length; i++) if (G.players[i] && G.players[i].alive) alive.push(i);
+    return alive;
+}
+
+function rememberNetworkCommand(cmd) {
+    if (!cmd || typeof cmd !== 'object') return;
+    if (typeof cmd.seq !== 'number') return;
+    for (var i = 0; i < net.commandHistory.length; i++) {
+        if (net.commandHistory[i].seq === cmd.seq && net.commandHistory[i].matchId === cmd.matchId) return;
+    }
+    net.commandHistory.push({
+        matchId: cmd.matchId,
+        seq: cmd.seq,
+        playerIndex: cmd.playerIndex,
+        tick: cmd.tick,
+        type: cmd.type,
+        data: JSON.parse(JSON.stringify(cmd.data || {})),
+    });
+    var minTick = Math.max(0, G.tick - (SYNC_HASH_INTERVAL_TICKS * 6));
+    net.commandHistory = net.commandHistory.filter(function (entry) {
+        return (entry.tick || 0) >= minTick;
+    });
+}
+
+function captureSyncSnapshot() {
+    return {
+        tick: G.tick,
+        winner: G.winner,
+        state: G.state === 'gameOver' ? 'gameOver' : 'playing',
+        nodes: G.nodes.map(function (node) {
+            return {
+                id: node.id,
+                pos: { x: node.pos.x, y: node.pos.y },
+                radius: node.radius,
+                owner: node.owner,
+                units: node.units,
+                prodAcc: node.prodAcc || 0,
+                level: node.level,
+                kind: node.kind,
+                defense: !!node.defense,
+                strategic: !!node.strategic,
+                gate: !!node.gate,
+                assimilationProgress: node.assimilationProgress,
+                assimilationLock: node.assimilationLock || 0,
+            };
+        }),
+        fleets: G.fleets.filter(function (fleet) { return fleet && fleet.active; }).map(function (fleet) {
+            return {
+                active: true,
+                owner: fleet.owner,
+                count: fleet.count,
+                srcId: fleet.srcId,
+                tgtId: fleet.tgtId,
+                t: fleet.t,
+                speed: fleet.speed,
+                arcLen: fleet.arcLen,
+                cpx: fleet.cpx,
+                cpy: fleet.cpy,
+                x: fleet.x,
+                y: fleet.y,
+                trail: Array.isArray(fleet.trail) ? fleet.trail.map(function (pt) { return { x: pt.x, y: pt.y }; }) : [],
+                offsetL: fleet.offsetL || 0,
+                spdVar: fleet.spdVar || 1,
+                routeSpeedMult: fleet.routeSpeedMult || 1,
+                dmgAcc: fleet.dmgAcc || 0,
+                launchT: fleet.launchT || 0,
+            };
+        }),
+        flows: G.flows.map(function (flow) {
+            return {
+                id: flow.id,
+                srcId: flow.srcId,
+                tgtId: flow.tgtId,
+                owner: flow.owner,
+                tickAcc: flow.tickAcc || 0,
+                active: flow.active !== false,
+            };
+        }),
+        players: G.players.map(function (player) {
+            return {
+                idx: player.idx,
+                alive: player.alive !== false,
+                isAI: !!player.isAI,
+                color: player.color,
+            };
+        }),
+        fog: JSON.parse(JSON.stringify(G.fog || {})),
+        stats: JSON.parse(JSON.stringify(G.stats || {})),
+        wormholes: JSON.parse(JSON.stringify(G.wormholes || [])),
+        mapFeature: JSON.parse(JSON.stringify(G.mapFeature || { type: 'none' })),
+        playerCapital: JSON.parse(JSON.stringify(G.playerCapital || {})),
+        strategicNodes: Array.isArray(G.strategicNodes) ? G.strategicNodes.slice() : [],
+        strategicPulse: JSON.parse(JSON.stringify(G.strategicPulse || {})),
+        powerByPlayer: JSON.parse(JSON.stringify(G.powerByPlayer || {})),
+        capByPlayer: JSON.parse(JSON.stringify(G.capByPlayer || {})),
+        unitByPlayer: JSON.parse(JSON.stringify(G.unitByPlayer || {})),
+        aiTicks: Array.isArray(G.aiTicks) ? G.aiTicks.slice() : [],
+        aiProfiles: JSON.parse(JSON.stringify(G.aiProfiles || [])),
+        flowId: G.flowId,
+        fleetSerial: G.fleetSerial,
+        rngState: G.rng ? G.rng.s : 1,
+        lastAppliedSeq: net.lastAppliedSeq,
+    };
+}
+
+function rememberSyncSnapshot(tick, hash) {
+    if (!net.matchId) return;
+    net.syncHistory.push({
+        matchId: net.matchId,
+        tick: tick,
+        hash: hash,
+        snapshot: captureSyncSnapshot(),
+    });
+    if (net.syncHistory.length > 8) net.syncHistory = net.syncHistory.slice(-8);
+}
+
+function findSyncSnapshot(tick, hash) {
+    for (var i = net.syncHistory.length - 1; i >= 0; i--) {
+        var entry = net.syncHistory[i];
+        if (entry.matchId !== net.matchId) continue;
+        if (entry.tick !== tick) continue;
+        if (hash && entry.hash !== hash) continue;
+        return entry;
+    }
+    return null;
+}
+
+function rebuildPendingCommandsFromHistory(afterTick, afterSeq) {
+    var pending = [];
+    for (var i = 0; i < net.commandHistory.length; i++) {
+        var entry = net.commandHistory[i];
+        if (entry.matchId !== net.matchId) continue;
+        if (typeof afterSeq === 'number' && entry.seq <= afterSeq) continue;
+        if ((entry.tick || 0) <= afterTick) continue;
+        pending.push({
+            matchId: entry.matchId,
+            seq: entry.seq,
+            playerIndex: entry.playerIndex,
+            tick: entry.tick,
+            type: entry.type,
+            data: JSON.parse(JSON.stringify(entry.data || {})),
+        });
+    }
+    pending.sort(function (a, b) {
+        var tickDelta = (a.tick || 0) - (b.tick || 0);
+        if (tickDelta !== 0) return tickDelta;
+        return (a.seq || 0) - (b.seq || 0);
+    });
+    net.pendingCommands = pending;
+}
+
+function applySyncSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== 'object') return false;
+    var preservedHuman = G.human;
+    var preservedCam = { x: G.cam.x, y: G.cam.y, zoom: G.cam.zoom };
+
+    G.tick = Math.max(0, Math.floor(Number(snapshot.tick) || 0));
+    G.winner = Number(snapshot.winner);
+    if (!isFinite(G.winner)) G.winner = -1;
+    G.state = snapshot.state === 'gameOver' ? 'gameOver' : 'playing';
+    G.nodes = JSON.parse(JSON.stringify(Array.isArray(snapshot.nodes) ? snapshot.nodes : []));
+    G.fleets = JSON.parse(JSON.stringify(Array.isArray(snapshot.fleets) ? snapshot.fleets : []));
+    G.flows = JSON.parse(JSON.stringify(Array.isArray(snapshot.flows) ? snapshot.flows : []));
+    G.wormholes = JSON.parse(JSON.stringify(Array.isArray(snapshot.wormholes) ? snapshot.wormholes : []));
+    G.mapFeature = JSON.parse(JSON.stringify(snapshot.mapFeature || { type: 'none' }));
+    G.playerCapital = JSON.parse(JSON.stringify(snapshot.playerCapital || {}));
+    G.strategicNodes = Array.isArray(snapshot.strategicNodes) ? snapshot.strategicNodes.slice() : [];
+    G.strategicPulse = JSON.parse(JSON.stringify(snapshot.strategicPulse || currentStrategicPulse(G.tick)));
+    G.powerByPlayer = JSON.parse(JSON.stringify(snapshot.powerByPlayer || {}));
+    G.capByPlayer = JSON.parse(JSON.stringify(snapshot.capByPlayer || {}));
+    G.unitByPlayer = JSON.parse(JSON.stringify(snapshot.unitByPlayer || {}));
+    G.stats = JSON.parse(JSON.stringify(snapshot.stats || G.stats || {}));
+    G.aiTicks = Array.isArray(snapshot.aiTicks) ? snapshot.aiTicks.slice() : [];
+    G.aiProfiles = JSON.parse(JSON.stringify(snapshot.aiProfiles || []));
+    G.flowId = Math.max(0, Math.floor(Number(snapshot.flowId) || 0));
+    G.fleetSerial = Math.max(0, Math.floor(Number(snapshot.fleetSerial) || 0));
+    G.fog = JSON.parse(JSON.stringify(snapshot.fog || initFog(G.players.length, G.nodes.length)));
+
+    for (var ni = 0; ni < G.nodes.length; ni++) {
+        var node = G.nodes[ni];
+        node.id = ni;
+        node.visionR = VISION_R + node.radius * 2;
+        node.selected = false;
+        node.maxUnits = nodeCapacity(node);
+        node.units = clamp(node.units, 0, node.maxUnits);
+    }
+    for (var pi = 0; pi < G.players.length; pi++) {
+        if (snapshot.players && snapshot.players[pi]) {
+            G.players[pi].alive = snapshot.players[pi].alive !== false;
+            G.players[pi].isAI = !!snapshot.players[pi].isAI;
+            if (snapshot.players[pi].color) G.players[pi].color = snapshot.players[pi].color;
+        }
+    }
+    G.human = preservedHuman;
+    G.cam.x = preservedCam.x;
+    G.cam.y = preservedCam.y;
+    G.cam.zoom = preservedCam.zoom;
+    G.rng = new RNG(1);
+    G.rng.s = Math.floor(Number(snapshot.rngState) || 1) || 1;
+    net.lastAppliedSeq = typeof snapshot.lastAppliedSeq === 'number' ? snapshot.lastAppliedSeq : -1;
+    powerRenderKey = '';
+    return true;
+}
+
+function handleIncomingSyncSnapshot(payload) {
+    if (!net.online || !payload || payload.matchId !== net.matchId || !payload.snapshot) return;
+    if (findSyncSnapshot(payload.tick, payload.hash)) return;
+
+    var targetTick = G.tick;
+    if (!applySyncSnapshot(payload.snapshot)) return;
+
+    rebuildPendingCommandsFromHistory(G.tick, net.lastAppliedSeq);
+    var guard = 0;
+    while (G.tick < targetTick && G.state === 'playing' && guard < 720) {
+        gameTick({ skipNetworkSync: true });
+        guard++;
+    }
+    net.resyncRequestId = '';
+    net.syncWarningTick = G.tick;
+    net.syncWarningText = 'Sync snapshot uygulandi (tick ' + payload.tick + ').';
+    showGameToast(net.syncWarningText);
+    setRoomStatus(net.syncWarningText, false);
+}
+
+function sendOnlineStateSummary(force) {
+    if (!net.online || !net.socket || !net.matchId) return;
+    if (!force && net.lastSummaryTick >= 0 && G.tick - net.lastSummaryTick < SYNC_HASH_INTERVAL_TICKS) return;
+    net.lastSummaryTick = G.tick;
+    net.socket.emit('stateSummary', {
+        matchId: net.matchId,
+        tick: G.tick,
+        gameOver: G.state === 'gameOver',
+        winnerIndex: G.state === 'gameOver' ? G.winner : null,
+        aliveIndices: currentAlivePlayerIndices(),
+    });
+}
+
 function sendOnlineStateHash() {
     if (!net.online || !net.socket || !net.matchId) return;
     if (net.syncHashSentTick >= 0 && G.tick - net.syncHashSentTick < SYNC_HASH_INTERVAL_TICKS) return;
     net.syncHashSentTick = G.tick;
+    var hash = computeSyncHash({
+        tick: G.tick,
+        nodes: G.nodes,
+        fleets: G.fleets,
+        players: G.players,
+    });
+    rememberSyncSnapshot(G.tick, hash);
     net.socket.emit('stateHash', {
         matchId: net.matchId,
         tick: G.tick,
-        hash: computeSyncHash({
-            tick: G.tick,
-            nodes: G.nodes,
-            fleets: G.fleets,
-            players: G.players,
-        }),
+        hash: hash,
     });
+    sendOnlineStateSummary(false);
 }
 
 function closeScenarioMenu() {
@@ -2820,7 +3179,11 @@ function showUI(st) {
     var ig = st === 'playing' || st === 'paused' || st === 'replay'; hud.classList.toggle('hidden', !ig || st === 'replay'); repBar.classList.toggle('hidden', st !== 'replay');
     if (powerSidebar) powerSidebar.classList.toggle('hidden', !ig || st === 'replay');
     var cp = document.getElementById('chatPanel'); if (cp) cp.classList.toggle('hidden', !ig || !net.online);
-    if (st === 'mainMenu') refreshCampaignUI();
+    if (st === 'mainMenu') {
+        refreshCampaignUI();
+        refreshDailyChallengeCard();
+        refreshCustomMapStatus();
+    }
     closeScenarioMenu();
     if (st === 'playing' && tuningOpen) { tunePanel.classList.remove('hidden'); tuneOpen.classList.add('hidden'); }
     else if (st === 'playing') { tunePanel.classList.add('hidden'); tuneOpen.classList.remove('hidden'); }
@@ -2889,6 +3252,10 @@ function clearRoomState(message) {
     net.syncHashSentTick = -1;
     net.syncWarningTick = -99999;
     net.syncWarningText = '';
+    net.syncHistory = [];
+    net.commandHistory = [];
+    net.resyncRequestId = '';
+    net.lastSummaryTick = -1;
     clearChatMessages();
     renderRoomPlayers([], null);
     if (message) setRoomStatus(message, false);
@@ -3076,6 +3443,10 @@ function ensureSocket() {
         net.syncHashSentTick = -1;
         net.syncWarningTick = -99999;
         net.syncWarningText = '';
+        net.syncHistory = [];
+        net.commandHistory = [];
+        net.resyncRequestId = '';
+        net.lastSummaryTick = -1;
 
         initGame(payload.seed || '42', Number(payload.nodeCount || 16), payload.difficulty || 'normal', {
             keepReplay: false,
@@ -3088,6 +3459,12 @@ function ensureSocket() {
         });
         G.campaign.active = false;
         G.campaign.levelIndex = -1;
+        G.daily.active = false;
+        G.daily.challenge = null;
+        G.daily.reminderShown = {};
+        G.daily.bestTick = 0;
+        G.daily.completed = false;
+        currentCustomMapConfig = null;
         inp.sel.clear();
         clearChatMessages();
         for (var i = 0; i < G.nodes.length; i++) G.nodes[i].selected = false;
@@ -3103,6 +3480,7 @@ function ensureSocket() {
     net.socket.on('roomCommand', function (cmd) {
         if (!net.online) return;
         if (cmd && cmd.matchId && net.matchId && cmd.matchId !== net.matchId) return;
+        rememberNetworkCommand(cmd);
         net.pendingCommands.push(cmd);
     });
 
@@ -3113,6 +3491,22 @@ function ensureSocket() {
         net.syncWarningText = 'Sync uyusmazligi tespit edildi (tick ' + payload.tick + '). Mac sonucu dogrulanmayabilir.';
         showGameToast(net.syncWarningText);
         setRoomStatus(net.syncWarningText, true);
+    });
+    net.socket.on('requestSyncSnapshot', function (payload) {
+        if (!net.online || !payload || payload.matchId !== net.matchId) return;
+        var entry = findSyncSnapshot(payload.tick, payload.hash);
+        if (!entry) return;
+        net.resyncRequestId = payload.requestId || '';
+        net.socket.emit('syncSnapshot', {
+            matchId: net.matchId,
+            requestId: payload.requestId,
+            tick: entry.tick,
+            hash: entry.hash,
+            snapshot: entry.snapshot,
+        });
+    });
+    net.socket.on('syncSnapshot', function (payload) {
+        handleIncomingSyncSnapshot(payload);
     });
 
     net.socket.on('chat', function (payload) {
@@ -3130,6 +3524,7 @@ function ensureSocket() {
     net.socket.on('matchResultConfirmed', function (payload) {
         if (payload && payload.draw) appendChatMessage('Mac sonucu: Berabere', 'var(--text-dim)');
         else appendChatMessage('Mac sonucu onaylandi: ' + ((payload && payload.winnerName) || ('P' + ((payload && payload.winnerIndex >= 0) ? (payload.winnerIndex + 1) : '?'))), 'var(--text-dim)');
+        setRoomStatus('Mac sonucu sunucu tarafinda onaylandi.', false);
     });
     net.socket.on('leaderboard', function (payload) {
         var el = document.getElementById('leaderboardList');
@@ -3160,6 +3555,10 @@ function startReplayFromData(raw) {
     initGame('' + rep.seed, rep.nc, rep.diff, { keepReplay: true, keepTuning: false, fogEnabled: false, rulesMode: rep.rulesMode });
     G.campaign.active = false;
     G.campaign.levelIndex = -1;
+    G.daily.active = false;
+    G.daily.challenge = null;
+    G.daily.reminderShown = {};
+    currentCustomMapConfig = null;
     G.rep = { events: rep.events, idx: 0, speed: 1, paused: false };
     spIdx = 0;
     spdBtn.textContent = '1x';
@@ -3179,7 +3578,9 @@ rndSeedBtn.addEventListener('click', function () { seedIn.value = '' + Math.floo
 var SCENARIO_UNLOCKED_KEY = 'stellar_scenario_unlocked_v1';
 var SCENARIO_COMPLETED_KEY = 'stellar_scenario_completed_v1';
 var LEGACY_CAMPAIGN_UNLOCKED_KEY = 'stellar_campaign_unlocked_v2';
+var DAILY_CHALLENGE_STATE_KEY = 'stellar_daily_challenge_v1';
 var campaignSelectedLevel = 0;
+var currentCustomMapConfig = null;
 
 function clampCampaignUnlocked(v) {
     var n = Math.floor(Number(v));
@@ -3227,6 +3628,46 @@ function saveCampaignCompleted(v) {
     G.campaign.completed = clamped;
     try { localStorage.setItem(SCENARIO_COMPLETED_KEY, '' + clamped); } catch (e) {}
 }
+function loadDailyChallengeStore() {
+    try {
+        var raw = localStorage.getItem(DAILY_CHALLENGE_STATE_KEY);
+        if (!raw) return {};
+        var parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch (e) {
+        return {};
+    }
+}
+function saveDailyChallengeStore(store) {
+    try { localStorage.setItem(DAILY_CHALLENGE_STATE_KEY, JSON.stringify(store || {})); } catch (e) {}
+}
+function getDailyChallengeProgress(key) {
+    var store = loadDailyChallengeStore();
+    var entry = store && store[key] && typeof store[key] === 'object' ? store[key] : {};
+    var bestTick = Math.max(0, Math.floor(Number(entry.bestTick) || 0));
+    return {
+        completed: entry.completed === true,
+        bestTick: bestTick,
+    };
+}
+function saveDailyChallengeProgress(key, didWin, tick) {
+    var store = loadDailyChallengeStore();
+    var entry = store[key] && typeof store[key] === 'object' ? store[key] : {};
+    if (didWin) entry.completed = true;
+    var nextTick = Math.max(0, Math.floor(Number(tick) || 0));
+    if (didWin && nextTick > 0 && (!entry.bestTick || nextTick < entry.bestTick)) entry.bestTick = nextTick;
+    store[key] = entry;
+    saveDailyChallengeStore(store);
+    return getDailyChallengeProgress(key);
+}
+function syncDailyChallengeState(challenge) {
+    var progress = challenge ? getDailyChallengeProgress(challenge.key) : { completed: false, bestTick: 0 };
+    G.daily.bestTick = progress.bestTick;
+    G.daily.completed = progress.completed;
+}
+function todayDailyChallenge() {
+    return buildDailyChallenge(dailyChallengeKey(new Date()));
+}
 function campaignFeatureName(feature) {
     if (!feature) return 'Standart';
     if (typeof feature === 'string') {
@@ -3272,6 +3713,36 @@ function campaignLevelSummary(level) {
         'Systems: ' + campaignSystemsSummary(level) + '\n' +
         'Objectives: ' + describeCampaignObjectives(level, { tickRate: TICK_RATE }) + '\n' +
         'Plan: ' + (level.hint || 'Map temposunu pulse, supply ve savunma alani ile yonet.');
+}
+function refreshDailyChallengeCard() {
+    if (!dailyChallengeCard) return;
+    var challenge = todayDailyChallenge();
+    var progress = getDailyChallengeProgress(challenge.key);
+    renderMissionPanel(dailyChallengeCard, {
+        title: 'Bugunun Challenge\'i',
+        subtitle: challenge.key + ' | ' + challenge.blurb + (progress.completed ? ' | Temizlendi' : (progress.bestTick > 0 ? ' | En iyi: ' + progress.bestTick + ' tick' : ' | Henuz temizlenmedi')),
+        items: evaluateCampaignObjectives(challenge, {
+            tick: 0,
+            didWin: false,
+            gameOver: false,
+            ownedNodes: 0,
+            stats: {},
+        }, { tickRate: TICK_RATE }).map(function (row) {
+            return { label: row.label, progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
+        }),
+    });
+}
+function refreshCustomMapStatus() {
+    if (!customMapStatusEl) return;
+    if (!currentCustomMapConfig) {
+        customMapStatusEl.textContent = 'Custom map yukleyip baslangic duzenini, anomalileri ve acilis node sahipliklerini sabitleyebilirsin.';
+        return;
+    }
+    customMapStatusEl.textContent =
+        'Hazir custom map: ' + currentCustomMapConfig.name +
+        ' | ' + currentCustomMapConfig.nodes.length + ' node' +
+        ' | ' + currentCustomMapConfig.playerCount + ' oyuncu' +
+        ' | ' + campaignFeatureName(currentCustomMapConfig.mapFeature);
 }
 function applyCampaignLevelSelection(levelIndex) {
     var unlocked = G.campaign.unlocked || 1;
@@ -3341,9 +3812,23 @@ function resetSelectionAndSpeed() {
     spIdx = 0;
     if (spdBtn) spdBtn.textContent = '1x';
 }
-function startSandboxGame() {
+function finalizeLocalGameStart(fogOn) {
+    G.campaign.active = false;
+    G.campaign.levelIndex = -1;
+    G.daily.active = false;
+    G.daily.challenge = null;
+    G.daily.reminderShown = {};
+    G.daily.bestTick = 0;
+    G.daily.completed = false;
+    resetSelectionAndSpeed();
+    if (tuneFogCb) tuneFogCb.checked = !!fogOn;
+    if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
+    showUI('playing');
+}
+function startSinglePlayerGame() {
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
     clearRoomState('');
+    currentCustomMapConfig = null;
     var fogOn = menuFogCb ? !!menuFogCb.checked : false;
     var nc = (ncIn && ncIn.value) ? parseInt(ncIn.value, 10) : 16;
     nc = (isNaN(nc) || nc < 8 || nc > 30) ? 16 : nc;
@@ -3351,12 +3836,101 @@ function startSandboxGame() {
         fogEnabled: fogOn,
         rulesMode: (gameModeSel && gameModeSel.value) || 'advanced',
     });
+    finalizeLocalGameStart(fogOn);
+    refreshCustomMapStatus();
+}
+function startSandboxGame() {
+    startSinglePlayerGame();
+    tuningOpen = true;
+    if (tunePanel && tuneOpen && G.state === 'playing') {
+        tunePanel.classList.remove('hidden');
+        tuneOpen.classList.add('hidden');
+    }
+}
+function startDailyChallengeGame() {
+    var challenge = todayDailyChallenge();
+    if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
+    clearRoomState('');
+    currentCustomMapConfig = null;
+    syncDailyChallengeState(challenge);
+    initGame(challenge.seed, challenge.nc, challenge.diff, {
+        fogEnabled: !!challenge.fog,
+        aiCount: challenge.aiCount,
+        mapFeature: challenge.mapFeature || 'auto',
+        rulesMode: challenge.rulesMode || 'advanced',
+    });
     G.campaign.active = false;
     G.campaign.levelIndex = -1;
+    G.daily.active = true;
+    G.daily.challenge = challenge;
+    G.daily.reminderShown = {};
+    syncDailyChallengeState(challenge);
     resetSelectionAndSpeed();
-    if (tuneFogCb) tuneFogCb.checked = fogOn;
+    if (menuFogCb) menuFogCb.checked = !!challenge.fog;
+    if (tuneFogCb) tuneFogCb.checked = !!challenge.fog;
     if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
     showUI('playing');
+    showGameToast('Gunluk challenge acildi: ' + challenge.title);
+}
+function startCustomMapGame(customMap) {
+    var normalized = normalizeCustomMapConfig(customMap);
+    if (!normalized || !normalized.nodes || normalized.nodes.length < 4) return;
+    if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
+    clearRoomState('');
+    currentCustomMapConfig = normalized;
+    initGame(normalized.seed || 'custom-map', normalized.nodes.length, normalized.difficulty || 'normal', {
+        fogEnabled: !!normalized.fogEnabled,
+        aiCount: Math.max(0, normalized.playerCount - 1),
+        rulesMode: normalized.rulesMode || 'advanced',
+        tuneOverrides: normalized.tuneOverrides || null,
+        customMap: normalized,
+    });
+    finalizeLocalGameStart(normalized.fogEnabled);
+    showGameToast('Custom map yuklendi: ' + normalized.name);
+    refreshCustomMapStatus();
+}
+function exportCurrentMapState() {
+    if (G.state !== 'playing' && G.state !== 'paused' && G.state !== 'gameOver') {
+        if (currentCustomMapConfig) {
+            var presetBlob = new Blob([JSON.stringify(currentCustomMapConfig, null, 2)], { type: 'application/json' });
+            var presetUrl = URL.createObjectURL(presetBlob);
+            var presetLink = document.createElement('a');
+            presetLink.href = presetUrl;
+            presetLink.download = (currentCustomMapConfig.name || 'stellar-map').replace(/[^a-z0-9_-]+/gi, '-').toLowerCase() + '.json';
+            presetLink.click();
+            URL.revokeObjectURL(presetUrl);
+            showGameToast('Hazir custom map disa aktarıldi.');
+            return;
+        }
+        showGameToast('Disa aktarmak icin once bir mac ac.');
+        return;
+    }
+    var exported = buildCustomMapExport({
+        seed: G.seed,
+        diff: G.diff,
+        rulesMode: G.rulesMode,
+        tune: G.tune,
+        nodes: G.nodes,
+        players: G.players,
+        wormholes: G.wormholes,
+        mapFeature: G.mapFeature,
+        strategicNodes: G.strategicNodes,
+        playerCapital: G.playerCapital,
+    }, {
+        name: (G.daily.active && G.daily.challenge ? ('daily-' + G.daily.challenge.key) : (G.campaign.active ? ('campaign-' + ((currentCampaignLevel() && currentCampaignLevel().id) || 'map')) : ('map-' + G.seed))),
+        seed: '' + G.seed,
+        difficulty: G.diff,
+        fogEnabled: !!G.tune.fogEnabled,
+        rulesMode: G.rulesMode,
+    });
+    var blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var link = document.createElement('a');
+    link.href = url;
+    link.download = (exported.name || 'stellar-map').replace(/[^a-z0-9_-]+/gi, '-').toLowerCase() + '.json';
+    link.click();
+    URL.revokeObjectURL(url);
+    showGameToast('Harita JSON olarak disa aktarıldi.');
 }
 function startCampaignLevel(levelIndex) {
     var idx = applyCampaignLevelSelection(levelIndex);
@@ -3373,6 +3947,12 @@ function startCampaignLevel(levelIndex) {
     G.campaign.active = true;
     G.campaign.levelIndex = idx;
     G.campaign.reminderShown = {};
+    G.daily.active = false;
+    G.daily.challenge = null;
+    G.daily.reminderShown = {};
+    G.daily.bestTick = 0;
+    G.daily.completed = false;
+    currentCustomMapConfig = null;
     if (menuFogCb) menuFogCb.checked = !!lvl.fog;
     if (tuneFogCb) tuneFogCb.checked = !!lvl.fog;
     resetSelectionAndSpeed();
@@ -3422,9 +4002,53 @@ if (scenarioOv) {
     });
 }
 refreshCampaignUI();
+refreshDailyChallengeCard();
+refreshCustomMapStatus();
 if (startBtn) {
     startBtn.addEventListener('click', function () {
+        startSinglePlayerGame();
+    });
+}
+if (campaignBtn) {
+    campaignBtn.addEventListener('click', function () {
         openScenarioMenu();
+    });
+}
+if (dailyChallengeBtn) {
+    dailyChallengeBtn.addEventListener('click', function () {
+        startDailyChallengeGame();
+    });
+}
+if (importMapBtn) {
+    importMapBtn.addEventListener('click', function () {
+        if (customMapFileIn) customMapFileIn.click();
+    });
+}
+if (exportMapBtn) {
+    exportMapBtn.addEventListener('click', function () {
+        exportCurrentMapState();
+    });
+}
+if (exportMapHudBtn) {
+    exportMapHudBtn.addEventListener('click', function () {
+        exportCurrentMapState();
+    });
+}
+if (customMapFileIn) {
+    customMapFileIn.addEventListener('change', function () {
+        var file = customMapFileIn.files && customMapFileIn.files[0];
+        if (!file) return;
+        var reader = new FileReader();
+        reader.onload = function () {
+            try {
+                var normalized = normalizeCustomMapConfig(JSON.parse(reader.result));
+                startCustomMapGame(normalized);
+            } catch (err) {
+                alert('Custom map yuklenemedi: ' + err);
+            }
+            customMapFileIn.value = '';
+        };
+        reader.readAsText(file);
     });
 }
 
@@ -3856,12 +4480,32 @@ function loop(ts) {
                     goMsg.textContent = 'Ayni bolumu tekrar dene veya stratejini degistir.';
                 }
             }
+            if (G.daily.active && G.daily.challenge) {
+                var dailyProgress = saveDailyChallengeProgress(G.daily.challenge.key, G.winner === G.human, G.tick);
+                G.daily.bestTick = dailyProgress.bestTick;
+                G.daily.completed = dailyProgress.completed;
+                refreshDailyChallengeCard();
+                if (G.winner === G.human) {
+                    goTitle.textContent = 'Gunluk Challenge Tamamlandi';
+                    goMsg.textContent = dailyProgress.bestTick === G.tick ?
+                        ('Yeni en iyi sure: ' + G.tick + ' tick.') :
+                        ('Challenge temizlendi. En iyi sure: ' + dailyProgress.bestTick + ' tick.');
+                } else {
+                    goTitle.textContent = 'Gunluk Challenge Kacirildi';
+                    goMsg.textContent = dailyProgress.bestTick > 0 ?
+                        ('Bugunun en iyi sonucun: ' + dailyProgress.bestTick + ' tick. Bir tur daha dene.') :
+                        'Bugunun challengei henuz temizlenmedi. Acilisi daha agresif kur.';
+                }
+            }
             if (goStatsEl) renderStatRows(goStatsEl, humanGameOverStatRows());
             if (typeof AudioFX !== 'undefined') { AudioFX.stopMusic(); G.winner === G.human ? AudioFX.victory() : AudioFX.defeat(); }
             checkAchievements();
             var rematchBtn = document.getElementById('rematchBtn');
             if (rematchBtn) rematchBtn.style.display = net.online ? 'block' : 'none';
-            if (net.online && net.socket) net.socket.emit('reportResult', { winnerIndex: G.winner, winner: G.winner === G.human });
+            if (net.online && net.socket) {
+                sendOnlineStateSummary(true);
+                net.socket.emit('reportResult', { winnerIndex: G.winner, winner: G.winner === G.human });
+            }
         } prevSt = G.state;
     }
     if (G.state === 'playing' || G.state === 'replay') {
