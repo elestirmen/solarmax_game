@@ -1,4 +1,5 @@
 import { resolveFriendlyArrival } from './reinforcement.js';
+import { getFleetUnitSpacingT } from './shared_config.js';
 
 function normalizeDirection(dx, dy, fallbackX, fallbackY) {
     var x = Number(dx);
@@ -27,6 +28,69 @@ function fleetTravelDirection(fleet, targetNode, nodes) {
     return { x: 1, y: 0 };
 }
 
+function defaultClamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+}
+
+function defaultBezPt(p0, cp, p2, t) {
+    var u = 1 - t;
+    return {
+        x: u * u * p0.x + 2 * u * t * cp.x + t * t * p2.x,
+        y: u * u * p0.y + 2 * u * t * cp.y + t * t * p2.y,
+    };
+}
+
+function computeFleetPose(fleet, nodes) {
+    var sourceNode = nodes[fleet.srcId];
+    var targetNode = nodes[fleet.tgtId];
+    if (!sourceNode || !sourceNode.pos || !targetNode || !targetNode.pos) return null;
+
+    var clamp = defaultClamp;
+    var bezPt = defaultBezPt;
+    var cp = { x: fleet.cpx, y: fleet.cpy };
+    var lookAhead = Number(fleet.lookAhead);
+    var launchT = clamp(typeof fleet.launchT === 'number' ? fleet.launchT : 0, 0, 0.2);
+    if (!Number.isFinite(lookAhead) || lookAhead <= 0) lookAhead = 0.022;
+
+    if ((Number(fleet.t) || 0) > 0) {
+        var curveT = launchT + (1 - launchT) * clamp(fleet.t, 0, 1);
+        var pt = bezPt(sourceNode.pos, cp, targetNode.pos, curveT);
+        var pt2 = bezPt(sourceNode.pos, cp, targetNode.pos, Math.min(1, curveT + Math.max(0.01, lookAhead)));
+        var dirX = pt2.x - pt.x;
+        var dirY = pt2.y - pt.y;
+        var dirLen = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
+        var nx = -dirY / dirLen;
+        var ny = dirX / dirLen;
+        var fade = Math.min(1, curveT * 5) * Math.min(1, (1 - curveT) * 5);
+
+        return {
+            x: pt.x + nx * (Number(fleet.offsetL) || 0) * fade,
+            y: pt.y + ny * (Number(fleet.offsetL) || 0) * fade,
+            dirX: dirX / dirLen,
+            dirY: dirY / dirLen,
+        };
+    }
+
+    var waitPt = bezPt(sourceNode.pos, cp, targetNode.pos, launchT);
+    var waitPt2 = bezPt(sourceNode.pos, cp, targetNode.pos, Math.min(1, launchT + Math.max(0.01, lookAhead)));
+    var waitDir = normalizeDirection(waitPt2.x - waitPt.x, waitPt2.y - waitPt.y, 1, 0);
+    return {
+        x: waitPt.x,
+        y: waitPt.y,
+        dirX: waitDir.x,
+        dirY: waitDir.y,
+    };
+}
+
+function countArrivedFleetUnits(fleet) {
+    var fleetCount = Math.max(0, Math.floor(Number(fleet && fleet.count) || 0));
+    var fleetT = Number(fleet && fleet.t);
+    if (fleetCount <= 0 || !Number.isFinite(fleetT) || fleetT < 1) return 0;
+
+    var spacingT = Math.max(0.0001, getFleetUnitSpacingT(fleet));
+    return Math.min(fleetCount, 1 + Math.floor((fleetT - 1 + 0.000001) / spacingT));
+}
+
 export function stepFleetMovement(params) {
     params = params || {};
 
@@ -41,12 +105,8 @@ export function stepFleetMovement(params) {
     var baseFleetSpeed = Number(constants.baseFleetSpeed);
     var gravitySpeedMult = Number(constants.gravitySpeedMult);
     var trailLen = Number(constants.trailLen);
-    var clamp = typeof callbacks.clamp === 'function' ? callbacks.clamp : function (value, min, max) {
-        return Math.max(min, Math.min(max, value));
-    };
-    var bezPt = typeof callbacks.bezPt === 'function' ? callbacks.bezPt : function (_p0, _cp, p2) {
-        return { x: p2.x, y: p2.y };
-    };
+    var clamp = typeof callbacks.clamp === 'function' ? callbacks.clamp : defaultClamp;
+    var bezPt = typeof callbacks.bezPt === 'function' ? callbacks.bezPt : defaultBezPt;
 
     if (!Number.isFinite(dt) || dt <= 0) dt = 1 / 30;
     if (!Number.isFinite(baseFleetSpeed) || baseFleetSpeed <= 0) baseFleetSpeed = 80;
@@ -101,12 +161,33 @@ export function stepFleetMovement(params) {
         fleet.t = (Number(fleet.t) || 0) + dp / arcLen;
 
         if (fleet.t >= 1) {
-            var arrivalNode = nodes[fleet.tgtId];
-            if (arrivalNode && arrivalNode.pos) {
+            var spacingT = Math.max(0.0001, getFleetUnitSpacingT(fleet));
+            var fleetCount = Math.max(0, Math.floor(Number(fleet.count) || 0));
+            var arrivedCount = Math.min(fleetCount, 1 + Math.floor(((Number(fleet.t) || 0) - 1 + 0.000001) / spacingT));
+            var previewT = (Number(fleet.t) || 0) - arrivedCount * spacingT;
+            var previewPose = null;
+
+            if (arrivedCount < fleetCount) {
+                previewPose = computeFleetPose({
+                    srcId: fleet.srcId,
+                    tgtId: fleet.tgtId,
+                    cpx: fleet.cpx,
+                    cpy: fleet.cpy,
+                    t: previewT,
+                    launchT: fleet.launchT,
+                    lookAhead: lookAhead,
+                    offsetL: fleet.offsetL,
+                    headingX: fleet.headingX,
+                    headingY: fleet.headingY,
+                }, nodes);
+            }
+
+            if (previewPose) {
                 fleet.trail.push({ x: fleet.x, y: fleet.y });
                 if (fleet.trail.length > fleetTrailLen) fleet.trail.shift();
-                fleet.x = arrivalNode.pos.x;
-                fleet.y = arrivalNode.pos.y;
+                fleet.x = previewPose.x;
+                fleet.y = previewPose.y;
+                updateVisualState(previewPose.dirX, previewPose.dirY, 0.44 * throttleBias, 0.14);
             }
             continue;
         }
@@ -333,6 +414,9 @@ export function resolveFleetArrivals(params) {
             continue;
         }
 
+        var arrivingCount = countArrivedFleetUnits(fleet);
+        if (arrivingCount <= 0) continue;
+
         if (targetNode.owner === fleet.owner) {
             var sourceNode = nodes[fleet.srcId];
             var friendlyArrival = resolveFriendlyArrival({
@@ -340,7 +424,7 @@ export function resolveFleetArrivals(params) {
                 targetMaxUnits: targetNode.maxUnits,
                 sourceUnits: sourceNode && sourceNode.owner === fleet.owner ? sourceNode.units : 0,
                 sourceMaxUnits: sourceNode && sourceNode.owner === fleet.owner ? sourceNode.maxUnits : 0,
-                fleetCount: fleet.count,
+                fleetCount: arrivingCount,
             });
             targetNode.units = friendlyArrival.targetUnits;
             if (sourceNode && sourceNode.owner === fleet.owner) sourceNode.units = friendlyArrival.sourceUnits;
@@ -349,7 +433,16 @@ export function resolveFleetArrivals(params) {
             }
         } else {
             var combatResult = resolveCombatOutcome({
-                fleet: fleet,
+                fleet: {
+                    id: fleet.id,
+                    owner: fleet.owner,
+                    count: arrivingCount,
+                    srcId: fleet.srcId,
+                    tgtId: fleet.tgtId,
+                    t: fleet.t,
+                    headingX: fleet.headingX,
+                    headingY: fleet.headingY,
+                },
                 targetNode: targetNode,
                 players: players,
                 tune: params.tune,
@@ -372,6 +465,21 @@ export function resolveFleetArrivals(params) {
                     return !(flow.tgtId === targetNode.id && flow.owner !== fleet.owner);
                 });
             }
+        }
+
+        var remainingCount = Math.max(0, Math.floor(Number(fleet.count) || 0) - arrivingCount);
+        if (remainingCount > 0) {
+            fleet.count = remainingCount;
+            fleet.t = (Number(fleet.t) || 0) - arrivingCount * Math.max(0.0001, getFleetUnitSpacingT(fleet));
+            fleet.trail = [];
+            var pose = computeFleetPose(fleet, nodes);
+            if (pose) {
+                fleet.x = pose.x;
+                fleet.y = pose.y;
+                fleet.headingX = pose.dirX;
+                fleet.headingY = pose.dirY;
+            }
+            continue;
         }
 
         fleet.active = false;

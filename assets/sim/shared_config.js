@@ -151,6 +151,19 @@ export function buildFleetSpawnProfile(params) {
     };
 }
 
+export function getFleetUnitSpacingT(fleet) {
+    fleet = fleet || {};
+
+    var trailScale = Number(fleet.trailScale);
+    var throttle = Number(fleet.throttle);
+    if (!Number.isFinite(trailScale) || trailScale <= 0) trailScale = 1;
+    if (!Number.isFinite(throttle) || throttle <= 0) throttle = 0.3;
+
+    return 0.011 +
+        Math.max(0, trailScale - 1) * 0.004 +
+        Math.max(0, throttle - 0.8) * 0.002;
+}
+
 export function difficultyConfig(diff) {
     return DIFFICULTY_PRESETS[String(diff || '').toLowerCase()] || DIFFICULTY_PRESETS.normal;
 }

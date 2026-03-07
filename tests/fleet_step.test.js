@@ -219,12 +219,71 @@ test('resolveFleetArrivals handles friendly overflow and clears enemy flows on c
         },
     });
 
-    assert.equal(fleets.length, 0);
+    assert.equal(fleets.length, 1);
+    assert.equal(fleets[0].active, true);
+    assert.equal(fleets[0].count, 20);
+    assert.equal(fleets[0].t < 1, true);
     assert.equal(nodes[1].units, 20);
     assert.equal(nodes[0].units, 40);
     assert.equal(nodes[2].owner, 0);
+    assert.equal(nodes[2].units, 1);
     assert.equal(result.toasts.length, 1);
     assert.equal(result.statsDelta.nodesCaptured, 1);
     assert.equal(result.flows.length, 1);
     assert.equal(result.flows[0].owner, 0);
+});
+
+test('resolveFleetArrivals keeps grouped fleet units in transit until their visual slot reaches the target', function () {
+    var fleets = [
+        {
+            active: true,
+            owner: 0,
+            count: 12,
+            srcId: 0,
+            tgtId: 1,
+            t: 1.024,
+            cpx: 50,
+            cpy: 0,
+            x: 100,
+            y: 0,
+            trail: [],
+            offsetL: 0,
+            trailScale: 1,
+            throttle: 0.3,
+            lookAhead: 0.022,
+            launchT: 0,
+        },
+    ];
+    var nodes = [
+        { id: 0, owner: 0, units: 20, maxUnits: 20, level: 1, pos: { x: 0, y: 0 } },
+        { id: 1, owner: 1, units: 1, maxUnits: 20, level: 1, defense: false, gate: false, kind: 'core', pos: { x: 100, y: 0 } },
+    ];
+
+    var result = resolveFleetArrivals({
+        fleets: fleets,
+        nodes: nodes,
+        flows: [],
+        players: [{ color: '#4a8eff' }, { color: '#e74c3c' }],
+        tune: { def: 1 },
+        humanIndex: 0,
+        callbacks: {
+            nodeTypeOf: function () { return { def: 1 }; },
+            nodeLevelDefMult: function () { return 1; },
+            nodeCapacity: function (node) { return node.maxUnits; },
+        },
+        constants: {
+            turretCaptureResist: 1.35,
+            defenseBonus: 1.25,
+            assimLockTicks: 180,
+        },
+    });
+
+    assert.equal(nodes[1].owner, 0);
+    assert.equal(nodes[1].units, 2);
+    assert.equal(fleets.length, 1);
+    assert.equal(fleets[0].active, true);
+    assert.equal(fleets[0].count, 9);
+    assert.equal(fleets[0].t < 1, true);
+    assert.equal(fleets[0].x < 100, true);
+    assert.equal(result.statsDelta.nodesCaptured, 1);
 });

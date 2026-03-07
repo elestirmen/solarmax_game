@@ -15,7 +15,7 @@ import { computeOwnershipMetrics, computeSupplyConnected as computeSupplyConnect
 import { stepNodeEconomy } from './assets/sim/node_economy.js';
 import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } from './assets/sim/ruleset.js';
 import { computeFriendlyReinforcementRoom } from './assets/sim/reinforcement.js';
-import { buildFleetSpawnProfile, hashMix } from './assets/sim/shared_config.js';
+import { buildFleetSpawnProfile, getFleetUnitSpacingT, hashMix } from './assets/sim/shared_config.js';
 import { getStrategicPulseState, isStrategicPulseActiveForNode } from './assets/sim/strategic_pulse.js';
 import { computeSyncHash } from './assets/sim/state_hash.js';
 import { applyPlayerCommandWithOps } from './assets/sim/command_apply.js';
@@ -41,7 +41,7 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     COLORS_BG = '#080c15', COL_NEUTRAL = '#5a6272', COL_FOG = '#2e3340',
     COL_GRID = 'rgba(255,255,255,0.025)', COL_GLOW = 'rgba(255,255,255,0.35)',
     PLAYER_COLORS = ['#4a8eff', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'],
-    TRAIL_LEN = 12, MAX_ORBIT_SQUADS = 12, MAX_ORBIT_SHIPS_PER_SQUAD = 6, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 14, ORBIT_MAX_RINGS = 3,
+    TRAIL_LEN = 12, MAX_ORBIT_SQUADS = 14, MAX_ORBIT_SHIPS_PER_SQUAD = 6, ORBIT_UNITS_PER_VISIBLE_SHIP = 2, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 14, ORBIT_MAX_RINGS = 4,
     NODE_LEVEL_MAX = 3,
     DDA_MAX_BOOST = 0.2,
     WORMHOLE_SPEED_MULT = 2.0,
@@ -254,9 +254,19 @@ function checkAchievements() {
     } catch (e) {}
 }
 function defaultTune() { return { prod: 1, fspeed: FLEET_SPEED, def: DEF_FACTOR, flowInt: 15, aiAgg: AI_AGG, aiBuf: AI_BUF, aiInt: AI_INTERVAL, fogEnabled: false, aiAssist: true }; }
-var gameToastTimer = 0;
-function showGameToast(message) {
+var gameToastTimer = 0, activeGameToastKind = '';
+function hideGameToast(kind) {
+    var toast = document.getElementById('gameToastMsg');
+    if (!toast) return;
+    if (kind && activeGameToastKind !== kind) return;
+    toast.style.display = 'none';
+    if (gameToastTimer) clearTimeout(gameToastTimer);
+    gameToastTimer = 0;
+    activeGameToastKind = '';
+}
+function showGameToast(message, opts) {
     if (!message) return;
+    opts = opts || {};
     var toast = document.getElementById('gameToastMsg');
     if (!toast) {
         toast = document.createElement('div');
@@ -267,12 +277,22 @@ function showGameToast(message) {
         toast.style.fontSize = '0.86rem';
         document.body.appendChild(toast);
     }
+    activeGameToastKind = opts.kind || 'info';
     toast.textContent = message;
     toast.style.display = 'block';
     if (gameToastTimer) clearTimeout(gameToastTimer);
     gameToastTimer = setTimeout(function () {
         toast.style.display = 'none';
+        activeGameToastKind = '';
+        gameToastTimer = 0;
     }, 1200);
+}
+function hintsEnabled() {
+    return !uiPrefs || uiPrefs.hintsEnabled !== false;
+}
+function showHintToast(message) {
+    if (!hintsEnabled()) return;
+    showGameToast(message, { kind: 'hint' });
 }
 
 var net = {
@@ -444,7 +464,7 @@ function strategicPulseToast() {
     if (G.state !== 'playing' || !G.strategicPulse.active) return;
     if (G.strategicPulse.announcedCycle === G.strategicPulse.cycle) return;
     G.strategicPulse.announcedCycle = G.strategicPulse.cycle;
-    showGameToast('Strategic pulse aktif: PULSE hubi +35% uretim, +18% filo hizi, +30% asimilasyon ve +18 cap verir.');
+    showHintToast('Strategic pulse aktif: PULSE hubi +35% uretim, +18% filo hizi, +30% asimilasyon ve +18 cap verir.');
 }
 function isLinkedWormhole(srcId, tgtId) {
     for (var i = 0; i < G.wormholes.length; i++) {
@@ -738,7 +758,7 @@ function initGame(seedStr, nc, diff, opts) {
     G.state = keepReplay ? 'replay' : 'playing';
     G.campaign.reminderShown = {};
     G.daily.reminderShown = {};
-    if (!keepReplay && G.mapFeature.type === 'barrier') showGameToast(barrierGatePromptText());
+    if (!keepReplay && G.mapFeature.type === 'barrier') showHintToast(barrierGatePromptText());
 }
 function genMap(nc) {
     G.nodes = []; var att = 0, placed = 0, minDist = NODE_MINDIST;
@@ -1961,12 +1981,27 @@ function drawFleetRocket(ctx, f, col, tick) {
 
     var supportCount = Math.max(0, Math.floor(count) - 1);
     if (supportCount > 0 && srcNode && tgtNode) {
-        var spacingT = 0.011 + Math.max(0, trailScale - 1) * 0.004 + Math.max(0, throttle - 0.8) * 0.002;
-        var swarmWidth = Math.min(22, 6 + count * 0.35 + Math.abs(f.offsetL) * 0.12);
-        for (var ui = 1; ui <= supportCount; ui++) {
-            var tUnit = f.t - ui * spacingT;
-            if (tUnit <= 0 || tUnit >= 1) continue;
-            var curveT = launchT + (1 - launchT) * clamp(tUnit, 0, 1);
+        var spacingT = getFleetUnitSpacingT(f);
+        var visibleSupportCount = Math.min(supportCount, Math.max(1, Math.min(24, Math.round(Math.sqrt(count) * 4.2))));
+        var swarmLaneCount = Math.max(2, Math.min(6, Math.round(Math.sqrt(visibleSupportCount * 0.9))));
+        var swarmWingGap = Math.min(16, 5.2 + Math.sqrt(visibleSupportCount) * 1.7 + Math.abs(f.offsetL) * 0.08);
+        var swarmPush = Math.min(7.4, 2.2 + Math.sqrt(count) * 0.42);
+        var swarmFlutter = Math.min(3.8, 1.1 + Math.sqrt(count) * 0.24);
+        var visualStep = supportCount / visibleSupportCount;
+        for (var vi = 0; vi < visibleSupportCount; vi++) {
+            var unitIndex = Math.min(supportCount, Math.round(vi * visualStep) + 1);
+            var row = Math.floor(vi / swarmLaneCount);
+            var rowStart = row * swarmLaneCount;
+            var rowCount = Math.min(swarmLaneCount, visibleSupportCount - rowStart);
+            var lane = vi % swarmLaneCount;
+            var centeredLane = rowCount <= 1 ? 0 : lane - (rowCount - 1) * 0.5;
+            var jitter = hashMix(G.seed, f.id || 0, unitIndex, supportCount);
+            var driftNoise = hashMix(G.seed + 31, f.srcId + unitIndex, f.tgtId, f.id || 0);
+            var driftPhase = phase * 1.85 + unitIndex * 0.63 + driftNoise * Math.PI * 2;
+            var depthT = (row + 1) * spacingT * 0.55 + (driftNoise - 0.5) * spacingT * 0.28;
+            var tUnit = f.t - depthT;
+            if (tUnit <= 0) continue;
+            var curveT = launchT + (1 - launchT) * clamp(tUnit, 0, 0.999);
 
             var pt = bezPt(srcNode.pos, cp, tgtNode.pos, curveT);
             var pt2 = bezPt(srcNode.pos, cp, tgtNode.pos, Math.min(1, curveT + 0.01));
@@ -1975,16 +2010,16 @@ function drawFleetRocket(ctx, f, col, tick) {
             udx /= ulen; udy /= ulen;
             var unx = -udy, uny = udx;
 
-            var centered = count <= 1 ? 0 : ((ui / (count - 1)) * 2 - 1);
-            var jitter = hashMix(G.seed, f.srcId, f.tgtId, ui);
-            var offsetL = centered * swarmWidth + (jitter - 0.5) * 1.6;
+            var offsetL = centeredLane * swarmWingGap + (jitter - 0.5) * swarmWingGap * 0.52 + Math.sin(driftPhase) * swarmFlutter;
+            var pushBack = row * swarmPush + (driftNoise - 0.5) * swarmPush * 0.58 + Math.cos(driftPhase * 0.82) * swarmPush * 0.32;
             var fade = Math.min(1, curveT * 5) * Math.min(1, (1 - curveT) * 5);
-            var sx = pt.x + unx * offsetL * fade;
-            var sy = pt.y + uny * offsetL * fade;
-            var localFlicker = 0.5 + 0.5 * Math.sin(phase + ui * 0.33);
-            var alpha = clamp(0.88 - ui * 0.0025, 0.35, 0.88);
-            var supportBank = leadBank * clamp(1 - ui / Math.max(2, supportCount + 1), 0.3, 0.92);
-            drawRocketShape(ctx, sx, sy, udx, udy, shipCol, localFlicker, alpha, 0.76, supportBank, throttle * 0.94 + hitFlash * 0.12);
+            var sx = pt.x + unx * offsetL * fade - udx * pushBack * fade;
+            var sy = pt.y + uny * offsetL * fade - udy * pushBack * fade;
+            var localFlicker = 0.5 + 0.5 * Math.sin(phase + unitIndex * 0.33);
+            var alpha = clamp(0.9 - row * 0.08 - vi * 0.004, 0.32, 0.9);
+            var supportScale = clamp(0.82 - row * 0.04, 0.62, 0.82);
+            var supportBank = leadBank * clamp(1 - row * 0.12, 0.26, 0.92) + Math.sin(driftPhase) * 0.05;
+            drawRocketShape(ctx, sx, sy, udx, udy, shipCol, localFlicker, alpha, supportScale, supportBank, throttle * 0.94 + hitFlash * 0.12);
         }
     }
 }
@@ -1992,18 +2027,15 @@ function drawFleetRocket(ctx, f, col, tick) {
 function desiredOrbitSquadCount(node) {
     var visibleShips = desiredOrbitVisibleShipCount(node);
     if (visibleShips <= 0) return 0;
-    var preferredShipsPerSquad = Math.max(3, MAX_ORBIT_SHIPS_PER_SQUAD - 2);
+    var preferredShipsPerSquad = 4;
     return Math.min(MAX_ORBIT_SQUADS, Math.max(1, Math.ceil(visibleShips / preferredShipsPerSquad)));
 }
 
 function desiredOrbitVisibleShipCount(node) {
     var uCount = Math.max(0, Math.floor(node.units || 0));
     if (uCount <= 0 || node.owner < 0 || node.kind === 'turret') return 0;
-    var unitPerVisibleShip = Math.max(2.8, ORBIT_UNIT_STEP * 0.2);
-    var scaled = Math.ceil(uCount / unitPerVisibleShip);
-    if (uCount >= 18) scaled += 1;
-    if (uCount >= 45) scaled += 2;
-    if (uCount >= 90) scaled += 2;
+    var scaled = Math.round(uCount / ORBIT_UNITS_PER_VISIBLE_SHIP);
+    if (uCount > 0 && scaled < 1) scaled = 1;
     return clamp(scaled, 1, MAX_ORBIT_SQUADS * MAX_ORBIT_SHIPS_PER_SQUAD);
 }
 
@@ -2877,6 +2909,7 @@ function setHintsEnabled(enabled) {
     uiPrefs.hintsEnabled = !!enabled;
     saveUiPrefs();
     syncHintToggleButton();
+    if (!uiPrefs.hintsEnabled) hideGameToast('hint');
 }
 function openPauseMenu() {
     if (G.state !== 'playing') return;
@@ -3215,7 +3248,7 @@ function maybeShowCampaignObjectiveReminder() {
         if (!row.remindAt || G.tick < row.remindAt) continue;
         if (reminderShown[row.id]) continue;
         reminderShown[row.id] = true;
-        if (row.coach && uiPrefs.hintsEnabled !== false) showGameToast((mode === 'daily' ? 'Challenge' : 'Misyon') + ' ipucu: ' + row.coach);
+        if (row.coach) showHintToast((mode === 'daily' ? 'Challenge' : 'Misyon') + ' ipucu: ' + row.coach);
         break;
     }
 }
@@ -4017,7 +4050,7 @@ function ensureSocket() {
         );
         applyAudioPreference();
         showUI('playing');
-        showGameToast('Ana menu icin sag ustteki CIKIS butonunu kullan.');
+        showHintToast('Ana menu icin sag ustteki CIKIS butonunu kullan.');
     });
 
     net.socket.on('roomCommand', function (cmd) {
@@ -4579,9 +4612,9 @@ function startCampaignLevel(levelIndex) {
     applyAudioPreference();
     closeScenarioMenu();
     showUI('playing');
-    if (lvl.hint && uiPrefs.hintsEnabled !== false) {
+    if (lvl.hint) {
         setTimeout(function () {
-            if (G.campaign.active && G.campaign.levelIndex === idx && G.state === 'playing') showGameToast('Bolum ipucu: ' + lvl.hint);
+            if (G.campaign.active && G.campaign.levelIndex === idx && G.state === 'playing') showHintToast('Bolum ipucu: ' + lvl.hint);
         }, 1200);
     }
     refreshCampaignMissionPanels();
