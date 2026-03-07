@@ -193,7 +193,9 @@ function bezLen(p0, cp, p2) {
 function mkFleet() {
     return {
         id: 0, active: false, owner: -1, count: 0, srcId: -1, tgtId: -1, t: 0, speed: 0, arcLen: 1, cpx: 0, cpy: 0, x: 0, y: 0,
-        trail: [], offsetL: 0, spdVar: 1, routeSpeedMult: 1, trailScale: 1, dmgAcc: 0, launchT: 0
+        trail: [], offsetL: 0, spdVar: 1, routeSpeedMult: 1, trailScale: 1,
+        headingX: 1, headingY: 0, bank: 0, throttle: 0.3, turnRate: 6, throttleBias: 1, lookAhead: 0.022,
+        dmgAcc: 0, launchT: 0
     };
 }  // trail: array of {x,y}, offsetL: perpendicular spread, spdVar: speed variation
 var pool = [];
@@ -894,10 +896,20 @@ function dispatch(owner, srcIds, tgtId, pct) {
         f.offsetL = spawnProfile.offsetL;
         f.spdVar = spawnProfile.spdVar;
         f.trailScale = spawnProfile.trailScale;
+        f.turnRate = spawnProfile.turnRate;
+        f.throttleBias = spawnProfile.throttleBias;
+        f.lookAhead = spawnProfile.lookAhead;
         f.cpx = cp.x; f.cpy = cp.y; f.arcLen = bezLen(src.pos, cp, tgt.pos);
         f.launchT = clamp((src.radius + 2) / Math.max(f.arcLen, 1), 0, 0.12);
         var launchPt = bezPt(src.pos, cp, tgt.pos, f.launchT);
+        var launchDirPt = bezPt(src.pos, cp, tgt.pos, Math.min(1, f.launchT + Math.max(0.012, f.lookAhead)));
+        var launchDx = launchDirPt.x - launchPt.x, launchDy = launchDirPt.y - launchPt.y;
+        var launchLen = Math.sqrt(launchDx * launchDx + launchDy * launchDy) || 1;
         f.x = launchPt.x; f.y = launchPt.y;
+        f.headingX = launchDx / launchLen;
+        f.headingY = launchDy / launchLen;
+        f.bank = 0;
+        f.throttle = 0.34 * f.throttleBias;
         f.trail = [];
         f.dmgAcc = 0;
         G.fleets.push(f);
@@ -1704,37 +1716,44 @@ function drawTurretStation(ctx, n, col, tick) {
     ctx.restore();
 }
 
-function drawRocketShape(ctx, x, y, dirX, dirY, col, flicker, alpha, scale) {
+function drawRocketShape(ctx, x, y, dirX, dirY, col, flicker, alpha, scale, bank, throttle) {
     var nX = -dirY, nY = dirX;
     scale = (scale || 1) * 1.5;
     alpha = alpha === undefined ? 1 : alpha;
+    bank = clamp(Number(bank) || 0, -1, 1);
+    throttle = clamp(Number(throttle) || 1, 0.2, 1.3);
 
-    var flameLen = (3 + flicker * 2) * scale;
-    var flameWidth = (0.9 + flicker * 0.6) * scale;
-    var bx = x - dirX * flameLen, by = y - dirY * flameLen;
+    var flameLen = (2.7 + flicker * 1.8) * scale * (0.72 + throttle * 0.48);
+    var flameWidth = (0.82 + flicker * 0.52) * scale * (0.82 + throttle * 0.22);
+    var bankShift = bank * 0.95 * scale;
+    var bx = x - dirX * flameLen + nX * bankShift * 0.32, by = y - dirY * flameLen + nY * bankShift * 0.32;
 
     ctx.save();
     ctx.globalAlpha = alpha;
 
     ctx.beginPath();
-    ctx.moveTo(x - dirX * 0.4 * scale + nX * flameWidth, y - dirY * 0.4 * scale + nY * flameWidth);
+    ctx.moveTo(x - dirX * 0.4 * scale + nX * (flameWidth + Math.max(0, bank) * 0.38 * scale), y - dirY * 0.4 * scale + nY * (flameWidth + Math.max(0, bank) * 0.38 * scale));
     ctx.lineTo(bx, by);
-    ctx.lineTo(x - dirX * 0.4 * scale - nX * flameWidth, y - dirY * 0.4 * scale - nY * flameWidth);
+    ctx.lineTo(x - dirX * 0.4 * scale - nX * (flameWidth + Math.max(0, -bank) * 0.38 * scale), y - dirY * 0.4 * scale - nY * (flameWidth + Math.max(0, -bank) * 0.38 * scale));
     ctx.closePath();
-    ctx.fillStyle = 'rgba(255,145,70,' + (0.22 + flicker * 0.22) + ')';
+    ctx.fillStyle = 'rgba(255,145,70,' + (0.16 + throttle * 0.1 + flicker * 0.16) + ')';
     ctx.fill();
 
     ctx.beginPath();
     ctx.arc(bx, by, (1.1 + flicker * 0.9) * scale, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,210,130,' + (0.18 + flicker * 0.24) + ')';
+    ctx.fillStyle = 'rgba(255,210,130,' + (0.12 + throttle * 0.12 + flicker * 0.16) + ')';
     ctx.fill();
 
-    var noseX = x + dirX * 1.8 * scale, noseY = y + dirY * 1.8 * scale;
-    var leftX = x - dirX * 1.35 * scale + nX * 1.15 * scale, leftY = y - dirY * 1.35 * scale + nY * 1.15 * scale;
-    var rightX = x - dirX * 1.35 * scale - nX * 1.15 * scale, rightY = y - dirY * 1.35 * scale - nY * 1.15 * scale;
+    var noseX = x + dirX * 1.85 * scale + nX * bankShift * 0.08, noseY = y + dirY * 1.85 * scale + nY * bankShift * 0.08;
+    var leftSpan = (1.08 + Math.max(0, bank) * 0.58) * scale;
+    var rightSpan = (1.08 + Math.max(0, -bank) * 0.58) * scale;
+    var leftBack = (1.34 - Math.max(0, -bank) * 0.22) * scale;
+    var rightBack = (1.34 - Math.max(0, bank) * 0.22) * scale;
+    var leftX = x - dirX * leftBack + nX * leftSpan, leftY = y - dirY * leftBack + nY * leftSpan;
+    var rightX = x - dirX * rightBack - nX * rightSpan, rightY = y - dirY * rightBack - nY * rightSpan;
 
     ctx.beginPath();
-    ctx.arc(x, y, 4.3 * scale, 0, Math.PI * 2);
+    ctx.arc(x + nX * bankShift * 0.16, y + nY * bankShift * 0.16, 4.3 * scale, 0, Math.PI * 2);
     ctx.fillStyle = hexToRgba(col, 0.2);
     ctx.fill();
 
@@ -1745,6 +1764,14 @@ function drawRocketShape(ctx, x, y, dirX, dirY, col, flicker, alpha, scale) {
     ctx.closePath();
     ctx.fillStyle = col;
     ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(x - dirX * 0.15 * scale + nX * (0.2 + bank * 0.26) * scale, y - dirY * 0.15 * scale + nY * (0.2 + bank * 0.26) * scale);
+    ctx.lineTo(noseX - dirX * 0.58 * scale, noseY - dirY * 0.58 * scale);
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.2 + throttle * 0.24) + ')';
+    ctx.lineWidth = 0.95 * scale;
+    ctx.lineCap = 'round';
+    ctx.stroke();
 
     ctx.beginPath();
     ctx.arc(noseX, noseY, 0.7 * scale, 0, Math.PI * 2);
@@ -1762,6 +1789,8 @@ function drawFleetRocket(ctx, f, col, tick) {
     var tl = trail.length;
     var trailScale = clamp(Number(f.trailScale) || 1, 0.85, 1.5);
     var routeVisual = clamp((Number(f.routeSpeedMult) || 1) * (Number(f.spdVar) || 1), 0.85, 2);
+    var throttle = clamp(Number(f.throttle) || (0.74 + Math.max(0, routeVisual - 1) * 0.18), 0.2, 1.28);
+    var leadBank = clamp(Number(f.bank) || 0, -1, 1);
     var trailAlphaBoost = clamp(0.92 + Math.max(0, routeVisual - 1) * 0.65 + (trailScale - 1) * 0.45, 0.85, 1.55);
     var trailWidthBoost = clamp(0.95 + (trailScale - 1) * 0.85, 0.9, 1.5);
     if (tl > 0) {
@@ -1788,7 +1817,10 @@ function drawFleetRocket(ctx, f, col, tick) {
     }
 
     var dirX = 1, dirY = 0;
-    if (tl > 0) {
+    if (Number.isFinite(f.headingX) && Number.isFinite(f.headingY)) {
+        dirX = f.headingX;
+        dirY = f.headingY;
+    } else if (tl > 0) {
         var from = trail[tl - 1];
         dirX = f.x - from.x;
         dirY = f.y - from.y;
@@ -1802,11 +1834,11 @@ function drawFleetRocket(ctx, f, col, tick) {
 
     var phase = tick * 0.28 + f.srcId * 0.9 + f.tgtId * 0.6 + (f.id || 0) * 0.17 + f.offsetL * 0.08;
     var flicker = 0.5 + 0.5 * Math.sin(phase);
-    drawRocketShape(ctx, f.x, f.y, dirX, dirY, col, flicker, 1, 1);
+    drawRocketShape(ctx, f.x, f.y, dirX, dirY, col, flicker, 1, 1, leadBank, throttle);
 
     var supportCount = Math.max(0, Math.floor(count) - 1);
     if (supportCount > 0 && srcNode && tgtNode) {
-        var spacingT = 0.012 + Math.max(0, trailScale - 1) * 0.004;
+        var spacingT = 0.011 + Math.max(0, trailScale - 1) * 0.004 + Math.max(0, throttle - 0.8) * 0.002;
         var swarmWidth = Math.min(22, 6 + count * 0.35 + Math.abs(f.offsetL) * 0.12);
         for (var ui = 1; ui <= supportCount; ui++) {
             var tUnit = f.t - ui * spacingT;
@@ -1828,7 +1860,8 @@ function drawFleetRocket(ctx, f, col, tick) {
             var sy = pt.y + uny * offsetL * fade;
             var localFlicker = 0.5 + 0.5 * Math.sin(phase + ui * 0.33);
             var alpha = clamp(0.88 - ui * 0.0025, 0.35, 0.88);
-            drawRocketShape(ctx, sx, sy, udx, udy, col, localFlicker, alpha, 0.76);
+            var supportBank = leadBank * clamp(1 - ui / Math.max(2, supportCount + 1), 0.3, 0.92);
+            drawRocketShape(ctx, sx, sy, udx, udy, col, localFlicker, alpha, 0.76, supportBank, throttle * 0.94);
         }
     }
 }
@@ -2992,6 +3025,13 @@ function captureSyncSnapshot() {
                 spdVar: fleet.spdVar || 1,
                 routeSpeedMult: fleet.routeSpeedMult || 1,
                 trailScale: fleet.trailScale || 1,
+                headingX: Number.isFinite(fleet.headingX) ? fleet.headingX : 1,
+                headingY: Number.isFinite(fleet.headingY) ? fleet.headingY : 0,
+                bank: fleet.bank || 0,
+                throttle: fleet.throttle || 0.3,
+                turnRate: fleet.turnRate || 6,
+                throttleBias: fleet.throttleBias || 1,
+                lookAhead: fleet.lookAhead || 0.022,
                 dmgAcc: fleet.dmgAcc || 0,
                 launchT: fleet.launchT || 0,
             };

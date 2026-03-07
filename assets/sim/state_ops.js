@@ -48,6 +48,15 @@ function bezLen(p0, cp, p2) {
     return length || 1;
 }
 
+function tangentDir(p0, cp, p2, t, step) {
+    var pt = bezPt(p0, cp, p2, t);
+    var pt2 = bezPt(p0, cp, p2, Math.min(1, t + Math.max(0.01, Number(step) || 0.02)));
+    var dx = pt2.x - pt.x;
+    var dy = pt2.y - pt.y;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    return { x: dx / len, y: dy / len };
+}
+
 export function isLinkedWormhole(wormholes, srcId, tgtId) {
     var links = Array.isArray(wormholes) ? wormholes : [];
     for (var i = 0; i < links.length; i++) {
@@ -130,6 +139,7 @@ export function dispatchUnits(state, owner, srcIds, tgtId, pct) {
             count: count,
             routeSpeedMult: routeSpeedMult,
         });
+        var launchDir = tangentDir(sourceNode.pos, cp, targetNode.pos, launchT, Math.max(0.012, spawnProfile.lookAhead));
         state.fleets.push({
             id: state.fleetSerial,
             active: true,
@@ -149,6 +159,13 @@ export function dispatchUnits(state, owner, srcIds, tgtId, pct) {
             spdVar: spawnProfile.spdVar,
             routeSpeedMult: routeSpeedMult,
             trailScale: spawnProfile.trailScale,
+            headingX: launchDir.x,
+            headingY: launchDir.y,
+            bank: 0,
+            throttle: 0.34 * spawnProfile.throttleBias,
+            turnRate: spawnProfile.turnRate,
+            throttleBias: spawnProfile.throttleBias,
+            lookAhead: spawnProfile.lookAhead,
             dmgAcc: 0,
             launchT: launchT,
         });

@@ -87,6 +87,10 @@ test('applyCommandToAuthoritativeState adds deterministic launch variance for re
     assert.equal(state.fleets[1].spdVar >= 0.97 && state.fleets[1].spdVar <= 1.03, true);
     assert.equal(state.fleets[0].trailScale >= 0.9, true);
     assert.equal(state.fleets[1].trailScale >= 0.9, true);
+    assert.equal(state.fleets[0].turnRate > 4.8, true);
+    assert.equal(state.fleets[0].throttleBias >= 0.94, true);
+    assert.equal(state.fleets[0].lookAhead >= 0.016, true);
+    assert.equal(Math.abs(Math.sqrt(state.fleets[0].headingX * state.fleets[0].headingX + state.fleets[0].headingY * state.fleets[0].headingY) - 1) < 0.0001, true);
     assert.equal(state.fleets[1].t < state.fleets[0].t, true);
     assert.notEqual(state.fleets[0].offsetL, state.fleets[1].offsetL);
 });

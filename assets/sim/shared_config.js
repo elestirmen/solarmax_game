@@ -124,6 +124,8 @@ export function buildFleetSpawnProfile(params) {
     var laneWidth = Math.min(15, 2.8 + Math.sqrt(count) * 0.85);
     var offsetNoise = hashMix(seed, srcId, tgtId, serial);
     var speedNoise = hashMix(seed + 17, tgtId, serial, routeQueue + 1);
+    var turnNoise = hashMix(seed + 31, srcId + serial, tgtId + routeQueue, count);
+    var throttleNoise = hashMix(seed + 53, tgtId, count, serial);
     var offsetSpread = routeQueue > 0 ? 2.4 : 3.1;
     var offsetL = laneIndex * laneWidth + (offsetNoise - 0.5) * offsetSpread;
     var spdVar = clamp(1 + (speedNoise - 0.5) * 0.06, 0.97, 1.03);
@@ -135,11 +137,17 @@ export function buildFleetSpawnProfile(params) {
         0.9,
         1.42
     );
+    var turnRate = clamp(5.2 + turnNoise * 2.4 + Math.max(0, routeSpeedMult - 1) * 0.6, 4.8, 8.4);
+    var throttleBias = clamp(0.94 + throttleNoise * 0.14 + Math.max(0, routeSpeedMult - 1) * 0.04, 0.94, 1.12);
+    var lookAhead = clamp(0.016 + turnNoise * 0.016 + Math.min(0.006, Math.abs(offsetL) * 0.00035), 0.016, 0.034);
 
     return {
         offsetL: offsetL,
         spdVar: spdVar,
         trailScale: trailScale,
+        turnRate: turnRate,
+        throttleBias: throttleBias,
+        lookAhead: lookAhead,
     };
 }
 

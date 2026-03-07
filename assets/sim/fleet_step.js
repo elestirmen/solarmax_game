@@ -1,5 +1,18 @@
 import { resolveFriendlyArrival } from './reinforcement.js';
 
+function normalizeDirection(dx, dy, fallbackX, fallbackY) {
+    var x = Number(dx);
+    var y = Number(dy);
+    var len = Math.sqrt(x * x + y * y);
+    if (!Number.isFinite(len) || len < 0.0001) {
+        x = Number(fallbackX);
+        y = Number(fallbackY);
+        len = Math.sqrt(x * x + y * y);
+    }
+    if (!Number.isFinite(len) || len < 0.0001) return { x: 1, y: 0 };
+    return { x: x / len, y: y / len };
+}
+
 export function stepFleetMovement(params) {
     params = params || {};
 
@@ -40,6 +53,34 @@ export function stepFleetMovement(params) {
         var fleetTrailScale = Number(fleet.trailScale);
         if (!Number.isFinite(fleetTrailScale) || fleetTrailScale <= 0) fleetTrailScale = 1;
         var fleetTrailLen = Math.max(4, Math.round(trailLen * fleetTrailScale));
+        var turnRate = Number(fleet.turnRate);
+        if (!Number.isFinite(turnRate) || turnRate <= 0) turnRate = 6;
+        var throttleBias = Number(fleet.throttleBias);
+        if (!Number.isFinite(throttleBias) || throttleBias <= 0) throttleBias = 1;
+        var lookAhead = Number(fleet.lookAhead);
+        if (!Number.isFinite(lookAhead) || lookAhead <= 0) lookAhead = 0.022;
+
+        function updateVisualState(dirX, dirY, throttleTarget, bankWeight) {
+            var desired = normalizeDirection(dirX, dirY, fleet.headingX, fleet.headingY);
+            var current = normalizeDirection(fleet.headingX, fleet.headingY, desired.x, desired.y);
+            var blend = clamp(dt * turnRate * (0.88 + speedMult * 0.14), 0.08, 1);
+            var next = normalizeDirection(
+                current.x + (desired.x - current.x) * blend,
+                current.y + (desired.y - current.y) * blend,
+                desired.x,
+                desired.y
+            );
+            var turnCross = current.x * desired.y - current.y * desired.x;
+            var bankTarget = clamp(-turnCross * (1.45 + turnRate * 0.05) * bankWeight, -0.95, 0.95);
+            var bankBlend = clamp(dt * 8.5, 0.08, 1);
+            var throttleBlend = clamp(dt * 5.5, 0.08, 1);
+
+            fleet.headingX = next.x;
+            fleet.headingY = next.y;
+            fleet.bank = (Number(fleet.bank) || 0) + (bankTarget - (Number(fleet.bank) || 0)) * bankBlend;
+            if (!Number.isFinite(fleet.throttle)) fleet.throttle = throttleTarget;
+            fleet.throttle = (Number(fleet.throttle) || 0) + (throttleTarget - (Number(fleet.throttle) || 0)) * throttleBlend;
+        }
 
         var dp = ((Number(fleet.speed) || 0) * (Number(fleet.spdVar) || 1) * (Number(tune.fspeed) || baseFleetSpeed) / baseFleetSpeed) * speedMult * dt;
         var arcLen = Math.max(1, Number(fleet.arcLen) || 1);
@@ -65,7 +106,7 @@ export function stepFleetMovement(params) {
             var launchT = clamp(typeof fleet.launchT === 'number' ? fleet.launchT : 0, 0, 0.2);
             var curveT = launchT + (1 - launchT) * clamp(fleet.t, 0, 1);
             var pt = bezPt(src.pos, cp, tgt.pos, curveT);
-            var pt2 = bezPt(src.pos, cp, tgt.pos, Math.min(1, curveT + 0.01));
+            var pt2 = bezPt(src.pos, cp, tgt.pos, Math.min(1, curveT + Math.max(0.01, lookAhead)));
             var tdx = pt2.x - pt.x;
             var tdy = pt2.y - pt.y;
             var tlen = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
@@ -74,6 +115,18 @@ export function stepFleetMovement(params) {
             var fade = Math.min(1, curveT * 5) * Math.min(1, (1 - curveT) * 5);
             var ox = pt.x + nx * (Number(fleet.offsetL) || 0) * fade;
             var oy = pt.y + ny * (Number(fleet.offsetL) || 0) * fade;
+            var departEase = clamp((curveT - launchT) / 0.16, 0, 1);
+            var arriveEase = clamp((1 - curveT) / 0.24, 0, 1);
+            var throttleTarget = clamp(
+                (0.56 + departEase * 0.48) *
+                (0.74 + arriveEase * 0.26) *
+                throttleBias *
+                (0.98 + Math.max(0, speedMult - 1) * 0.08),
+                0.4,
+                1.24
+            );
+            var bankWeight = Math.min(1, curveT * 4.5) * (0.35 + Math.min(1, (1 - curveT) * 3.2));
+            updateVisualState(tdx, tdy, throttleTarget, bankWeight);
 
             fleet.trail.push({ x: fleet.x, y: fleet.y });
             if (fleet.trail.length > fleetTrailLen) fleet.trail.shift();
@@ -88,11 +141,14 @@ export function stepFleetMovement(params) {
             var waitCp = { x: fleet.cpx, y: fleet.cpy };
             var waitLaunchT = clamp(typeof fleet.launchT === 'number' ? fleet.launchT : 0, 0, 0.2);
             var waitPt = bezPt(waitSrc.pos, waitCp, waitTgt.pos, waitLaunchT);
+            var waitPt2 = bezPt(waitSrc.pos, waitCp, waitTgt.pos, Math.min(1, waitLaunchT + Math.max(0.01, lookAhead)));
             fleet.x = waitPt.x;
             fleet.y = waitPt.y;
+            updateVisualState(waitPt2.x - waitPt.x, waitPt2.y - waitPt.y, 0.3 * throttleBias, 0.18);
         } else if (waitSrc && waitSrc.pos) {
             fleet.x = waitSrc.pos.x;
             fleet.y = waitSrc.pos.y;
+            updateVisualState(1, 0, 0.28 * throttleBias, 0.1);
         }
     }
 

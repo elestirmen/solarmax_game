@@ -94,6 +94,54 @@ test('stepFleetMovement respects fleet trail scale when trimming trail history',
     assert.equal(fleets[0].trail.length <= 9, true);
 });
 
+test('stepFleetMovement updates heading, bank, and throttle toward the route tangent', function () {
+    var fleets = [{
+        active: true,
+        srcId: 0,
+        tgtId: 1,
+        t: 0.34,
+        speed: 80,
+        spdVar: 1,
+        arcLen: 120,
+        routeSpeedMult: 1,
+        cpx: 50,
+        cpy: 55,
+        x: 20,
+        y: 12,
+        trail: [],
+        offsetL: 2,
+        launchT: 0.04,
+        trailScale: 1,
+        headingX: 1,
+        headingY: 0,
+        bank: 0,
+        throttle: 0.3,
+        turnRate: 7.4,
+        throttleBias: 1.04,
+        lookAhead: 0.03,
+    }];
+    var nodes = [
+        { pos: { x: 0, y: 0 } },
+        { pos: { x: 100, y: 0 } },
+    ];
+
+    stepFleetMovement({
+        fleets: fleets,
+        nodes: nodes,
+        dt: 1 / 30,
+        tune: { fspeed: 80 },
+        mapFeature: { type: 'none' },
+        callbacks: { clamp: clamp, bezPt: bezPt },
+        constants: { baseFleetSpeed: 80, gravitySpeedMult: 0.75, trailLen: 12 },
+    });
+
+    var headingLen = Math.sqrt(fleets[0].headingX * fleets[0].headingX + fleets[0].headingY * fleets[0].headingY);
+    assert.equal(Math.abs(headingLen - 1) < 0.0001, true);
+    assert.equal(fleets[0].headingY !== 0, true);
+    assert.equal(Math.abs(fleets[0].bank) > 0.001, true);
+    assert.equal(fleets[0].throttle > 0.3, true);
+});
+
 test('resolveCombatOutcome captures node, resets assimilation, and reports effects', function () {
     var targetNode = {
         id: 4,
