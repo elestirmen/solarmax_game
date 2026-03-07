@@ -92,6 +92,10 @@ function sanitizeTuneOverrides(rawTune) {
     return Object.keys(tune).length ? tune : null;
 }
 
+function cloneValue(value) {
+    return JSON.parse(JSON.stringify(value));
+}
+
 export function normalizeCustomMapConfig(rawMap) {
     rawMap = rawMap && typeof rawMap === 'object' ? rawMap : {};
     var rawNodes = Array.isArray(rawMap.nodes) ? rawMap.nodes : [];
@@ -195,6 +199,55 @@ export function normalizeCustomMapConfig(rawMap) {
         strategicNodes: strategicNodes,
         playerCapital: playerCapital,
         tuneOverrides: sanitizeTuneOverrides(rawMap.tuneOverrides || rawMap.tune),
+    };
+}
+
+export function buildCustomMapSnapshot(rawMap, players) {
+    var customMap = normalizeCustomMapConfig(rawMap);
+    players = Array.isArray(players) ? players : [];
+    var totalPlayers = Math.max(customMap.playerCount, players.length || 0);
+    var nodes = cloneValue(customMap.nodes);
+    var mapFeature = cloneValue(customMap.mapFeature || { type: 'none' });
+    var wormholes = cloneValue(customMap.wormholes || []);
+    var playerCapital = cloneValue(customMap.playerCapital || {});
+
+    if (mapFeature.type === 'barrier') {
+        var gateIds = Array.isArray(mapFeature.gateIds) ? mapFeature.gateIds : [];
+        for (var gi = 0; gi < gateIds.length; gi++) {
+            if (nodes[gateIds[gi]]) nodes[gateIds[gi]].gate = true;
+        }
+    } else if (mapFeature.type === 'gravity' && mapFeature.nodeId >= 0 && nodes[mapFeature.nodeId]) {
+        mapFeature.x = nodes[mapFeature.nodeId].pos.x;
+        mapFeature.y = nodes[mapFeature.nodeId].pos.y;
+    }
+
+    var snapshotPlayers = [];
+    for (var pi = 0; pi < totalPlayers; pi++) {
+        var player = players[pi] || {};
+        snapshotPlayers.push({
+            idx: pi,
+            alive: true,
+            isAI: !!player.botControlled,
+            color: player.color,
+        });
+    }
+
+    return {
+        tick: 0,
+        winner: -1,
+        state: 'playing',
+        nodes: nodes,
+        fleets: [],
+        flows: [],
+        wormholes: wormholes,
+        mapFeature: mapFeature,
+        playerCapital: playerCapital,
+        strategicNodes: cloneValue(customMap.strategicNodes || []),
+        players: snapshotPlayers,
+        aiTicks: snapshotPlayers.map(function () { return 0; }),
+        aiProfiles: [],
+        flowId: 0,
+        fleetSerial: 0,
     };
 }
 

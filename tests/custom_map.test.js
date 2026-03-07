@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildCustomMapExport, normalizeCustomMapConfig } from '../assets/sim/custom_map.js';
+import { buildCustomMapExport, buildCustomMapSnapshot, normalizeCustomMapConfig } from '../assets/sim/custom_map.js';
 
 test('normalizeCustomMapConfig sanitizes owners, gates, and feature data', function () {
     var normalized = normalizeCustomMapConfig({
@@ -55,4 +55,27 @@ test('buildCustomMapExport round-trips map structure into normalized JSON', func
     assert.equal(exported.mapFeature.type, 'wormhole');
     assert.deepEqual(exported.wormholes, [{ a: 0, b: 1 }]);
     assert.deepEqual(exported.playerCapital, { 0: 0, 1: 1 });
+});
+
+test('buildCustomMapSnapshot keeps player slots and feature-normalized coordinates', function () {
+    var snapshot = buildCustomMapSnapshot({
+        name: 'Gravity Wells',
+        playerCount: 3,
+        nodes: [
+            { x: 100, y: 120, owner: 0, units: 22 },
+            { x: 320, y: 240, owner: 1, units: 18 },
+            { x: 540, y: 360, owner: 2, units: 18 },
+        ],
+        mapFeature: { type: 'gravity', nodeId: 1, x: 1, y: 1, r: 180 },
+    }, [
+        { index: 0, botControlled: false },
+        { index: 1, botControlled: false },
+        { index: 2, botControlled: true },
+    ]);
+
+    assert.equal(snapshot.players.length, 3);
+    assert.deepEqual(snapshot.players.map(function (player) { return player.isAI; }), [false, false, true]);
+    assert.equal(snapshot.mapFeature.type, 'gravity');
+    assert.equal(snapshot.mapFeature.x, snapshot.nodes[1].pos.x);
+    assert.equal(snapshot.mapFeature.y, snapshot.nodes[1].pos.y);
 });

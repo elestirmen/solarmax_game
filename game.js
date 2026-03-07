@@ -11,14 +11,21 @@ import { isDispatchAllowed } from './assets/sim/barrier.js';
 import { selectBarrierGateIds } from './assets/sim/barrier_layout.js';
 import { applyDefenseFieldDamage, getDefenseFieldStats } from './assets/sim/defense_field.js';
 import { computePlayerUnitCount, computeGlobalCap } from './assets/sim/cap.js';
+import { computeOwnershipMetrics, computeSupplyConnected as computeSupplyConnectedState, computePowerByPlayer as computePowerByPlayerState, getPlayerCapitalId } from './assets/sim/state_metrics.js';
+import { stepNodeEconomy } from './assets/sim/node_economy.js';
 import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } from './assets/sim/ruleset.js';
-import { computeFriendlyReinforcementRoom, resolveFriendlyArrival } from './assets/sim/reinforcement.js';
+import { computeFriendlyReinforcementRoom } from './assets/sim/reinforcement.js';
 import { getStrategicPulseState, isStrategicPulseActiveForNode } from './assets/sim/strategic_pulse.js';
 import { computeSyncHash } from './assets/sim/state_hash.js';
+import { applyPlayerCommandWithOps } from './assets/sim/command_apply.js';
+import { sanitizeCommandData } from './assets/sim/command_schema.js';
+import { resolveFleetArrivals, stepFleetMovement } from './assets/sim/fleet_step.js';
+import { stepFlowLinks } from './assets/sim/flow_step.js';
 import { CAMPAIGN_LEVELS } from './assets/campaign/levels.js';
 import { buildDailyChallenge, dailyChallengeKey } from './assets/campaign/daily_challenge.js';
 import { describeCampaignObjectives, evaluateCampaignObjectives } from './assets/campaign/objectives.js';
 import { buildCustomMapExport, normalizeCustomMapConfig } from './assets/sim/custom_map.js';
+import { resolveMatchEndState } from './assets/sim/end_state.js';
 import { renderLeaderboardUI, renderMissionPanel, renderRoomListUI, renderStatRows } from './assets/ui/renderers.js';
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ CONSTANTS Ã¢â€â‚¬Ã¢â€â‚¬
@@ -267,6 +274,8 @@ var net = {
     socket: null,
     connected: false,
     online: false,
+    authoritativeEnabled: false,
+    authoritativeReady: false,
     roomCode: '',
     players: [],
     isHost: false,
@@ -283,6 +292,9 @@ var net = {
     commandHistory: [],
     resyncRequestId: '',
     lastSummaryTick: -1,
+    lastPingWallMs: 0,
+    reconnectToken: '',
+    resumePending: false,
 };
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ FOG Ã¢â€â‚¬Ã¢â€â‚¬
@@ -367,50 +379,33 @@ function spawnAnchors(playerCount) {
     return anchors;
 }
 function getPlayerCapital(pi) {
-    var cap = G.playerCapital[pi];
-    if (cap !== undefined && G.nodes[cap] && G.nodes[cap].owner === pi && isNodeAssimilated(G.nodes[cap])) return cap;
-    var corners = spawnAnchors(G.players.length);
-    var c = corners[pi % corners.length], best = null, bd = Infinity;
-    for (var i = 0; i < G.nodes.length; i++) {
-        var n = G.nodes[i];
-        if (n.owner !== pi || !isNodeAssimilated(n)) continue;
-        var d = dist(n.pos, c);
-        if (d < bd) { bd = d; best = n.id; }
-    }
-    G.playerCapital[pi] = best;
-    return best;
+    return getPlayerCapitalId({
+        playerIndex: pi,
+        playerCapital: G.playerCapital,
+        nodes: G.nodes,
+        anchorPositions: spawnAnchors(G.players.length),
+        isNodeAssimilated: isNodeAssimilated,
+        distanceFn: dist,
+    });
 }
 function computeSupplyConnected(pi) {
-    var cap = getPlayerCapital(pi);
-    if (cap === null || cap === undefined) return new Set();
-    var connected = new Set([cap]);
-    var changed = true;
-    while (changed) {
-        changed = false;
-        for (var i = 0; i < G.nodes.length; i++) {
-            var n = G.nodes[i];
-            if (n.owner !== pi || connected.has(n.id) || !isNodeAssimilated(n)) continue;
-            for (var j = 0; j < G.nodes.length; j++) {
-                var o = G.nodes[j];
-                if (o.owner !== pi || !connected.has(o.id) || !isNodeAssimilated(o)) continue;
-                if (dist(n.pos, o.pos) <= SUPPLY_DIST) { connected.add(n.id); changed = true; break; }
-            }
-        }
-    }
-    return connected;
+    return computeSupplyConnectedState({
+        playerIndex: pi,
+        playerCapital: G.playerCapital,
+        nodes: G.nodes,
+        anchorPositions: spawnAnchors(G.players.length),
+        isNodeAssimilated: isNodeAssimilated,
+        distanceFn: dist,
+        maxLinkDist: SUPPLY_DIST,
+    });
 }
 function computePowerByPlayer() {
-    var power = {};
-    for (var i = 0; i < G.players.length; i++) power[i] = 0;
-    for (var n = 0; n < G.nodes.length; n++) {
-        var node = G.nodes[n];
-        if (node.owner >= 0) power[node.owner] += nodePowerValue(node);
-    }
-    for (var f = 0; f < G.fleets.length; f++) {
-        var fleet = G.fleets[f];
-        if (fleet.active) power[fleet.owner] += fleet.count;
-    }
-    return power;
+    return computePowerByPlayerState({
+        players: G.players,
+        nodes: G.nodes,
+        fleets: G.fleets,
+        nodePowerValue: nodePowerValue,
+    });
 }
 function pickAIProfile(aiIndex) {
     return AI_ARCHETYPES[(aiIndex - 1) % AI_ARCHETYPES.length];
@@ -910,36 +905,6 @@ function spawnParticles(x, y, count, color, isCapture) {
     }
     if (G.particles.length > 120) G.particles = G.particles.slice(-100);
 }
-function combat(fleet, tgt) {
-    if (tgt.owner === fleet.owner) { tgt.units += fleet.count; return; }
-    var targetOwnerBefore = tgt.owner;
-    var humanInvolved = (fleet.owner === G.human) || (targetOwnerBefore === G.human);
-    var defMult = (targetOwnerBefore >= 0 ? G.tune.def : 1) * nodeTypeOf(tgt).def * nodeLevelDefMult(tgt);
-    if (tgt.kind === 'turret') defMult *= TURRET_CAPTURE_RESIST;
-    if (tgt.defense) defMult *= DEFENSE_BONUS;
-    var atk = fleet.count, def = tgt.units * defMult;
-    var col = G.players[fleet.owner] ? G.players[fleet.owner].color : '#fff';
-    spawnParticles(tgt.pos.x, tgt.pos.y, 8 + Math.min(fleet.count, 12), col, false);
-    if (atk > def) {
-        tgt.owner = fleet.owner;
-        tgt.units = Math.max(1, Math.floor(atk - def));
-        tgt.defense = false;
-        tgt.assimilationProgress = 0;
-        tgt.assimilationLock = ASSIM_LOCK_TICKS;
-        G.flows = G.flows.filter(function (fl) { return !(fl.tgtId === tgt.id && fl.owner !== fleet.owner); });
-        spawnParticles(tgt.pos.x, tgt.pos.y, 12, col, true);
-        if (G.human === fleet.owner) {
-            G.stats.nodesCaptured++;
-            if (tgt.gate) G.stats.gateCaptures++;
-            if (typeof AudioFX !== 'undefined') AudioFX.capture();
-        }
-        else if (humanInvolved && typeof AudioFX !== 'undefined') AudioFX.combat();
-    } else {
-        tgt.units = Math.max(0, (def - atk) / defMult);
-        if (humanInvolved && typeof AudioFX !== 'undefined') AudioFX.combat();
-    }
-    tgt.maxUnits = nodeCapacity(tgt);
-}
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ FLOW LINKS Ã¢â€â‚¬Ã¢â€â‚¬
 function addFlow(owner, srcId, tgtId) {
@@ -1141,26 +1106,13 @@ function aiDecide(pi) {
 // Ã¢â€â‚¬Ã¢â€â‚¬ REPLAY Ã¢â€â‚¬Ã¢â€â‚¬
 function recEvt(type, data) { if (net.online) return; G.rec.events.push({ tick: G.tick, type: type, data: data || {} }); }
 function applyPlayerCommand(playerIndex, type, data) {
-    data = data || {};
-    if (type === 'send') {
-        dispatch(playerIndex, data.sources || [], data.tgtId !== undefined ? data.tgtId : data.targetId, data.pct !== undefined ? data.pct : data.percent);
-    } else if (type === 'flow') {
-        addFlow(playerIndex, data.srcId !== undefined ? data.srcId : data.sourceId, data.tgtId !== undefined ? data.tgtId : data.targetId);
-    } else if (type === 'rmFlow') {
-        rmFlow(playerIndex, data.srcId !== undefined ? data.srcId : data.sourceId, data.tgtId !== undefined ? data.tgtId : data.targetId);
-    } else if (type === 'upgrade') {
-        if (Array.isArray(data.nodeIds)) {
-            for (var i = 0; i < data.nodeIds.length; i++) upgradeNode(playerIndex, data.nodeIds[i]);
-        } else {
-            upgradeNode(playerIndex, data.nodeId);
-        }
-    } else if (type === 'toggleDefense') {
-        if (Array.isArray(data.nodeIds)) {
-            for (var i = 0; i < data.nodeIds.length; i++) toggleDefense(playerIndex, data.nodeIds[i]);
-        } else {
-            toggleDefense(playerIndex, data.nodeId);
-        }
-    }
+    return applyPlayerCommandWithOps(playerIndex, type, data, {
+        send: dispatch,
+        flow: addFlow,
+        rmFlow: rmFlow,
+        upgrade: upgradeNode,
+        toggleDefense: toggleDefense,
+    });
 }
 function applyRep(evt) {
     var d = evt.data || {};
@@ -1254,27 +1206,27 @@ function gameTick(runtimeOpts) {
         while (G.rep.idx < G.rep.events.length && G.rep.events[G.rep.idx].tick === G.tick) { applyRep(G.rep.events[G.rep.idx]); G.rep.idx++; }
         if (G.rep.idx >= G.rep.events.length && G.tick > ((G.rep.events.length ? G.rep.events[G.rep.events.length - 1].tick : 0) + 90)) { G.state = 'gameOver'; return; }
     }
-    var power = computePowerByPlayer();
-    G.powerByPlayer = power;
     G.strategicPulse = currentStrategicPulse(G.tick);
     strategicPulseToast();
-    var supplyByPlayer = {};
-    for (var sp = 0; sp < G.players.length; sp++) supplyByPlayer[sp] = computeSupplyConnected(sp);
-    var ownerUnits = {};
-    var ownerCaps = {};
-    for (var op = 0; op < G.players.length; op++) {
-        ownerUnits[op] = computePlayerUnitCount({ nodes: G.nodes, fleets: G.fleets, owner: op });
-        ownerCaps[op] = computeGlobalCap({
-            nodes: G.nodes,
-            owner: op,
-            baseCap: G.rules ? G.rules.baseCap : 180,
-            capPerNodeFactor: G.rules ? G.rules.capPerNodeFactor : 42,
-        });
-        var pulseNode = G.nodes[G.strategicPulse.nodeId];
-        if (G.strategicPulse.active && pulseNode && pulseNode.owner === op && isNodeAssimilated(pulseNode)) {
-            ownerCaps[op] += STRATEGIC_PULSE_CAP;
-        }
-    }
+    var ownershipMetrics = computeOwnershipMetrics({
+        players: G.players,
+        nodes: G.nodes,
+        fleets: G.fleets,
+        strategicPulse: G.strategicPulse,
+        rules: G.rules,
+        strategicPulseCapBonus: STRATEGIC_PULSE_CAP,
+        playerCapital: G.playerCapital,
+        anchorPositions: spawnAnchors(G.players.length),
+        isNodeAssimilated: isNodeAssimilated,
+        distanceFn: dist,
+        maxLinkDist: SUPPLY_DIST,
+        nodePowerValue: nodePowerValue,
+    });
+    var power = ownershipMetrics.powerByPlayer;
+    var supplyByPlayer = ownershipMetrics.supplyByPlayer;
+    var ownerUnits = ownershipMetrics.unitByPlayer;
+    var ownerCaps = ownershipMetrics.capByPlayer;
+    G.powerByPlayer = power;
     G.unitByPlayer = ownerUnits;
     G.capByPlayer = ownerCaps;
     if (ownerCaps[G.human] > 0) {
@@ -1286,62 +1238,42 @@ function gameTick(runtimeOpts) {
     if (G.strategicPulse.active && livePulseNode && livePulseNode.owner === G.human && isNodeAssimilated(livePulseNode)) {
         G.stats.pulseControlTicks++;
     }
-    for (var i = 0; i < G.nodes.length; i++) {
-        var n = G.nodes[i]; if (n.owner < 0) continue;
-        var td = nodeTypeOf(n);
-        n.maxUnits = nodeCapacity(n);
-        if (n.units > n.maxUnits) n.units = n.maxUnits;
-        if ((n.assimilationLock || 0) > 0) n.assimilationLock = Math.max(0, n.assimilationLock - 1);
-        if (n.assimilationProgress !== undefined && n.assimilationProgress < 1) {
-            if ((n.assimilationLock || 0) <= 0) {
-                var garrisonRatio = clamp(n.units / Math.max(1, n.maxUnits), 0, 1);
-                var garrisonFactor = ASSIM_GARRISON_FLOOR + (1 - ASSIM_GARRISON_FLOOR) * garrisonRatio;
-                var levelResist = 1 + Math.max(0, n.level - 1) * ASSIM_LEVEL_RESIST;
-                var typeResist = 0.85 + td.def * 0.4;
-                var assimRate = (ASSIM_BASE_RATE + Math.floor(n.units) * ASSIM_UNIT_BONUS) * garrisonFactor / (levelResist * typeResist);
-                if (n.defense) assimRate *= DEFENSE_ASSIM_BONUS;
-                if (strategicPulseAppliesToNode(n.id)) assimRate *= STRATEGIC_PULSE_ASSIM;
-                n.assimilationProgress = Math.min(1, (n.assimilationProgress || 0) + assimRate);
-            }
-        }
-        var assimilated = isNodeAssimilated(n);
-        if (!assimilated) { n.supplied = false; continue; }
-        var ownerAssist = 0;
-        if (n.owner !== G.human && G.tune.aiAssist) {
-            var delta = (power[G.human] || 0) - (power[n.owner] || 0);
-            ownerAssist = clamp(delta / 950, 0, DDA_MAX_BOOST);
-        }
-        var diffMult = n.owner === G.human ? G.diffCfg.humanProdMult : G.diffCfg.aiProdMult;
-        var supplyMult = supplyByPlayer[n.owner] && supplyByPlayer[n.owner].has(n.id) ? 1 : ISOLATED_PROD_PENALTY;
-        var defenseMult = n.defense ? DEFENSE_PROD_PENALTY : 1;
-        var capPressureNow = ownerCaps[n.owner] > 0 ? ownerUnits[n.owner] / ownerCaps[n.owner] : 0;
-        var capProdMult = 1;
-        if (capPressureNow > CAP_SOFT_START) {
-            var capPhase = clamp((capPressureNow - CAP_SOFT_START) / Math.max(0.0001, 1 - CAP_SOFT_START), 0, 1);
-            capProdMult = clamp(1 - capPhase * (1 - CAP_SOFT_FLOOR), CAP_SOFT_FLOOR, 1);
-        }
-        if (G.rules && !G.rules.applyExtraPenalties) {
-            supplyMult = 1;
-            defenseMult = 1;
-        }
-        n.supplied = supplyMult === 1;
-        if (ownerUnits[n.owner] >= ownerCaps[n.owner]) continue;
-        var prodMult = 1;
-        if (strategicPulseAppliesToNode(n.id)) prodMult *= STRATEGIC_PULSE_PROD;
-        n.prodAcc += BASE_PROD * G.tune.prod * (n.radius / NODE_RMAX) * td.prod * nodeLevelProdMult(n) * (1 + ownerAssist) * diffMult * supplyMult * defenseMult * capProdMult * prodMult;
-        if (n.prodAcc >= 1) {
-            var a = Math.floor(n.prodAcc);
-            var nodeRoom = Math.max(0, Math.floor(n.maxUnits - n.units));
-            var capRoom = Math.max(0, ownerCaps[n.owner] - ownerUnits[n.owner]);
-            var produced = Math.min(a, nodeRoom, capRoom);
-            if (produced > 0) {
-                n.units += produced;
-                ownerUnits[n.owner] += produced;
-                G.stats.unitsProduced += produced;
-            }
-            n.prodAcc -= a;
-        }
-    }
+    stepNodeEconomy({
+        nodes: G.nodes,
+        humanIndex: G.human,
+        powerByPlayer: power,
+        supplyByPlayer: supplyByPlayer,
+        ownerUnits: ownerUnits,
+        ownerCaps: ownerCaps,
+        tune: G.tune,
+        diffCfg: G.diffCfg,
+        rules: G.rules,
+        stats: G.stats,
+        constants: {
+            baseProd: BASE_PROD,
+            nodeRadiusMax: NODE_RMAX,
+            isolatedProdPenalty: ISOLATED_PROD_PENALTY,
+            capSoftStart: CAP_SOFT_START,
+            capSoftFloor: CAP_SOFT_FLOOR,
+            ddaMaxBoost: DDA_MAX_BOOST,
+            defenseProdPenalty: DEFENSE_PROD_PENALTY,
+            strategicPulseProd: STRATEGIC_PULSE_PROD,
+            strategicPulseAssim: STRATEGIC_PULSE_ASSIM,
+            defenseAssimBonus: DEFENSE_ASSIM_BONUS,
+            assimBaseRate: ASSIM_BASE_RATE,
+            assimUnitBonus: ASSIM_UNIT_BONUS,
+            assimGarrisonFloor: ASSIM_GARRISON_FLOOR,
+            assimLevelResist: ASSIM_LEVEL_RESIST,
+        },
+        callbacks: {
+            clamp: clamp,
+            nodeTypeOf: nodeTypeOf,
+            nodeCapacity: nodeCapacity,
+            nodeLevelProdMult: nodeLevelProdMult,
+            strategicPulseAppliesToNode: strategicPulseAppliesToNode,
+            isNodeAssimilated: isNodeAssimilated,
+        },
+    });
     var turretReport = applyTurretDamage({
         nodes: G.nodes,
         fleets: G.fleets,
@@ -1366,54 +1298,22 @@ function gameTick(runtimeOpts) {
         if (G.turretBeams.length > 80) G.turretBeams = G.turretBeams.slice(-80);
     }
 
-    // fleet movement with trail
-    for (var i = G.fleets.length - 1; i >= 0; i--) {
-        var f = G.fleets[i];
-        if (!f.active) continue;
-        var speedMult = f.routeSpeedMult || 1;
-        if (G.mapFeature.type === 'gravity') {
-            var gdx = f.x - G.mapFeature.x, gdy = f.y - G.mapFeature.y;
-            if (gdx * gdx + gdy * gdy <= G.mapFeature.r * G.mapFeature.r) speedMult *= GRAVITY_SPEED_MULT;
-        }
-        var dp = (f.speed * f.spdVar * G.tune.fspeed / FLEET_SPEED) * speedMult * TICK_DT;
-        f.t += dp / f.arcLen;
-        if (f.t >= 1) {
-            var arrivalNode = G.nodes[f.tgtId];
-            if (arrivalNode) {
-                f.trail.push({ x: f.x, y: f.y });
-                if (f.trail.length > TRAIL_LEN) f.trail.shift();
-                f.x = arrivalNode.pos.x;
-                f.y = arrivalNode.pos.y;
-            }
-        } else if (f.t > 0) {
-            var s = G.nodes[f.srcId], tg = G.nodes[f.tgtId], cp = { x: f.cpx, y: f.cpy };
-            var launchT = clamp(typeof f.launchT === 'number' ? f.launchT : 0, 0, 0.2);
-            var curveT = launchT + (1 - launchT) * clamp(f.t, 0, 1);
-            var pt = bezPt(s.pos, cp, tg.pos, curveT);
-            // compute perpendicular offset for swarm spread
-            var pt2 = bezPt(s.pos, cp, tg.pos, Math.min(1, curveT + 0.01));
-            var tdx = pt2.x - pt.x, tdy = pt2.y - pt.y;
-            var tlen = Math.sqrt(tdx * tdx + tdy * tdy) || 1;
-            var nx = -tdy / tlen, ny = tdx / tlen;
-            // fade offset near start/end for convergence at nodes
-            var fade = Math.min(1, curveT * 5) * Math.min(1, (1 - curveT) * 5);
-            var ox = pt.x + nx * f.offsetL * fade;
-            var oy = pt.y + ny * f.offsetL * fade;
-            f.trail.push({ x: f.x, y: f.y }); if (f.trail.length > TRAIL_LEN) f.trail.shift();
-            f.x = ox; f.y = oy;
-        } else {
-            // still waiting (negative t = delayed spawn)
-            var fs = G.nodes[f.srcId], ft = G.nodes[f.tgtId];
-            if (fs && ft) {
-                var fcp = { x: f.cpx, y: f.cpy };
-                var waitT = clamp(typeof f.launchT === 'number' ? f.launchT : 0, 0, 0.2);
-                var waitPt = bezPt(fs.pos, fcp, ft.pos, waitT);
-                f.x = waitPt.x; f.y = waitPt.y;
-            } else {
-                f.x = G.nodes[f.srcId].pos.x; f.y = G.nodes[f.srcId].pos.y;
-            }
-        }
-    }
+    stepFleetMovement({
+        fleets: G.fleets,
+        nodes: G.nodes,
+        dt: TICK_DT,
+        tune: G.tune,
+        mapFeature: G.mapFeature,
+        callbacks: {
+            clamp: clamp,
+            bezPt: bezPt,
+        },
+        constants: {
+            baseFleetSpeed: FLEET_SPEED,
+            gravitySpeedMult: GRAVITY_SPEED_MULT,
+            trailLen: TRAIL_LEN,
+        },
+    });
     var fieldReport = applyDefenseFieldDamage({
         nodes: G.nodes,
         fleets: G.fleets,
@@ -1435,38 +1335,52 @@ function gameTick(runtimeOpts) {
         }
         if (G.fieldBeams.length > 120) G.fieldBeams = G.fieldBeams.slice(-120);
     }
-    for (var i = G.fleets.length - 1; i >= 0; i--) {
-        var f = G.fleets[i];
-        if (!f.active) { G.fleets.splice(i, 1); continue; }
-        if (f.t < 1) continue;
-        var tgt = G.nodes[f.tgtId];
-        if (tgt.owner === f.owner) {
-            var srcNode = G.nodes[f.srcId];
-            var friendlyArrival = resolveFriendlyArrival({
-                targetUnits: tgt.units,
-                targetMaxUnits: tgt.maxUnits,
-                sourceUnits: srcNode && srcNode.owner === f.owner ? srcNode.units : 0,
-                sourceMaxUnits: srcNode && srcNode.owner === f.owner ? srcNode.maxUnits : 0,
-                fleetCount: f.count,
-            });
-            tgt.units = friendlyArrival.targetUnits;
-            if (srcNode && srcNode.owner === f.owner) srcNode.units = friendlyArrival.sourceUnits;
-            if (friendlyArrival.lost > 0 && f.owner === G.human) {
-                showGameToast('Takviye taski: hedef doluydu. Fazla birlik once kaynaga dondu, kalan fazlalik dagildi.');
-            }
-        } else combat(f, tgt);
-        f.active = false; f.trail = []; G.fleets.splice(i, 1);
+    var arrivalReport = resolveFleetArrivals({
+        fleets: G.fleets,
+        nodes: G.nodes,
+        flows: G.flows,
+        players: G.players,
+        tune: G.tune,
+        humanIndex: G.human,
+        callbacks: {
+            nodeTypeOf: nodeTypeOf,
+            nodeLevelDefMult: nodeLevelDefMult,
+            nodeCapacity: nodeCapacity,
+        },
+        constants: {
+            turretCaptureResist: TURRET_CAPTURE_RESIST,
+            defenseBonus: DEFENSE_BONUS,
+            assimLockTicks: ASSIM_LOCK_TICKS,
+        },
+    });
+    G.flows = arrivalReport.flows;
+    if (arrivalReport.statsDelta.nodesCaptured > 0) G.stats.nodesCaptured += arrivalReport.statsDelta.nodesCaptured;
+    if (arrivalReport.statsDelta.gateCaptures > 0) G.stats.gateCaptures += arrivalReport.statsDelta.gateCaptures;
+    for (var ari = 0; ari < arrivalReport.particleBursts.length; ari++) {
+        var burst = arrivalReport.particleBursts[ari];
+        spawnParticles(burst.x, burst.y, burst.count, burst.color, burst.isCapture);
     }
-    // flow links
-    for (var i = 0; i < G.flows.length; i++) {
-        var fl = G.flows[i]; if (!fl.active) continue;
-        var flowSrc = G.nodes[fl.srcId], flowTgt = G.nodes[fl.tgtId];
-        if (!flowSrc || !flowTgt) { fl.active = false; continue; }
-        if (flowSrc.owner !== fl.owner) { fl.active = false; continue; }
-        fl.tickAcc++; if (fl.tickAcc >= G.tune.flowInt) {
-            fl.tickAcc = 0; var amt = Math.max(1, Math.floor(flowSrc.units * FLOW_FRAC));
-            if (flowSrc.units > amt + 2) dispatch(fl.owner, [fl.srcId], fl.tgtId, amt / flowSrc.units);
-        }
+    for (var ati = 0; ati < arrivalReport.toasts.length; ati++) {
+        showGameToast(arrivalReport.toasts[ati]);
+    }
+    for (var aui = 0; aui < arrivalReport.audio.length; aui++) {
+        if (typeof AudioFX === 'undefined') break;
+        if (arrivalReport.audio[aui] === 'capture' && typeof AudioFX.capture === 'function') AudioFX.capture();
+        else if (arrivalReport.audio[aui] === 'combat' && typeof AudioFX.combat === 'function') AudioFX.combat();
+    }
+    var flowReport = stepFlowLinks({
+        flows: G.flows,
+        nodes: G.nodes,
+        flowInterval: G.tune.flowInt,
+        constants: {
+            flowFraction: FLOW_FRAC,
+            minReserve: 2,
+        },
+    });
+    G.flows = flowReport.flows;
+    for (var fdi = 0; fdi < flowReport.dispatches.length; fdi++) {
+        var flowDispatch = flowReport.dispatches[fdi];
+        dispatch(flowDispatch.owner, [flowDispatch.srcId], flowDispatch.tgtId, flowDispatch.pct);
     }
     // AI
     for (var p = 0; p < G.players.length; p++) {
@@ -1504,13 +1418,16 @@ function gameTick(runtimeOpts) {
     checkEnd(); G.tick++;
 }
 function checkEnd() {
-    var nc = {}, fc = {};
-    for (var i = 0; i < G.nodes.length; i++) { var o = G.nodes[i].owner; if (o >= 0) nc[o] = (nc[o] || 0) + 1; }
-    for (var i = 0; i < G.fleets.length; i++) { var f = G.fleets[i]; if (f.active) fc[f.owner] = (fc[f.owner] || 0) + 1; }
-    for (var i = 0; i < G.players.length; i++) { if (!G.players[i].alive) continue; if (!(nc[i] || 0) && !(fc[i] || 0)) G.players[i].alive = false; }
-    var alive = G.players.filter(function (p) { return p.alive; });
-    if (alive.length === 1) { G.winner = alive[0].idx; if (G.state === 'playing' || G.state === 'replay') G.state = 'gameOver'; }
-    else if (alive.length === 0) { G.winner = -1; if (G.state === 'playing' || G.state === 'replay') G.state = 'gameOver'; }
+    var resolved = resolveMatchEndState({
+        nodes: G.nodes,
+        fleets: G.fleets,
+        players: G.players,
+    });
+    for (var i = 0; i < G.players.length; i++) G.players[i].alive = resolved.playersAlive[i] !== false;
+    if (resolved.gameOver) {
+        G.winner = resolved.winnerIndex;
+        if (G.state === 'playing' || G.state === 'replay') G.state = 'gameOver';
+    }
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ COLOR UTILS Ã¢â€â‚¬Ã¢â€â‚¬
@@ -2982,6 +2899,27 @@ function captureSyncSnapshot() {
     };
 }
 
+function handleAuthoritativeState(payload) {
+    if (!net.online || !payload || payload.matchId !== net.matchId || !payload.snapshot) return;
+    var firstAuthoritativeFrame = !net.authoritativeReady;
+    if (!applySyncSnapshot(payload.snapshot)) return;
+    net.authoritativeReady = true;
+    net.syncWarningTick = -99999;
+    net.syncWarningText = '';
+    if (typeof payload.hash === 'string' && payload.hash) rememberSyncSnapshot(payload.tick, payload.hash);
+    if (firstAuthoritativeFrame) {
+        setRoomStatus('Online mac sunucu state ile senkronize edildi.', false);
+    }
+}
+
+function maybeSendOnlinePing() {
+    if (!net.online || !net.socket || !net.matchId) return;
+    var now = Date.now();
+    if (net.lastPingWallMs > 0 && now - net.lastPingWallMs < 1500) return;
+    net.lastPingWallMs = now;
+    net.socket.emit('pingTick', { clientTs: now });
+}
+
 function rememberSyncSnapshot(tick, hash) {
     if (!net.matchId) return;
     net.syncHistory.push({
@@ -3240,8 +3178,11 @@ function renderRoomList(rooms) {
     renderRoomListUI(roomListEl, rooms, { connected: net.connected });
 }
 
-function clearRoomState(message) {
+function clearRoomState(message, opts) {
+    opts = opts || {};
     net.online = false;
+    net.authoritativeEnabled = false;
+    net.authoritativeReady = false;
     net.roomCode = '';
     net.players = [];
     net.isHost = false;
@@ -3256,8 +3197,11 @@ function clearRoomState(message) {
     net.commandHistory = [];
     net.resyncRequestId = '';
     net.lastSummaryTick = -1;
+    net.lastPingWallMs = 0;
+    net.resumePending = !!opts.preserveResume;
     clearChatMessages();
     renderRoomPlayers([], null);
+    if (!opts.preserveResume) clearRoomResumeState();
     if (message) setRoomStatus(message, false);
     roomButtonState();
     if (roomListEl) roomListEl.style.display = '';
@@ -3265,6 +3209,8 @@ function clearRoomState(message) {
     if (joinRoomCodeInput && joinRoomCodeInput.parentElement) joinRoomCodeInput.parentElement.style.display = '';
     if (hostControls) hostControls.style.display = 'none';
     if (leaveRoomBtn) leaveRoomBtn.style.display = 'none';
+    if (multiRoomTypeIn) multiRoomTypeIn.value = 'standard';
+    syncRoomTypeInputs();
     requestLobby();
 }
 
@@ -3283,15 +3229,22 @@ function doCreateRoom() {
     net.playerName = chosen;
 
     setRoomStatus('Oda kuruluyor...', false);
-    var multiSeed = $('multiSeedInput'), multiNode = $('multiNodeInput'), multiDiff = $('multiDiffSelect');
+    var multiSeed = $('multiSeedInput'), multiNode = $('multiNodeInput'), multiDiff = $('multiDiffSelect'), multiRoomType = $('multiRoomTypeSelect');
+    var roomMode = (multiRoomType && multiRoomType.value) || 'standard';
+    if (roomMode === 'custom' && !currentCustomMapConfig) {
+        setRoomStatus('Custom oda acmak icin once bir custom map yukle.', true);
+        return;
+    }
     net.socket.emit('createRoom', {
         action: 'create',
         playerName: net.playerName,
+        mode: roomMode,
         seed: (multiSeed && multiSeed.value) || seedIn.value || '42',
         nodeCount: Number((multiNode && multiNode.value) || ncIn.value || 16),
         difficulty: (multiDiff && multiDiff.value) || diffSel.value || 'normal',
         fogEnabled: menuFogCb ? !!menuFogCb.checked : false,
         rulesMode: (multiModeSel && multiModeSel.value) || (gameModeSel && gameModeSel.value) || 'advanced',
+        customMap: roomMode === 'custom' ? currentCustomMapConfig : null,
     });
 }
 
@@ -3313,17 +3266,24 @@ function doJoinRoom() {
     net.socket.emit('joinRoom', {
         action: 'join',
         playerName: net.playerName,
-        roomCode: code
+        roomCode: code,
+        reconnectToken: net.reconnectToken || '',
     });
 }
 
 function issueOnlineCommand(type, data) {
     if (net.online && net.socket && net.roomCode) {
+        if (net.authoritativeEnabled && !net.authoritativeReady) {
+            setRoomStatus('Mac acilisi sunucudan senkronize ediliyor. Bir an bekle.', false);
+            return true;
+        }
+        var sanitized = sanitizeCommandData(type, data || {});
+        if (!sanitized) return false;
         // Ä°leri tarihli komut gÃ¶ndererek, aÄŸ gecikmesine raÄŸmen 
         // iki oyuncuda da aynÄ± tick'te eÅŸzamanlÄ± iÅŸletilmesini saÄŸla (Command Delay)
         var rtt = typeof net.lastPingMs === 'number' && net.lastPingMs > 0 ? net.lastPingMs : 180;
         var delayTicks = clamp(Math.round((rtt / 2) / 33.33) + 4, 6, 18);
-        net.socket.emit('playerCommand', { type: type, data: data || {}, tick: G.tick + delayTicks, matchId: net.matchId });
+        net.socket.emit('playerCommand', { type: type, data: sanitized, tick: G.tick + delayTicks, matchId: net.matchId });
         return true;
     }
     return false;
@@ -3345,18 +3305,28 @@ function ensureSocket() {
         net.connected = true;
         setRoomStatus('Baglanti kuruldu. Oda Kur veya Katil.', false);
         requestLobby();
+        net.socket.emit('requestDailyChallenge');
+        maybeResumeOnlineRoom();
         roomButtonState();
     });
 
     net.socket.on('connect_error', function () {
         net.connected = false;
+        serverDailyChallenge = null;
+        refreshDailyChallengeCard();
         setRoomStatus('Cok oyunculu sunucuya ulasilamadi. "npm run server" ile baslat.', true);
         roomButtonState();
     });
 
     net.socket.on('disconnect', function () {
         net.connected = false;
-        clearRoomState('Cok oyunculu sunucudan baglanti koptu.');
+        serverDailyChallenge = null;
+        refreshDailyChallengeCard();
+        clearRoomState('Cok oyunculu sunucudan baglanti koptu.', { preserveResume: true });
+        if (G.state === 'playing' || G.state === 'paused' || G.state === 'gameOver') {
+            G.state = 'mainMenu';
+            showUI('mainMenu');
+        }
     });
 
     net.socket.on('lobbyState', function (payload) {
@@ -3375,10 +3345,20 @@ function ensureSocket() {
         net.isHost = !!state.isHost;
         net.players = state.players || [];
         net.pendingJoin = false;
+        net.resumePending = false;
+        if (state.reconnectToken) {
+            saveRoomResumeState({
+                roomCode: state.code,
+                playerName: net.playerName,
+                reconnectToken: state.reconnectToken,
+            });
+        }
         if (state.config) {
             var stateMode = normalizeRulesetMode(state.config.rulesMode || 'advanced');
             if (multiModeSel) multiModeSel.value = stateMode;
             if (gameModeSel) gameModeSel.value = stateMode;
+            if (multiRoomTypeIn) multiRoomTypeIn.value = state.config.mode === 'daily' ? 'daily' : (state.config.mode === 'custom' ? 'custom' : 'standard');
+            syncRoomTypeInputs();
         }
 
         if (hostControls) hostControls.style.display = net.isHost ? 'flex' : 'none';
@@ -3389,6 +3369,14 @@ function ensureSocket() {
 
         renderRoomPlayers(net.players, state.hostId);
         var status = 'Oda: ' + state.code + ' | ' + net.players.length + '/' + state.maxPlayers + ' oyuncu';
+        if (state.preview && state.preview.mode === 'daily') {
+            status += ' | Gunluk: ' + ((state.preview.challengeTitle || '') + (state.preview.challengeKey ? (' (' + state.preview.challengeKey + ')') : ''));
+            if (state.preview.aiCount) status += ' | AI ' + state.preview.aiCount;
+        } else if (state.preview && state.preview.mode === 'custom') {
+            status += ' | Custom: ' + (state.preview.customMapName || 'Harita');
+            status += ' | Slot ' + (state.preview.playerCount || state.maxPlayers || net.players.length);
+            if (state.preview.aiCount) status += ' | AI ' + state.preview.aiCount;
+        }
         if (net.players.length < 2) status += ' | En az 2 oyuncu gerekli';
         else status += (net.isHost ? ' | Oyunu baslatabilirsin' : ' | Hostun baslatmasi bekleniyor...');
         setRoomStatus(status, false);
@@ -3397,6 +3385,7 @@ function ensureSocket() {
 
     net.socket.on('roomError', function (err) {
         net.pendingJoin = false;
+        if (net.resumePending) clearRoomResumeState();
         setRoomStatus((err && err.message) || 'Room error', true);
         roomButtonState();
     });
@@ -3419,6 +3408,12 @@ function ensureSocket() {
             renderRoomPlayers(net.players, net.isHost ? net.socket.id : null);
         }
     });
+    net.socket.on('playerRejoined', function (payload) {
+        if (G.state === 'playing' && G.players && G.players[payload.index]) {
+            G.players[payload.index].isAI = false;
+        }
+        appendChatMessage((payload && payload.name ? payload.name : 'Bir oyuncu') + ' yeniden baglandi.', 'var(--success)');
+    });
 
     net.socket.on('pongTick', function (payload) {
         if (!net.online) return;
@@ -3432,7 +3427,17 @@ function ensureSocket() {
         var players = payload.players || [];
         net.players = players;
         net.pendingJoin = false;
+        net.resumePending = false;
         net.matchId = payload.matchId || '';
+        net.authoritativeEnabled = payload && payload.authoritative === true;
+        net.authoritativeReady = false;
+        if (payload && payload.reconnectToken) {
+            saveRoomResumeState({
+                roomCode: payload.roomCode || net.roomCode,
+                playerName: net.playerName,
+                reconnectToken: payload.reconnectToken,
+            });
+        }
         var self = players.find(function (p) { return p.socketId === net.socket.id; });
         net.localPlayerIndex = self ? self.index : 0;
         net.online = true;
@@ -3447,7 +3452,9 @@ function ensureSocket() {
         net.commandHistory = [];
         net.resyncRequestId = '';
         net.lastSummaryTick = -1;
+        net.lastPingWallMs = 0;
 
+        var onlineCustomMap = payload && payload.mode === 'custom' && payload.customMap ? normalizeCustomMapConfig(payload.customMap) : null;
         initGame(payload.seed || '42', Number(payload.nodeCount || 16), payload.difficulty || 'normal', {
             keepReplay: false,
             keepTuning: false,
@@ -3456,15 +3463,18 @@ function ensureSocket() {
             humanCount: Number(payload.humanCount || players.length || 2),
             aiCount: Number(payload.aiCount || 0),
             localPlayerIndex: net.localPlayerIndex,
+            mapFeature: payload.mapFeature || 'none',
+            customMap: onlineCustomMap,
+            tuneOverrides: onlineCustomMap ? onlineCustomMap.tuneOverrides || null : null,
         });
         G.campaign.active = false;
         G.campaign.levelIndex = -1;
-        G.daily.active = false;
-        G.daily.challenge = null;
+        G.daily.active = payload.mode === 'daily' && !!payload.challenge;
+        G.daily.challenge = G.daily.active ? payload.challenge : null;
         G.daily.reminderShown = {};
-        G.daily.bestTick = 0;
-        G.daily.completed = false;
-        currentCustomMapConfig = null;
+        if (G.daily.active) syncDailyChallengeState(payload.challenge);
+        else { G.daily.bestTick = 0; G.daily.completed = false; }
+        currentCustomMapConfig = onlineCustomMap;
         inp.sel.clear();
         clearChatMessages();
         for (var i = 0; i < G.nodes.length; i++) G.nodes[i].selected = false;
@@ -3472,13 +3482,20 @@ function ensureSocket() {
         spdBtn.textContent = '1x';
         tuneFogCb.checked = G.tune.fogEnabled;
         if (menuFogCb) menuFogCb.checked = G.tune.fogEnabled;
-        setRoomStatus('Online mac basladi. Sen P' + (net.localPlayerIndex + 1) + ' oldun.', false);
+        setRoomStatus(
+            'Online mac basladi. Sen P' + (net.localPlayerIndex + 1) + ' oldun.' +
+            (payload.mode === 'daily' && payload.challengeTitle ? (' | Gunluk: ' + payload.challengeTitle) : '') +
+            (payload.mode === 'custom' && payload.customMapName ? (' | Custom: ' + payload.customMapName) : '') +
+            (net.authoritativeEnabled ? ' | Sunucu state senkronu bekleniyor...' : ''),
+            false
+        );
         if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
         showUI('playing');
     });
 
     net.socket.on('roomCommand', function (cmd) {
         if (!net.online) return;
+        if (net.authoritativeEnabled && net.authoritativeReady) return;
         if (cmd && cmd.matchId && net.matchId && cmd.matchId !== net.matchId) return;
         rememberNetworkCommand(cmd);
         net.pendingCommands.push(cmd);
@@ -3508,6 +3525,9 @@ function ensureSocket() {
     net.socket.on('syncSnapshot', function (payload) {
         handleIncomingSyncSnapshot(payload);
     });
+    net.socket.on('authoritativeState', function (payload) {
+        handleAuthoritativeState(payload);
+    });
 
     net.socket.on('chat', function (payload) {
         appendChatMessage((payload.name || '?') + ': ' + (payload.message || ''));
@@ -3529,7 +3549,12 @@ function ensureSocket() {
     net.socket.on('leaderboard', function (payload) {
         var el = document.getElementById('leaderboardList');
         if (!el) return;
-        renderLeaderboardUI(el, payload.list || []);
+        renderLeaderboardUI(el, payload || []);
+    });
+    net.socket.on('dailyChallenge', function (payload) {
+        if (!payload) return;
+        serverDailyChallenge = payload.challenge || null;
+        refreshDailyChallengeCard();
     });
 }
 function normalizeReplay(raw) {
@@ -3570,6 +3595,23 @@ function startReplayFromData(raw) {
 ncIn.addEventListener('input', function () { ncLbl.textContent = ncIn.value; });
 var multiNodeIn = $('multiNodeInput'), multiNodeLbl = $('multiNodeLabel');
 if (multiNodeIn && multiNodeLbl) multiNodeIn.addEventListener('input', function () { multiNodeLbl.textContent = multiNodeIn.value; });
+var multiRoomTypeIn = $('multiRoomTypeSelect');
+function syncRoomTypeInputs() {
+    var roomMode = multiRoomTypeIn ? multiRoomTypeIn.value : 'standard';
+    var locksMapConfig = roomMode === 'daily' || roomMode === 'custom';
+    var multiSeed = $('multiSeedInput'), multiDiff = $('multiDiffSelect');
+    if (multiSeed) multiSeed.disabled = !!locksMapConfig;
+    if (multiNodeIn) multiNodeIn.disabled = !!locksMapConfig;
+    if (multiDiff) multiDiff.disabled = !!locksMapConfig;
+    if (multiModeSel) multiModeSel.disabled = !!locksMapConfig;
+    if (multiNodeLbl) multiNodeLbl.style.opacity = locksMapConfig ? '0.45' : '1';
+}
+if (multiRoomTypeIn) {
+    multiRoomTypeIn.addEventListener('change', function () {
+        syncRoomTypeInputs();
+    });
+}
+syncRoomTypeInputs();
 if (gameModeSel && multiModeSel) {
     gameModeSel.addEventListener('change', function () { multiModeSel.value = gameModeSel.value; });
     multiModeSel.addEventListener('change', function () { gameModeSel.value = multiModeSel.value; });
@@ -3579,8 +3621,59 @@ var SCENARIO_UNLOCKED_KEY = 'stellar_scenario_unlocked_v1';
 var SCENARIO_COMPLETED_KEY = 'stellar_scenario_completed_v1';
 var LEGACY_CAMPAIGN_UNLOCKED_KEY = 'stellar_campaign_unlocked_v2';
 var DAILY_CHALLENGE_STATE_KEY = 'stellar_daily_challenge_v1';
+var ROOM_RESUME_STATE_KEY = 'stellar_room_resume_v1';
 var campaignSelectedLevel = 0;
 var currentCustomMapConfig = null;
+var serverDailyChallenge = null;
+
+function loadRoomResumeState() {
+    try {
+        var raw = localStorage.getItem(ROOM_RESUME_STATE_KEY);
+        if (!raw) return null;
+        var parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== 'object') return null;
+        if (!parsed.roomCode || !parsed.playerName || !parsed.reconnectToken) return null;
+        return {
+            roomCode: String(parsed.roomCode).trim().toUpperCase(),
+            playerName: String(parsed.playerName).trim(),
+            reconnectToken: String(parsed.reconnectToken).trim(),
+        };
+    } catch (e) {
+        return null;
+    }
+}
+function saveRoomResumeState(info) {
+    if (!info || !info.roomCode || !info.playerName || !info.reconnectToken) return;
+    net.reconnectToken = String(info.reconnectToken || '');
+    try {
+        localStorage.setItem(ROOM_RESUME_STATE_KEY, JSON.stringify({
+            roomCode: String(info.roomCode).trim().toUpperCase(),
+            playerName: String(info.playerName).trim(),
+            reconnectToken: String(info.reconnectToken).trim(),
+        }));
+    } catch (e) {}
+}
+function clearRoomResumeState() {
+    net.reconnectToken = '';
+    net.resumePending = false;
+    try { localStorage.removeItem(ROOM_RESUME_STATE_KEY); } catch (e) {}
+}
+function maybeResumeOnlineRoom() {
+    if (!net.socket || !net.connected || net.roomCode || net.resumePending) return false;
+    var resume = loadRoomResumeState();
+    if (!resume) return false;
+    net.playerName = resume.playerName;
+    net.reconnectToken = resume.reconnectToken;
+    net.resumePending = true;
+    setRoomStatus('Baglanti geri geldi. Mactaki koltuk geri aliniyor...', false);
+    net.socket.emit('joinRoom', {
+        action: 'join',
+        playerName: resume.playerName,
+        roomCode: resume.roomCode,
+        reconnectToken: resume.reconnectToken,
+    });
+    return true;
+}
 
 function clampCampaignUnlocked(v) {
     var n = Math.floor(Number(v));
@@ -3666,7 +3759,7 @@ function syncDailyChallengeState(challenge) {
     G.daily.completed = progress.completed;
 }
 function todayDailyChallenge() {
-    return buildDailyChallenge(dailyChallengeKey(new Date()));
+    return serverDailyChallenge || buildDailyChallenge(dailyChallengeKey(new Date()));
 }
 function campaignFeatureName(feature) {
     if (!feature) return 'Standart';
@@ -4509,8 +4602,15 @@ function loop(ts) {
         } prevSt = G.state;
     }
     if (G.state === 'playing' || G.state === 'replay') {
-        var es = G.state === 'replay' && G.rep ? (G.rep.paused ? 0 : G.rep.speed) : G.speed; acc += rawDt * es;
-        while (acc >= TICK_DT) { gameTick(); acc -= TICK_DT; }
+        var useAuthoritativeState = net.online && net.authoritativeEnabled && G.state === 'playing';
+        if (useAuthoritativeState) {
+            acc = 0;
+            if (net.authoritativeReady) maybeSendOnlinePing();
+        } else {
+            var es = G.state === 'replay' && G.rep ? (G.rep.paused ? 0 : G.rep.speed) : G.speed;
+            acc += rawDt * es;
+            while (acc >= TICK_DT) { gameTick(); acc -= TICK_DT; }
+        }
         var featureName = G.mapFeature.type === 'wormhole' ? 'Wormhole' : (G.mapFeature.type === 'gravity' ? 'Gravity' : (G.mapFeature.type === 'barrier' ? 'Barrier' : 'Standart'));
         var pulseText = '';
         if (G.strategicPulse && G.strategicPulse.active) {

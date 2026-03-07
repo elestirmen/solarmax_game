@@ -4,9 +4,29 @@ import { Server } from 'socket.io';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { ALLOWED_COMMAND_TYPES, sanitizeCommandData, toFiniteInt } from './assets/sim/command_schema.js';
+import {
+    DEFAULT_MATCH_CONFIG,
+    buildDailyMatchManifest,
+    buildRoomMatchManifest,
+    buildStandardMatchManifest,
+    normalizeRoomConfig,
+    normalizeRoomMode,
+    todayDateKey,
+} from './assets/sim/match_manifest.js';
+import { buildCustomMapSnapshot } from './assets/sim/custom_map.js';
+import {
+    applyCommandToAuthoritativeState,
+    buildAuthoritativeState,
+    captureAuthoritativeSnapshot,
+    computeAuthoritativeSnapshotHash,
+    simulateAuthoritativeTick,
+} from './assets/sim/server_sim.js';
+import { buildInitialMatchSnapshot } from './assets/sim/map_gen.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === __filename;
 
 const app = express();
 const server = http.createServer(app);
@@ -21,30 +41,32 @@ const TICK_RATE = 30;
 const MAX_ROOM_PLAYERS = 6;
 const ROOM_CODE_LENGTH = 5;
 const MAX_LEADERBOARD_ENTRIES = 500;
-const DEFAULT_ROOM_CONFIG = {
-    seed: '42',
-    nodeCount: 16,
-    difficulty: 'normal',
-    fogEnabled: false,
-    rulesMode: 'advanced',
-};
+const STORAGE_TIMEZONE = 'Europe/Istanbul';
+const DEFAULT_ROOM_CONFIG = DEFAULT_MATCH_CONFIG;
 const DIST_DIR = path.join(__dirname, 'dist');
+const DATA_DIR = path.join(__dirname, 'data');
+const SERVER_STATE_PATH = path.join(DATA_DIR, 'server_state.json');
 const HAS_DIST_BUILD =
     fs.existsSync(path.join(DIST_DIR, 'stellar_conquest.html')) &&
     fs.existsSync(path.join(DIST_DIR, 'assets'));
 const STATIC_ROOT = HAS_DIST_BUILD ? DIST_DIR : __dirname;
+const PERSISTENCE_ENABLED = isMainModule || process.env.ENABLE_SERVER_STORAGE === '1';
 
 const rooms = new Map();
 const socketToRoom = new Map();
 const leaderboard = [];
+const dailyChallengeScores = [];
 const EMOTES = ['gg', 'gl', 'hf', 'wp', 'oops', 'nice', 'wait'];
-const ALLOWED_COMMAND_TYPES = new Set(['send', 'flow', 'rmFlow', 'upgrade', 'toggleDefense']);
 const MAX_COMMAND_DELAY_TICKS = 300;
 const COMMAND_RATE_WINDOW_MS = 1000;
 const MAX_COMMANDS_PER_WINDOW = 120;
 const SYNC_REPORT_TTL_TICKS = 240;
 const SYNC_REQUEST_TTL_MS = 4000;
 const SUMMARY_TICK_TOLERANCE = 45;
+const AUTHORITATIVE_SNAPSHOT_INTERVAL_TICKS = 2;
+const AUTHORITATIVE_SNAPSHOT_HISTORY = 8;
+const AUTHORITATIVE_SNAPSHOT_MAX_BYTES = 400000;
+const ROOM_RESUME_GRACE_MS = 90000;
 const commandRate = new Map();
 
 function nowTick(startEpochMs) {
@@ -75,100 +97,12 @@ function consumeRateLimit(bucketMap, key, limit, windowMs) {
     return true;
 }
 
-function normalizeDifficulty(raw) {
-    const value = String(raw || DEFAULT_ROOM_CONFIG.difficulty).toLowerCase();
-    if (value === 'easy' || value === 'normal' || value === 'hard') return value;
-    return DEFAULT_ROOM_CONFIG.difficulty;
-}
-
-function normalizeRulesMode(raw) {
-    const value = String(raw || DEFAULT_ROOM_CONFIG.rulesMode).toLowerCase();
-    return value === 'classic' ? 'classic' : 'advanced';
-}
-
-function normalizeNodeCount(raw) {
-    const value = Number(raw);
-    if (!Number.isFinite(value)) return DEFAULT_ROOM_CONFIG.nodeCount;
-    return Math.max(8, Math.min(30, Math.floor(value)));
-}
-
-function normalizeRoomConfig(payload = {}) {
-    return {
-        seed: String(payload.seed || DEFAULT_ROOM_CONFIG.seed),
-        nodeCount: normalizeNodeCount(payload.nodeCount),
-        difficulty: normalizeDifficulty(payload.difficulty),
-        fogEnabled: payload.fogEnabled === true,
-        rulesMode: normalizeRulesMode(payload.rulesMode),
-    };
-}
-
 function sanitizePlayerName(name) {
     return String(name || '')
         .replace(/[\u0000-\u001F\u007F<>]/g, '')
         .replace(/\s+/g, ' ')
         .trim()
         .slice(0, 20);
-}
-
-function toFiniteInt(value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return null;
-    return Math.floor(n);
-}
-
-function sanitizeNodeId(value) {
-    const n = toFiniteInt(value);
-    if (n === null || n < 0) return null;
-    return n;
-}
-
-function sanitizeNodeIdList(value) {
-    if (!Array.isArray(value)) return [];
-    const seen = new Set();
-    const result = [];
-    for (const item of value) {
-        const id = sanitizeNodeId(item);
-        if (id === null || seen.has(id)) continue;
-        seen.add(id);
-        result.push(id);
-        if (result.length >= 30) break;
-    }
-    return result;
-}
-
-function sanitizeCommandData(type, rawData = {}) {
-    if (!rawData || typeof rawData !== 'object') return null;
-    const data = rawData;
-
-    if (type === 'send') {
-        const sources = sanitizeNodeIdList(data.sources);
-        const targetId = sanitizeNodeId(data.tgtId ?? data.targetId);
-        const pctRaw = Number(data.pct ?? data.percent);
-        if (sources.length === 0 || targetId === null || !Number.isFinite(pctRaw)) return null;
-        return {
-            sources,
-            tgtId: targetId,
-            pct: Math.max(0.05, Math.min(1, pctRaw)),
-        };
-    }
-
-    if (type === 'flow' || type === 'rmFlow') {
-        const srcId = sanitizeNodeId(data.srcId ?? data.sourceId);
-        const tgtId = sanitizeNodeId(data.tgtId ?? data.targetId);
-        if (srcId === null || tgtId === null || srcId === tgtId) return null;
-        return { srcId, tgtId };
-    }
-
-    if (type === 'upgrade' || type === 'toggleDefense') {
-        const nodeIds = sanitizeNodeIdList(data.nodeIds);
-        if (nodeIds.length > 0) return { nodeIds };
-
-        const nodeId = sanitizeNodeId(data.nodeId);
-        if (nodeId === null) return null;
-        return { nodeId };
-    }
-
-    return null;
 }
 
 function normalizeWinnerIndex(raw, room) {
@@ -190,6 +124,113 @@ function recordMatchResult(room, winnerIndex) {
     if (leaderboard.length > MAX_LEADERBOARD_ENTRIES) {
         leaderboard.splice(0, leaderboard.length - MAX_LEADERBOARD_ENTRIES);
     }
+    persistServerState();
+}
+
+function loadPersistentState() {
+    if (!PERSISTENCE_ENABLED) return;
+    try {
+        if (!fs.existsSync(SERVER_STATE_PATH)) return;
+        const parsed = JSON.parse(fs.readFileSync(SERVER_STATE_PATH, 'utf8'));
+        const general = Array.isArray(parsed?.leaderboard) ? parsed.leaderboard : [];
+        const daily = Array.isArray(parsed?.dailyChallengeScores) ? parsed.dailyChallengeScores : [];
+
+        leaderboard.splice(0, leaderboard.length, ...general.slice(-MAX_LEADERBOARD_ENTRIES));
+        dailyChallengeScores.splice(0, dailyChallengeScores.length, ...daily.slice(-2000));
+    } catch (error) {
+        console.warn('Server state load failed:', error.message);
+    }
+}
+
+function persistServerState() {
+    if (!PERSISTENCE_ENABLED) return;
+    try {
+        fs.mkdirSync(DATA_DIR, { recursive: true });
+        fs.writeFileSync(SERVER_STATE_PATH, JSON.stringify({
+            leaderboard: leaderboard.slice(-MAX_LEADERBOARD_ENTRIES),
+            dailyChallengeScores: dailyChallengeScores.slice(-2000),
+        }, null, 2));
+    } catch (error) {
+        console.warn('Server state save failed:', error.message);
+    }
+}
+
+function recordDailyChallengeScore(room, winnerIndex, finishTick) {
+    if (!room || !room.matchManifest || room.matchManifest.mode !== 'daily') return null;
+    if (winnerIndex < 0) return null;
+
+    const winner = getMatchPlayerByIndex(room, winnerIndex);
+    if (!winner || winner.botControlled) return null;
+
+    const tick = Math.max(0, toFiniteInt(finishTick) || room.lastResultTick || nowTick(room.startedAt));
+    const entry = {
+        dateKey: room.matchManifest.challengeKey,
+        challengeTitle: room.matchManifest.challengeTitle,
+        name: winner.name,
+        finishTick: tick,
+        ts: Date.now(),
+        roomCode: room.code,
+        difficulty: room.matchManifest.difficulty,
+        nodeCount: room.matchManifest.nodeCount,
+    };
+    dailyChallengeScores.push(entry);
+    if (dailyChallengeScores.length > 2000) {
+        dailyChallengeScores.splice(0, dailyChallengeScores.length - 2000);
+    }
+    persistServerState();
+    return entry;
+}
+
+function buildGeneralLeaderboardList() {
+    const byName = {};
+    leaderboard.forEach(entry => {
+        if (!byName[entry.name]) byName[entry.name] = { name: entry.name, wins: 0, games: 0 };
+        byName[entry.name].wins += entry.wins;
+        byName[entry.name].games += entry.games;
+    });
+    return Object.values(byName).sort((a, b) => b.wins - a.wins || a.games - b.games || a.name.localeCompare(b.name)).slice(0, 10);
+}
+
+function buildDailyChallengeLeaderboard(dateKey = todayDateKey(STORAGE_TIMEZONE)) {
+    const byName = {};
+    for (const entry of dailyChallengeScores) {
+        if (entry.dateKey !== dateKey) continue;
+        if (!byName[entry.name]) {
+            byName[entry.name] = {
+                name: entry.name,
+                bestTick: entry.finishTick,
+                attempts: 0,
+                clears: 0,
+            };
+        }
+        const bucket = byName[entry.name];
+        bucket.attempts += 1;
+        bucket.clears += 1;
+        if (entry.finishTick < bucket.bestTick) bucket.bestTick = entry.finishTick;
+    }
+    return Object.values(byName)
+        .sort((a, b) => a.bestTick - b.bestTick || b.clears - a.clears || a.name.localeCompare(b.name))
+        .slice(0, 10);
+}
+
+function buildLeaderboardPayload(dateKey = todayDateKey(STORAGE_TIMEZONE)) {
+    const challenge = buildDailyMatchManifest(dateKey, { defaults: DEFAULT_ROOM_CONFIG, timeZone: STORAGE_TIMEZONE });
+    return {
+        dateKey,
+        sections: [
+            {
+                id: 'general',
+                title: 'Genel Liderlik',
+                entries: buildGeneralLeaderboardList(),
+            },
+            {
+                id: 'daily',
+                title: `Gunluk Challenge - ${challenge.challengeKey}`,
+                subtitle: `${challenge.challengeTitle} | ${challenge.challengeBlurb}`,
+                entries: buildDailyChallengeLeaderboard(challenge.challengeKey),
+            },
+        ],
+    };
 }
 
 function generateRoomCode() {
@@ -212,17 +253,22 @@ function buildSyncRequestId() {
     return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+function buildReconnectToken() {
+    return 'r' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
 function createRoom(configPayload = {}) {
     const code = generateRoomCode();
+    const config = normalizeRoomConfig(configPayload, { defaults: DEFAULT_ROOM_CONFIG, timeZone: STORAGE_TIMEZONE });
     const room = {
         code,
         hostId: '',
         createdAt: Date.now(),
-        maxPlayers: MAX_ROOM_PLAYERS,
+        maxPlayers: config.mode === 'custom' ? Math.min(MAX_ROOM_PLAYERS, Math.max(2, Number(config.playerCount) || MAX_ROOM_PLAYERS)) : MAX_ROOM_PLAYERS,
         started: false,
         startedAt: 0,
         players: [],
-        config: normalizeRoomConfig(configPayload),
+        config,
         matchPlayers: [],
         rematchVotes: new Set(),
         resultReports: new Map(),
@@ -232,9 +278,159 @@ function createRoom(configPayload = {}) {
         syncReports: new Map(),
         pendingSyncRequest: null,
         stateSummaries: new Map(),
+        matchManifest: buildRoomMatchManifest({ config, players: [] }, { defaults: DEFAULT_ROOM_CONFIG, timeZone: STORAGE_TIMEZONE }),
+        lastResultTick: 0,
+        serverSim: null,
+        serverCommandQueue: [],
+        serverSnapshotHistory: [],
+        lastAuthoritativeBroadcastTick: -1,
+        serverTickTimer: null,
+        resumeExpiryTimer: null,
     };
     rooms.set(code, room);
     return room;
+}
+
+function cancelRoomResumeExpiry(room) {
+    if (!room || !room.resumeExpiryTimer) return;
+    clearTimeout(room.resumeExpiryTimer);
+    room.resumeExpiryTimer = null;
+}
+
+function scheduleRoomResumeExpiry(room) {
+    if (!room || !room.started || room.players.length > 0 || room.resumeExpiryTimer) return;
+    room.resumeExpiryTimer = setTimeout(() => {
+        const currentRoom = rooms.get(room.code);
+        if (!currentRoom || currentRoom !== room) return;
+        currentRoom.resumeExpiryTimer = null;
+        if (!currentRoom.started || currentRoom.players.length > 0) return;
+        resetRoomSimulation(currentRoom);
+        rooms.delete(currentRoom.code);
+        emitLobbyState();
+    }, ROOM_RESUME_GRACE_MS);
+    if (typeof room.resumeExpiryTimer.unref === 'function') room.resumeExpiryTimer.unref();
+}
+
+function stopRoomSimulation(room) {
+    if (!room || !room.serverTickTimer) return;
+    clearInterval(room.serverTickTimer);
+    room.serverTickTimer = null;
+}
+
+function resetRoomSimulation(room) {
+    if (!room) return;
+    cancelRoomResumeExpiry(room);
+    stopRoomSimulation(room);
+    room.serverSim = null;
+    room.serverCommandQueue = [];
+    room.serverSnapshotHistory = [];
+    room.lastAuthoritativeBroadcastTick = -1;
+}
+
+function getRoomAuthoritativeTick(room) {
+    if (room && room.serverSim && room.serverSim.ready && room.serverSim.state) {
+        return Math.max(0, Math.floor(Number(room.serverSim.state.tick) || 0));
+    }
+    return nowTick(room.startedAt);
+}
+
+function rememberAuthoritativeSnapshot(room, forceBroadcast = false) {
+    if (!room || !room.serverSim || !room.serverSim.ready || !room.serverSim.state) return null;
+    const snapshot = captureAuthoritativeSnapshot(room.serverSim.state);
+    const hash = computeAuthoritativeSnapshotHash(room.serverSim.state);
+    const entry = {
+        tick: room.serverSim.state.tick,
+        hash,
+        snapshot,
+    };
+    room.serverSnapshotHistory.push(entry);
+    if (room.serverSnapshotHistory.length > AUTHORITATIVE_SNAPSHOT_HISTORY) {
+        room.serverSnapshotHistory.splice(0, room.serverSnapshotHistory.length - AUTHORITATIVE_SNAPSHOT_HISTORY);
+    }
+
+    if (forceBroadcast || room.lastAuthoritativeBroadcastTick < 0 || entry.tick - room.lastAuthoritativeBroadcastTick >= AUTHORITATIVE_SNAPSHOT_INTERVAL_TICKS) {
+        room.lastAuthoritativeBroadcastTick = entry.tick;
+        io.to(room.code).emit('authoritativeState', {
+            matchId: room.matchId,
+            tick: entry.tick,
+            hash: entry.hash,
+            snapshot: entry.snapshot,
+        });
+    }
+    return entry;
+}
+
+function findAuthoritativeSnapshot(room, tick) {
+    if (!room || !Array.isArray(room.serverSnapshotHistory)) return null;
+    for (let i = room.serverSnapshotHistory.length - 1; i >= 0; i--) {
+        const entry = room.serverSnapshotHistory[i];
+        if (entry && entry.tick === tick) return entry;
+    }
+    return null;
+}
+
+function processRoomAuthoritativeTick(room) {
+    if (!room || !room.started || !room.serverSim || !room.serverSim.ready || !room.serverSim.state) return null;
+    const state = room.serverSim.state;
+
+    if (Array.isArray(room.serverCommandQueue) && room.serverCommandQueue.length > 0) {
+        room.serverCommandQueue.sort((a, b) => {
+            const tickDelta = (a.tick || 0) - (b.tick || 0);
+            if (tickDelta !== 0) return tickDelta;
+            return (a.seq || 0) - (b.seq || 0);
+        });
+        while (room.serverCommandQueue.length > 0) {
+            const command = room.serverCommandQueue[0];
+            if ((command.tick || 0) > state.tick + 1) break;
+            room.serverCommandQueue.shift();
+            applyCommandToAuthoritativeState(state, command.playerIndex, command.type, command.data);
+            state.lastAppliedSeq = typeof command.seq === 'number' ? command.seq : state.lastAppliedSeq;
+        }
+    }
+
+    simulateAuthoritativeTick(state);
+    const snapshotEntry = rememberAuthoritativeSnapshot(room, state.state === 'gameOver');
+
+    if (state.state === 'gameOver' && !room.resultCommitted) {
+        room.lastResultTick = Math.max(room.lastResultTick || 0, state.tick);
+        const confirmed = commitRoomResult(room, state.winner, state.tick);
+        if (confirmed) io.to(room.code).emit('matchResultConfirmed', confirmed);
+        stopRoomSimulation(room);
+    }
+    return snapshotEntry;
+}
+
+function ensureRoomSimulation(room) {
+    if (!room || room.serverTickTimer) return;
+    room.serverTickTimer = setInterval(() => {
+        processRoomAuthoritativeTick(room);
+    }, Math.round(1000 / TICK_RATE));
+    if (typeof room.serverTickTimer.unref === 'function') room.serverTickTimer.unref();
+}
+
+function installInitialRoomSnapshot(room, snapshot, options = {}) {
+    if (!room || !room.started || !room.matchId) return null;
+    if (room.serverSim && room.serverSim.ready && room.serverSim.state) {
+        return room.serverSnapshotHistory[room.serverSnapshotHistory.length - 1] || rememberAuthoritativeSnapshot(room, options.broadcast === true);
+    }
+    const serialized = JSON.stringify(snapshot || {});
+    if (serialized.length > AUTHORITATIVE_SNAPSHOT_MAX_BYTES) return null;
+
+    room.serverSim = {
+        ready: true,
+        state: buildAuthoritativeState(JSON.parse(serialized), {
+            manifest: room.matchManifest,
+            players: room.matchPlayers,
+        }),
+    };
+    room.lastResultTick = Math.max(room.lastResultTick || 0, room.serverSim.state.tick || 0);
+    room.serverCommandQueue = Array.isArray(room.serverCommandQueue) ? room.serverCommandQueue : [];
+    room.serverSnapshotHistory = [];
+    room.lastAuthoritativeBroadcastTick = -1;
+    const shouldBroadcast = options.broadcast !== false;
+    const initialEntry = rememberAuthoritativeSnapshot(room, shouldBroadcast);
+    ensureRoomSimulation(room);
+    return initialEntry;
 }
 
 function pruneSyncReports(room, currentTick) {
@@ -420,6 +616,9 @@ function recordStateSummary(room, socketId, payload = {}) {
 
     if (!(room.stateSummaries instanceof Map)) room.stateSummaries = new Map();
     room.stateSummaries.set(socketId, summary);
+    if (summary.gameOver && summary.tick > (room.lastResultTick || 0)) {
+        room.lastResultTick = summary.tick;
+    }
 
     for (const reporterId of Array.from(room.stateSummaries.keys())) {
         if (!room.players.some(player => player.socketId === reporterId)) {
@@ -427,7 +626,9 @@ function recordStateSummary(room, socketId, payload = {}) {
         }
     }
 
-    return maybeFinalizeMatchFromSummaries(room);
+    const resolved = maybeFinalizeMatchFromSummaries(room);
+    if (resolved && resolved.tick > (room.lastResultTick || 0)) room.lastResultTick = resolved.tick;
+    return resolved;
 }
 
 function buildConfirmedResultPayload(room, winnerIndex) {
@@ -439,10 +640,12 @@ function buildConfirmedResultPayload(room, winnerIndex) {
     };
 }
 
-function commitRoomResult(room, winnerIndex) {
+function commitRoomResult(room, winnerIndex, finishTick) {
     if (!room || room.resultCommitted) return null;
     room.resultCommitted = true;
+    room.lastResultTick = Math.max(0, toFiniteInt(finishTick) || room.lastResultTick || nowTick(room.startedAt));
     recordMatchResult(room, winnerIndex);
+    recordDailyChallengeScore(room, winnerIndex, room.lastResultTick);
     return buildConfirmedResultPayload(room, winnerIndex);
 }
 
@@ -452,6 +655,8 @@ function getRoom(code) {
 }
 
 function roomSnapshot(room, socketId) {
+    const preview = room?.started ? room.matchManifest : buildRoomMatchManifest(room, { defaults: DEFAULT_ROOM_CONFIG, timeZone: STORAGE_TIMEZONE });
+    const selfPlayer = room.players.find(p => p.socketId === socketId) || room.matchPlayers.find(p => p.socketId === socketId);
     return {
         code: room.code,
         hostId: room.hostId,
@@ -467,6 +672,8 @@ function roomSnapshot(room, socketId) {
             ready: false,
         })),
         config: room.config,
+        preview,
+        reconnectToken: selfPlayer ? String(selfPlayer.reconnectToken || '') : '',
     };
 }
 
@@ -481,20 +688,59 @@ function publicRoomList() {
     for (const [code, room] of rooms.entries()) {
         if (!room.started && room.players.length < room.maxPlayers) {
             const host = room.players.find(p => p.socketId === room.hostId);
+            const preview = buildRoomMatchManifest(room, { defaults: DEFAULT_ROOM_CONFIG, timeZone: STORAGE_TIMEZONE });
             list.push({
                 code: room.code,
                 hostName: host ? host.name : 'Host',
                 players: room.players.length,
                 maxPlayers: room.maxPlayers,
-                difficulty: String(room.config?.difficulty || DEFAULT_ROOM_CONFIG.difficulty),
-                nodeCount: Number(room.config?.nodeCount || DEFAULT_ROOM_CONFIG.nodeCount),
-                fogEnabled: !!room.config?.fogEnabled,
-                rulesMode: String(room.config?.rulesMode || DEFAULT_ROOM_CONFIG.rulesMode),
+                mode: preview.mode || room.config?.mode || 'standard',
+                modeLabel: preview.modeLabel || (normalizeRoomMode(room.config?.mode, { defaults: DEFAULT_ROOM_CONFIG }) === 'daily' ? 'Gunluk' : 'Standart'),
+                challengeKey: preview.challengeKey || room.config?.challengeKey || '',
+                challengeTitle: preview.challengeTitle || room.config?.challengeTitle || preview.customMapName || room.config?.customMapName || '',
+                difficulty: String(preview.difficulty || room.config?.difficulty || DEFAULT_ROOM_CONFIG.difficulty),
+                nodeCount: Number(preview.nodeCount || room.config?.nodeCount || DEFAULT_ROOM_CONFIG.nodeCount),
+                fogEnabled: !!(preview.fogEnabled ?? room.config?.fogEnabled),
+                rulesMode: String(preview.rulesMode || room.config?.rulesMode || DEFAULT_ROOM_CONFIG.rulesMode),
+                aiCount: Number(preview.aiCount || 0),
                 createdAt: Number(room.createdAt || 0),
             });
         }
     }
     return list;
+}
+
+function buildMatchStartedPayload(room, socketId) {
+    const roster = Array.isArray(room.matchPlayers) ? room.matchPlayers : [];
+    const selfPlayer = roster.find(player => player.socketId === socketId) || room.players.find(player => player.socketId === socketId);
+    const humanSlots = roster.filter(player => player && player.humanSlot).length || room.players.length;
+    return {
+        matchId: room.matchId,
+        roomCode: room.code,
+        authoritative: true,
+        mode: room.matchManifest.mode,
+        modeLabel: room.matchManifest.modeLabel,
+        challengeKey: room.matchManifest.challengeKey,
+        challengeTitle: room.matchManifest.challengeTitle,
+        challengeBlurb: room.matchManifest.challengeBlurb,
+        challenge: room.matchManifest.mode === 'daily' ? room.matchManifest.challenge : null,
+        seed: room.matchManifest.seed,
+        nodeCount: room.matchManifest.nodeCount,
+        difficulty: room.matchManifest.difficulty,
+        fogEnabled: room.matchManifest.fogEnabled,
+        rulesMode: room.matchManifest.rulesMode,
+        mapFeature: room.matchManifest.mapFeature,
+        humanCount: humanSlots,
+        aiCount: room.matchManifest.aiCount,
+        customMap: room.matchManifest.mode === 'custom' ? room.matchManifest.customMap : null,
+        customMapName: room.matchManifest.customMapName || '',
+        players: roster.map(player => ({
+            socketId: player.socketId || '',
+            name: player.name,
+            index: player.index,
+        })),
+        reconnectToken: selfPlayer ? String(selfPlayer.reconnectToken || '') : '',
+    };
 }
 
 function emitLobbyState(socketId) {
@@ -510,15 +756,9 @@ function startRoomMatch(room) {
     if (room.started) return;
     if (room.players.length < 2) return;
 
+    cancelRoomResumeExpiry(room);
     room.started = true;
     room.startedAt = Date.now();
-    room.matchPlayers = room.players.map(p => ({
-        socketId: p.socketId,
-        name: p.name,
-        index: p.index,
-        connected: true,
-        botControlled: false,
-    }));
     room.rematchVotes = new Set();
     room.resultReports = new Map();
     room.resultCommitted = false;
@@ -527,20 +767,52 @@ function startRoomMatch(room) {
     room.syncReports = new Map();
     room.pendingSyncRequest = null;
     room.stateSummaries = new Map();
+    room.matchManifest = buildRoomMatchManifest(room, { defaults: DEFAULT_ROOM_CONFIG, timeZone: STORAGE_TIMEZONE });
+    room.lastResultTick = 0;
+    resetRoomSimulation(room);
 
     const players = room.players.map(p => ({ socketId: p.socketId, name: p.name, index: p.index }));
-    io.to(room.code).emit('matchStarted', {
-        matchId: room.matchId,
-        roomCode: room.code,
-        seed: room.config.seed,
-        nodeCount: room.config.nodeCount,
-        difficulty: room.config.difficulty,
-        fogEnabled: room.config.fogEnabled,
-        rulesMode: room.config.rulesMode,
-        humanCount: room.players.length,
-        aiCount: 0,
-        players,
+    const aiPlayers = [];
+    for (let ai = 0; ai < room.matchManifest.aiCount; ai++) {
+        aiPlayers.push({
+            socketId: '',
+            name: `AI ${ai + 1}`,
+            index: room.players.length + ai,
+        });
+    }
+    room.matchPlayers = room.players.map(p => ({
+        socketId: p.socketId,
+        name: p.name,
+        index: p.index,
+        connected: true,
+        botControlled: false,
+        humanSlot: true,
+        reconnectToken: p.reconnectToken || buildReconnectToken(),
+    })).concat(aiPlayers.map(ai => ({
+        socketId: '',
+        name: ai.name,
+        index: ai.index,
+        connected: true,
+        botControlled: true,
+        humanSlot: false,
+        reconnectToken: '',
+    })));
+    const initialSnapshot = room.matchManifest.mode === 'custom'
+        ? buildCustomMapSnapshot(room.matchManifest.customMap, room.matchPlayers)
+        : buildInitialMatchSnapshot(room.matchManifest, room.matchPlayers);
+    const initialEntry = installInitialRoomSnapshot(room, initialSnapshot, { broadcast: false });
+
+    room.players.forEach(player => {
+        io.to(player.socketId).emit('matchStarted', buildMatchStartedPayload(room, player.socketId));
     });
+    if (initialEntry) {
+        io.to(room.code).emit('authoritativeState', {
+            matchId: room.matchId,
+            tick: initialEntry.tick,
+            hash: initialEntry.hash,
+            snapshot: initialEntry.snapshot,
+        });
+    }
     emitLobbyState();
 }
 
@@ -584,7 +856,35 @@ function cleanupPlayer(socketId) {
     const leavingPlayer = room.players.find(p => p.socketId === socketId);
 
     room.players = room.players.filter(p => p.socketId !== socketId);
+    if (room.started) {
+        const matchPlayer = room.matchPlayers.find(p => p.socketId === socketId);
+        if (matchPlayer) {
+            matchPlayer.connected = false;
+            matchPlayer.botControlled = true;
+            matchPlayer.socketId = '';
+            if (room.serverSim && room.serverSim.ready && room.serverSim.state && room.serverSim.state.players[matchPlayer.index]) {
+                room.serverSim.state.players[matchPlayer.index].isAI = true;
+            }
+        }
+        if (leavingPlayer) {
+            io.to(code).emit('playerLeft', { index: leavingPlayer.index, name: leavingPlayer.name });
+        }
+        if (room.players.length === 0) {
+            room.hostId = '';
+            scheduleRoomResumeExpiry(room);
+        } else {
+            cancelRoomResumeExpiry(room);
+            if (room.hostId === socketId || !room.players.some(p => p.socketId === room.hostId)) {
+                room.hostId = room.players[0].socketId;
+            }
+            emitRoomState(room);
+        }
+        emitLobbyState();
+        return;
+    }
+
     if (room.players.length === 0) {
+        resetRoomSimulation(room);
         rooms.delete(code);
         emitLobbyState();
         return;
@@ -592,34 +892,6 @@ function cleanupPlayer(socketId) {
 
     if (room.hostId === socketId) {
         room.hostId = room.players[0].socketId;
-    }
-
-    if (room.started) {
-        const matchPlayer = room.matchPlayers.find(p => p.socketId === socketId);
-        if (matchPlayer) {
-            matchPlayer.connected = false;
-            matchPlayer.botControlled = true;
-            matchPlayer.socketId = '';
-        }
-        if (leavingPlayer) {
-            io.to(code).emit('playerLeft', { index: leavingPlayer.index, name: leavingPlayer.name });
-        }
-        if (room.players.length < 2) {
-            room.started = false;
-            room.startedAt = 0;
-            room.matchPlayers = [];
-            room.rematchVotes = new Set();
-            room.resultReports = new Map();
-            room.resultCommitted = false;
-            room.matchId = '';
-            room.commandSeq = 0;
-            room.syncReports = new Map();
-            room.pendingSyncRequest = null;
-            room.stateSummaries = new Map();
-            io.to(code).emit('roomClosed', { message: 'Yeterli oyuncu kalmadi. Oda lobiye dondu.' });
-            emitLobbyState();
-        }
-        return;
     }
 
     // Reassign contiguous indices.
@@ -635,6 +907,63 @@ function sendPublicFile(res, relativePath) {
             res.status(err.statusCode || 404).end();
         }
     });
+}
+
+function findReconnectableMatchPlayer(room, reconnectToken) {
+    const token = String(reconnectToken || '').trim();
+    if (!room || !room.started || !token || !Array.isArray(room.matchPlayers)) return null;
+    return room.matchPlayers.find(player => player && player.humanSlot && player.reconnectToken === token) || null;
+}
+
+function resumeStartedRoomPlayer(socket, room, reconnectToken) {
+    const matchPlayer = findReconnectableMatchPlayer(room, reconnectToken);
+    if (!matchPlayer) return false;
+    if (matchPlayer.connected && matchPlayer.socketId && matchPlayer.socketId !== socket.id) return false;
+
+    cancelRoomResumeExpiry(room);
+    matchPlayer.socketId = socket.id;
+    matchPlayer.connected = true;
+    matchPlayer.botControlled = false;
+
+    if (room.serverSim && room.serverSim.ready && room.serverSim.state && room.serverSim.state.players[matchPlayer.index]) {
+        room.serverSim.state.players[matchPlayer.index].isAI = false;
+    }
+
+    const existing = room.players.find(player => player.index === matchPlayer.index || player.socketId === socket.id);
+    if (existing) {
+        existing.socketId = socket.id;
+        existing.name = matchPlayer.name;
+        existing.index = matchPlayer.index;
+        existing.reconnectToken = matchPlayer.reconnectToken;
+    } else {
+        room.players.push({
+            socketId: socket.id,
+            name: matchPlayer.name,
+            index: matchPlayer.index,
+            reconnectToken: matchPlayer.reconnectToken,
+        });
+    }
+    room.players.sort((a, b) => a.index - b.index);
+
+    if (!room.hostId || !room.players.some(player => player.socketId === room.hostId)) {
+        room.hostId = socket.id;
+    }
+
+    socketToRoom.set(socket.id, room.code);
+    socket.join(room.code);
+    emitRoomState(room);
+    io.to(room.code).emit('playerRejoined', { index: matchPlayer.index, name: matchPlayer.name });
+    io.to(socket.id).emit('matchStarted', buildMatchStartedPayload(room, socket.id));
+
+    if (room.serverSim && room.serverSim.ready && room.serverSim.state) {
+        io.to(socket.id).emit('authoritativeState', {
+            matchId: room.matchId,
+            tick: room.serverSim.state.tick,
+            hash: computeAuthoritativeSnapshotHash(room.serverSim.state),
+            snapshot: captureAuthoritativeSnapshot(room.serverSim.state),
+        });
+    }
+    return true;
 }
 
 app.use('/assets', express.static(path.join(STATIC_ROOT, 'assets')));
@@ -688,6 +1017,9 @@ function joinSingleRoom(socket, payload = {}) {
         return;
     }
 
+    if (room.started && payload.action === 'join' && resumeStartedRoomPlayer(socket, room, payload.reconnectToken)) {
+        return;
+    }
     if (room.started) {
         socket.emit('roomError', { message: 'Bu odada oyun çoktan başlamış.' });
         emitLobbyState(socket.id);
@@ -703,6 +1035,7 @@ function joinSingleRoom(socket, payload = {}) {
         socketId: socket.id,
         name: playerName,
         index: room.players.length,
+        reconnectToken: buildReconnectToken(),
     });
 
     socketToRoom.set(socket.id, room.code);
@@ -756,7 +1089,7 @@ io.on('connection', (socket) => {
         if (!data) return;
 
         let targetTick = Number(payload.tick);
-        const serverCurrentTick = nowTick(room.startedAt);
+        const serverCurrentTick = getRoomAuthoritativeTick(room);
         // İstemcinin ilettiği tick çok geçmişteyse sunucu anının 2 ilerisini kabul et
         if (isNaN(targetTick) || targetTick < serverCurrentTick) {
             targetTick = serverCurrentTick + 2;
@@ -775,7 +1108,23 @@ io.on('connection', (socket) => {
             type,
             data,
         };
-        io.to(code).emit('roomCommand', command);
+        if (!Array.isArray(room.serverCommandQueue)) room.serverCommandQueue = [];
+        room.serverCommandQueue.push(command);
+        if (!room.serverSim || !room.serverSim.ready) {
+            io.to(code).emit('roomCommand', command);
+        }
+    });
+
+    socket.on('initialStateSnapshot', (payload = {}) => {
+        const code = socketToRoom.get(socket.id);
+        if (!code) return;
+        const room = rooms.get(code);
+        if (!room || !room.started) return;
+        if (socket.id !== room.hostId) return;
+        if (String(payload.matchId || '') !== room.matchId) return;
+        if (room.serverSim && room.serverSim.ready) return;
+        if (!payload.snapshot || typeof payload.snapshot !== 'object') return;
+        installInitialRoomSnapshot(room, payload.snapshot);
     });
 
     socket.on('stateHash', (payload = {}) => {
@@ -783,6 +1132,21 @@ io.on('connection', (socket) => {
         if (!code) return;
         const room = rooms.get(code);
         if (!room || !room.started) return;
+
+        if (room.serverSim && room.serverSim.ready) {
+            const tick = toFiniteInt(payload.tick);
+            const clientHash = String(payload.hash || '').trim().toLowerCase();
+            const serverSnapshot = tick === null ? null : findAuthoritativeSnapshot(room, tick);
+            if (serverSnapshot && clientHash && clientHash !== serverSnapshot.hash) {
+                io.to(socket.id).emit('authoritativeState', {
+                    matchId: room.matchId,
+                    tick: serverSnapshot.tick,
+                    hash: serverSnapshot.hash,
+                    snapshot: serverSnapshot.snapshot,
+                });
+            }
+            return;
+        }
 
         const issue = recordStateHash(room, socket.id, payload);
         if (!issue) return;
@@ -840,11 +1204,12 @@ io.on('connection', (socket) => {
         if (!code) return;
         const room = rooms.get(code);
         if (!room || !room.started) return;
+        if (room.serverSim && room.serverSim.ready) return;
 
         const result = recordStateSummary(room, socket.id, payload);
         if (!result) return;
 
-        const confirmed = commitRoomResult(room, result.winnerIndex);
+        const confirmed = commitRoomResult(room, result.winnerIndex, result.tick);
         if (confirmed) io.to(code).emit('matchResultConfirmed', confirmed);
     });
 
@@ -855,7 +1220,7 @@ io.on('connection', (socket) => {
         if (!room || !room.started) return;
         socket.emit('pongTick', {
             clientTs: payload.clientTs,
-            serverTick: nowTick(room.startedAt)
+            serverTick: getRoomAuthoritativeTick(room)
         });
     });
 
@@ -896,6 +1261,7 @@ io.on('connection', (socket) => {
             room.resultCommitted = false;
             room.pendingSyncRequest = null;
             room.stateSummaries = new Map();
+            resetRoomSimulation(room);
             startRoomMatch(room);
         } else if (room.players.length >= 2) {
             io.to(code).emit('rematchVote', { name: player ? player.name : '?', count: room.rematchVotes.size, total: room.players.length });
@@ -907,6 +1273,7 @@ io.on('connection', (socket) => {
         if (!code) return;
         const room = rooms.get(code);
         if (!room || !room.started) return;
+        if (room.serverSim && room.serverSim.ready) return;
         const player = room.players.find(p => p.socketId === socket.id);
         if (!player) return;
 
@@ -918,7 +1285,15 @@ io.on('connection', (socket) => {
         }
         if (winnerIndex === null) return;
 
-        room.resultReports.set(socket.id, winnerIndex);
+        const reportedTick = toFiniteInt(payload.tick);
+        if (reportedTick !== null && reportedTick > (room.lastResultTick || 0)) {
+            room.lastResultTick = reportedTick;
+        }
+
+        room.resultReports.set(socket.id, {
+            winnerIndex,
+            tick: reportedTick,
+        });
 
         // Keep report map aligned with active room players.
         for (const reporterId of Array.from(room.resultReports.keys())) {
@@ -929,7 +1304,8 @@ io.on('connection', (socket) => {
 
         if (room.resultReports.size < room.players.length) return;
 
-        const reportedWinners = Array.from(room.resultReports.values());
+        const reports = Array.from(room.resultReports.values());
+        const reportedWinners = reports.map(report => report.winnerIndex);
         const consensus = reportedWinners.every(v => v === reportedWinners[0]);
         if (!consensus) {
             room.resultReports.clear();
@@ -937,19 +1313,26 @@ io.on('connection', (socket) => {
             return;
         }
         const confirmedWinner = reportedWinners[0];
-        const confirmed = commitRoomResult(room, confirmedWinner);
+        const finishTick = reports.reduce((maxTick, report) => {
+            return report.tick !== null && report.tick > maxTick ? report.tick : maxTick;
+        }, room.lastResultTick || 0);
+        const confirmed = commitRoomResult(room, confirmedWinner, finishTick);
         if (confirmed) io.to(code).emit('matchResultConfirmed', confirmed);
     });
 
     socket.on('requestLeaderboard', () => {
-        const byName = {};
-        leaderboard.forEach(e => {
-            if (!byName[e.name]) byName[e.name] = { name: e.name, wins: 0, games: 0 };
-            byName[e.name].wins += e.wins;
-            byName[e.name].games += e.games;
+        socket.emit('leaderboard', buildLeaderboardPayload(todayDateKey(STORAGE_TIMEZONE)));
+    });
+
+    socket.on('requestDailyChallenge', (payload = {}) => {
+        const manifest = buildDailyMatchManifest(payload.challengeDate || todayDateKey(STORAGE_TIMEZONE), { defaults: DEFAULT_ROOM_CONFIG, timeZone: STORAGE_TIMEZONE });
+        socket.emit('dailyChallenge', {
+            challenge: manifest.challenge,
+            challengeKey: manifest.challengeKey,
+            title: manifest.challengeTitle,
+            blurb: manifest.challengeBlurb,
+            aiCount: manifest.aiCount,
         });
-        const list = Object.values(byName).sort((a, b) => b.wins - a.wins).slice(0, 10);
-        socket.emit('leaderboard', { list });
     });
 
     socket.on('disconnect', () => {
@@ -965,7 +1348,7 @@ server.on('error', (err) => {
     throw err;
 });
 
-const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === __filename;
+loadPersistentState();
 
 if (isMainModule) {
     server.listen(PORT, () => {
@@ -978,6 +1361,7 @@ export {
     rooms,
     socketToRoom,
     leaderboard,
+    dailyChallengeScores,
     createRoom,
     startRoomMatch,
     cleanupPlayer,
@@ -990,4 +1374,15 @@ export {
     recordStateSummary,
     maybeFinalizeMatchFromSummaries,
     commitRoomResult,
+    todayDateKey,
+    buildDailyMatchManifest,
+    buildRoomMatchManifest,
+    recordDailyChallengeScore,
+    buildDailyChallengeLeaderboard,
+    buildLeaderboardPayload,
+    installInitialRoomSnapshot,
+    processRoomAuthoritativeTick,
+    getRoomAuthoritativeTick,
+    stopRoomSimulation,
+    resumeStartedRoomPlayer,
 };

@@ -1260,7 +1260,7 @@
                     <button id="importMapBtn" class="secondary-btn">Ozel Harita Yukle</button>
                     <button id="exportMapBtn" class="secondary-btn">Haritayi Disa Aktar</button>
                 </div>
-                <div id="customMapStatus" class="menu-status-note">Custom map yukleyip baslangic duzenini, anomalileri ve acilis node sahipliklerini sabitleyebilirsin.</div>
+                <div id="customMapStatus" class="menu-status-note">Custom map yukleyip baslangic duzenini, anomalileri ve acilis node sahipliklerini sabitleyebilirsin. Yuklenen haritayi online oda olarak da acabilirsin.</div>
             </div>
 
             <div id="panelMulti" class="menu-panel-content hidden">
@@ -1271,6 +1271,7 @@
                 </div>
                 <div class="menu-field" style="margin-bottom:8px"><label>Oda Ayarlari (Host)</label>
                     <div class="room-row" style="gap:6px; flex-wrap:wrap">
+                        <select id="multiRoomTypeSelect" style="flex:0 0 96px"><option value="standard" selected>Standart</option><option value="daily">Gunluk</option><option value="custom">Custom</option></select>
                         <input type="text" id="multiSeedInput" value="42" placeholder="Seed" style="flex:0 0 70px" />
                         <input type="range" id="multiNodeInput" min="8" max="30" value="16" style="flex:1; min-width:80px" /><span id="multiNodeLabel" style="width:24px">16</span>
                         <select id="multiDiffSelect" style="flex:0 0 80px"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select>

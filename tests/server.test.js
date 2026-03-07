@@ -5,6 +5,7 @@ import {
     rooms,
     socketToRoom,
     leaderboard,
+    dailyChallengeScores,
     createRoom,
     startRoomMatch,
     cleanupPlayer,
@@ -15,12 +16,23 @@ import {
     createSyncSnapshotRequest,
     recordStateSummary,
     commitRoomResult,
+    buildRoomMatchManifest,
+    buildDailyChallengeLeaderboard,
+    getRoomAuthoritativeTick,
+    processRoomAuthoritativeTick,
+    stopRoomSimulation,
+    resumeStartedRoomPlayer,
 } from '../server.js';
 
 function resetServerState() {
+    for (const room of rooms.values()) {
+        stopRoomSimulation(room);
+        if (room.resumeExpiryTimer) clearTimeout(room.resumeExpiryTimer);
+    }
     rooms.clear();
     socketToRoom.clear();
     leaderboard.length = 0;
+    dailyChallengeScores.length = 0;
 }
 
 function createStartedRoom() {
@@ -35,6 +47,7 @@ function createStartedRoom() {
     socketToRoom.set('s1', room.code);
     socketToRoom.set('s2', room.code);
     startRoomMatch(room);
+    stopRoomSimulation(room);
     return room;
 }
 
@@ -128,4 +141,157 @@ test('recordStateSummary can finalize a winner without explicit reportResult con
         winnerName: 'Closer',
         draw: false,
     });
+});
+
+test('buildRoomMatchManifest derives daily rooms from server-side challenge config', function () {
+    resetServerState();
+    var room = createRoom({ mode: 'daily', challengeDate: '2026-03-07' });
+
+    var manifest = buildRoomMatchManifest(room);
+
+    assert.equal(manifest.mode, 'daily');
+    assert.equal(manifest.challengeKey, '2026-03-07');
+    assert.equal(manifest.seed, 'daily-2026-03-07');
+    assert.ok(manifest.aiCount >= 1);
+    assert.ok(Array.isArray(manifest.objectives));
+});
+
+test('commitRoomResult records daily challenge clears for human winners', function () {
+    resetServerState();
+    var room = createRoom({ mode: 'daily', challengeDate: '2026-03-07' });
+    room.hostId = 's0';
+    room.players = [
+        { socketId: 's0', name: 'Host', index: 0 },
+        { socketId: 's1', name: 'Guest', index: 1 },
+    ];
+    socketToRoom.set('s0', room.code);
+    socketToRoom.set('s1', room.code);
+    startRoomMatch(room);
+
+    var confirmed = commitRoomResult(room, 1, 840);
+
+    assert.deepEqual(confirmed, {
+        winnerIndex: 1,
+        winnerName: 'Guest',
+        draw: false,
+    });
+    assert.equal(dailyChallengeScores.length, 1);
+    assert.equal(dailyChallengeScores[0].dateKey, room.matchManifest.challengeKey);
+    assert.equal(dailyChallengeScores[0].finishTick, 840);
+
+    assert.deepEqual(buildDailyChallengeLeaderboard(room.matchManifest.challengeKey), [
+        { name: 'Guest', bestTick: 840, attempts: 1, clears: 1 },
+    ]);
+});
+
+test('startRoomMatch boots an authoritative server sim and advances queued commands', function () {
+    resetServerState();
+    var room = createRoom({ seed: 'authoritative-room', aiCount: 0 });
+    room.hostId = 's0';
+    room.players = [
+        { socketId: 's0', name: 'Host', index: 0 },
+        { socketId: 's1', name: 'Guest', index: 1 },
+    ];
+    socketToRoom.set('s0', room.code);
+    socketToRoom.set('s1', room.code);
+    startRoomMatch(room);
+    stopRoomSimulation(room);
+    var sourceId = room.serverSim.state.playerCapital[0];
+    var targetId = room.serverSim.state.playerCapital[1];
+
+    assert.equal(room.serverSim.ready, true);
+    assert.equal(room.serverSnapshotHistory.length > 0, true);
+    assert.equal(getRoomAuthoritativeTick(room), 0);
+
+    room.serverCommandQueue.push({
+        matchId: room.matchId,
+        seq: 0,
+        playerIndex: 0,
+        tick: 1,
+        type: 'send',
+        data: { sources: [sourceId], tgtId: targetId, pct: 0.5 },
+    });
+
+    processRoomAuthoritativeTick(room);
+
+    assert.equal(getRoomAuthoritativeTick(room), 1);
+    assert.equal(room.serverSim.state.fleets.length > 0, true);
+    stopRoomSimulation(room);
+});
+
+test('started 1v1 room stays resumable after a disconnect and token resume restores the slot', function () {
+    resetServerState();
+    var room = createRoom({ seed: 'resume-room', aiCount: 0 });
+    room.hostId = 's0';
+    room.players = [
+        { socketId: 's0', name: 'Host', index: 0 },
+        { socketId: 's1', name: 'Guest', index: 1 },
+    ];
+    socketToRoom.set('s0', room.code);
+    socketToRoom.set('s1', room.code);
+    startRoomMatch(room);
+    stopRoomSimulation(room);
+
+    var reconnectToken = room.matchPlayers[1].reconnectToken;
+    cleanupPlayer('s1');
+
+    assert.equal(room.started, true);
+    assert.equal(room.players.length, 1);
+    assert.equal(room.matchPlayers[1].connected, false);
+    assert.equal(room.matchPlayers[1].botControlled, true);
+    assert.equal(room.serverSim.state.players[1].isAI, true);
+
+    var resumed = resumeStartedRoomPlayer({
+        id: 's1b',
+        join: function () {},
+    }, room, reconnectToken);
+
+    assert.equal(resumed, true);
+    assert.equal(room.players.length, 2);
+    assert.equal(room.matchPlayers[1].connected, true);
+    assert.equal(room.matchPlayers[1].botControlled, false);
+    assert.equal(room.matchPlayers[1].socketId, 's1b');
+    assert.equal(room.serverSim.state.players[1].isAI, false);
+    stopRoomSimulation(room);
+});
+
+test('custom rooms derive player cap and authoritative snapshot from uploaded map', function () {
+    resetServerState();
+    var room = createRoom({
+        mode: 'custom',
+        customMap: {
+            name: 'Bridge',
+            seed: 'bridge-seed',
+            difficulty: 'hard',
+            fogEnabled: true,
+            rulesMode: 'classic',
+            playerCount: 4,
+            nodes: [
+                { x: 120, y: 120, owner: 0, units: 24, kind: 'core' },
+                { x: 340, y: 220, owner: 1, units: 22, kind: 'relay' },
+                { x: 620, y: 400, owner: 2, units: 18, kind: 'core' },
+                { x: 860, y: 520, owner: 3, units: 18, kind: 'core' },
+            ],
+            mapFeature: { type: 'barrier', x: 800, gateIds: [1] },
+        },
+    });
+    room.hostId = 's0';
+    room.players = [
+        { socketId: 's0', name: 'Host', index: 0 },
+        { socketId: 's1', name: 'Guest', index: 1 },
+    ];
+    socketToRoom.set('s0', room.code);
+    socketToRoom.set('s1', room.code);
+    startRoomMatch(room);
+    stopRoomSimulation(room);
+
+    assert.equal(room.maxPlayers, 4);
+    assert.equal(room.matchManifest.mode, 'custom');
+    assert.equal(room.matchManifest.customMapName, 'Bridge');
+    assert.equal(room.matchManifest.aiCount, 2);
+    assert.equal(room.serverSim.state.nodes.length, 4);
+    assert.equal(room.serverSim.state.mapFeature.type, 'barrier');
+    assert.equal(room.serverSim.state.players.length, 4);
+    assert.equal(room.serverSim.state.players[2].isAI, true);
+    stopRoomSimulation(room);
 });
