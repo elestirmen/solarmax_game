@@ -64,6 +64,33 @@ test('applyCommandToAuthoritativeState dispatches a fleet for send commands', fu
     assert.equal(state.nodes[0].units < 30, true);
 });
 
+test('applyCommandToAuthoritativeState adds deterministic launch variance for repeated route sends', function () {
+    var state = buildAuthoritativeState(baseSnapshot(), {
+        manifest: { seed: 'sim-seed', difficulty: 'normal', rulesMode: 'advanced', fogEnabled: false },
+    });
+
+    applyCommandToAuthoritativeState(state, 0, 'send', {
+        sources: [0],
+        tgtId: 1,
+        pct: 0.5,
+    });
+    applyCommandToAuthoritativeState(state, 0, 'send', {
+        sources: [0],
+        tgtId: 1,
+        pct: 0.5,
+    });
+
+    assert.equal(state.fleets.length, 2);
+    assert.equal(state.fleets[0].id, 1);
+    assert.equal(state.fleets[1].id, 2);
+    assert.equal(state.fleets[0].spdVar >= 0.97 && state.fleets[0].spdVar <= 1.03, true);
+    assert.equal(state.fleets[1].spdVar >= 0.97 && state.fleets[1].spdVar <= 1.03, true);
+    assert.equal(state.fleets[0].trailScale >= 0.9, true);
+    assert.equal(state.fleets[1].trailScale >= 0.9, true);
+    assert.equal(state.fleets[1].t < state.fleets[0].t, true);
+    assert.notEqual(state.fleets[0].offsetL, state.fleets[1].offsetL);
+});
+
 test('simulateAuthoritativeTick advances state and resolves game over when only one player has assets', function () {
     var snapshot = baseSnapshot();
     snapshot.players[1].alive = false;

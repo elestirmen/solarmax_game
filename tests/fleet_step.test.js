@@ -54,6 +54,46 @@ test('stepFleetMovement advances fleet position and preserves trail history', fu
     assert.notEqual(fleets[0].y, 5);
 });
 
+test('stepFleetMovement respects fleet trail scale when trimming trail history', function () {
+    var fleets = [{
+        active: true,
+        srcId: 0,
+        tgtId: 1,
+        t: 0.08,
+        speed: 80,
+        spdVar: 1.03,
+        arcLen: 100,
+        routeSpeedMult: 1.2,
+        cpx: 50,
+        cpy: 20,
+        x: 5,
+        y: 5,
+        trail: [],
+        offsetL: 3,
+        launchT: 0.05,
+        trailScale: 1.5,
+    }];
+    var nodes = [
+        { pos: { x: 0, y: 0 } },
+        { pos: { x: 100, y: 0 } },
+    ];
+
+    for (var i = 0; i < 20; i++) {
+        stepFleetMovement({
+            fleets: fleets,
+            nodes: nodes,
+            dt: 1 / 30,
+            tune: { fspeed: 80 },
+            mapFeature: { type: 'none' },
+            callbacks: { clamp: clamp, bezPt: bezPt },
+            constants: { baseFleetSpeed: 80, gravitySpeedMult: 0.75, trailLen: 6 },
+        });
+    }
+
+    assert.equal(fleets[0].trail.length > 6, true);
+    assert.equal(fleets[0].trail.length <= 9, true);
+});
+
 test('resolveCombatOutcome captures node, resets assimilation, and reports effects', function () {
     var targetNode = {
         id: 4,

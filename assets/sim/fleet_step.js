@@ -37,6 +37,9 @@ export function stepFleetMovement(params) {
             var gravityR = Number(mapFeature.r) || 0;
             if (gdx * gdx + gdy * gdy <= gravityR * gravityR) speedMult *= gravitySpeedMult;
         }
+        var fleetTrailScale = Number(fleet.trailScale);
+        if (!Number.isFinite(fleetTrailScale) || fleetTrailScale <= 0) fleetTrailScale = 1;
+        var fleetTrailLen = Math.max(4, Math.round(trailLen * fleetTrailScale));
 
         var dp = ((Number(fleet.speed) || 0) * (Number(fleet.spdVar) || 1) * (Number(tune.fspeed) || baseFleetSpeed) / baseFleetSpeed) * speedMult * dt;
         var arcLen = Math.max(1, Number(fleet.arcLen) || 1);
@@ -46,7 +49,7 @@ export function stepFleetMovement(params) {
             var arrivalNode = nodes[fleet.tgtId];
             if (arrivalNode && arrivalNode.pos) {
                 fleet.trail.push({ x: fleet.x, y: fleet.y });
-                if (fleet.trail.length > trailLen) fleet.trail.shift();
+                if (fleet.trail.length > fleetTrailLen) fleet.trail.shift();
                 fleet.x = arrivalNode.pos.x;
                 fleet.y = arrivalNode.pos.y;
             }
@@ -73,7 +76,7 @@ export function stepFleetMovement(params) {
             var oy = pt.y + ny * (Number(fleet.offsetL) || 0) * fade;
 
             fleet.trail.push({ x: fleet.x, y: fleet.y });
-            if (fleet.trail.length > trailLen) fleet.trail.shift();
+            if (fleet.trail.length > fleetTrailLen) fleet.trail.shift();
             fleet.x = ox;
             fleet.y = oy;
             continue;

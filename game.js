@@ -15,6 +15,7 @@ import { computeOwnershipMetrics, computeSupplyConnected as computeSupplyConnect
 import { stepNodeEconomy } from './assets/sim/node_economy.js';
 import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } from './assets/sim/ruleset.js';
 import { computeFriendlyReinforcementRoom } from './assets/sim/reinforcement.js';
+import { buildFleetSpawnProfile, hashMix } from './assets/sim/shared_config.js';
 import { getStrategicPulseState, isStrategicPulseActiveForNode } from './assets/sim/strategic_pulse.js';
 import { computeSyncHash } from './assets/sim/state_hash.js';
 import { applyPlayerCommandWithOps } from './assets/sim/command_apply.js';
@@ -173,10 +174,6 @@ function getPlanetTexture(id, radius) {
 // Ã¢â€â‚¬Ã¢â€â‚¬ VECTOR Ã¢â€â‚¬Ã¢â€â‚¬
 function dist(a, b) { var dx = b.x - a.x, dy = b.y - a.y; return Math.sqrt(dx * dx + dy * dy); }
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
-function hashMix(a, b, c, d) {
-    var h = ((a * 73856093) ^ (b * 19349663) ^ (c * 83492791) ^ (d * 2654435761)) >>> 0;
-    return (h % 1000000) / 1000000;
-}
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ BEZIER Ã¢â€â‚¬Ã¢â€â‚¬
 function bezCP(s, t, c) {
@@ -195,8 +192,8 @@ function bezLen(p0, cp, p2) {
 // Ã¢â€â‚¬Ã¢â€â‚¬ FLEET POOL (with trail + lateral offset for swarm) Ã¢â€â‚¬Ã¢â€â‚¬
 function mkFleet() {
     return {
-        active: false, owner: -1, count: 0, srcId: -1, tgtId: -1, t: 0, speed: 0, arcLen: 1, cpx: 0, cpy: 0, x: 0, y: 0,
-        trail: [], offsetL: 0, spdVar: 1, routeSpeedMult: 1, dmgAcc: 0, launchT: 0
+        id: 0, active: false, owner: -1, count: 0, srcId: -1, tgtId: -1, t: 0, speed: 0, arcLen: 1, cpx: 0, cpy: 0, x: 0, y: 0,
+        trail: [], offsetL: 0, spdVar: 1, routeSpeedMult: 1, trailScale: 1, dmgAcc: 0, launchT: 0
     };
 }  // trail: array of {x,y}, offsetL: perpendicular spread, spdVar: speed variation
 var pool = [];
@@ -877,15 +874,26 @@ function dispatch(owner, srcIds, tgtId, pct) {
             if (qf.owner === owner && qf.srcId === src.id && qf.tgtId === tgtId) routeQueue++;
         }
         var launchDelay = Math.min(0.28, routeQueue * 0.03);
-        var f = acquireFleet(); f.active = true; f.owner = owner; f.count = cnt; f.srcId = srcIds[si]; f.tgtId = tgtId;
+        G.fleetSerial = Math.max(0, Math.floor(Number(G.fleetSerial) || 0)) + 1;
+        var f = acquireFleet(); f.id = G.fleetSerial; f.active = true; f.owner = owner; f.count = cnt; f.srcId = srcIds[si]; f.tgtId = tgtId;
         f.t = -launchDelay;
         f.speed = FLEET_SPEED;
-        f.offsetL = 0;
-        f.spdVar = 1;
         f.routeSpeedMult = srcType.speed * (hasWormholeLink ? WORMHOLE_SPEED_MULT : 1);
         if (isNodeAssimilated(src) && strategicPulseAppliesToNode(src.id)) {
             f.routeSpeedMult *= STRATEGIC_PULSE_SPEED;
         }
+        var spawnProfile = buildFleetSpawnProfile({
+            seed: G.seed,
+            srcId: src.id,
+            tgtId: tgtId,
+            serial: f.id,
+            routeQueue: routeQueue,
+            count: cnt,
+            routeSpeedMult: f.routeSpeedMult,
+        });
+        f.offsetL = spawnProfile.offsetL;
+        f.spdVar = spawnProfile.spdVar;
+        f.trailScale = spawnProfile.trailScale;
         f.cpx = cp.x; f.cpy = cp.y; f.arcLen = bezLen(src.pos, cp, tgt.pos);
         f.launchT = clamp((src.radius + 2) / Math.max(f.arcLen, 1), 0, 0.12);
         var launchPt = bezPt(src.pos, cp, tgt.pos, f.launchT);
@@ -1752,6 +1760,10 @@ function drawFleetRocket(ctx, f, col, tick) {
     var launchT = clamp(typeof f.launchT === 'number' ? f.launchT : 0, 0, 0.2);
     var trail = f.trail || [];
     var tl = trail.length;
+    var trailScale = clamp(Number(f.trailScale) || 1, 0.85, 1.5);
+    var routeVisual = clamp((Number(f.routeSpeedMult) || 1) * (Number(f.spdVar) || 1), 0.85, 2);
+    var trailAlphaBoost = clamp(0.92 + Math.max(0, routeVisual - 1) * 0.65 + (trailScale - 1) * 0.45, 0.85, 1.55);
+    var trailWidthBoost = clamp(0.95 + (trailScale - 1) * 0.85, 0.9, 1.5);
     if (tl > 0) {
         var prev = trail[0];
         for (var i = 1; i < tl; i++) {
@@ -1760,8 +1772,8 @@ function drawFleetRocket(ctx, f, col, tick) {
             ctx.beginPath();
             ctx.moveTo(prev.x, prev.y);
             ctx.lineTo(curr.x, curr.y);
-            ctx.strokeStyle = hexToRgba(col, 0.04 + t * 0.18);
-            ctx.lineWidth = 0.6 + t * 1.6;
+            ctx.strokeStyle = hexToRgba(col, (0.04 + t * 0.18) * trailAlphaBoost);
+            ctx.lineWidth = (0.6 + t * 1.6) * trailWidthBoost;
             ctx.lineCap = 'round';
             ctx.stroke();
             prev = curr;
@@ -1769,8 +1781,8 @@ function drawFleetRocket(ctx, f, col, tick) {
         ctx.beginPath();
         ctx.moveTo(prev.x, prev.y);
         ctx.lineTo(f.x, f.y);
-        ctx.strokeStyle = hexToRgba(col, 0.28);
-        ctx.lineWidth = 2.3;
+        ctx.strokeStyle = hexToRgba(col, 0.28 * trailAlphaBoost);
+        ctx.lineWidth = 2.3 * trailWidthBoost;
         ctx.lineCap = 'round';
         ctx.stroke();
     }
@@ -1788,14 +1800,14 @@ function drawFleetRocket(ctx, f, col, tick) {
     dirX /= dLen; dirY /= dLen;
     var nX = -dirY, nY = dirX;
 
-    var phase = tick * 0.28 + f.srcId * 0.9 + f.tgtId * 0.6 + f.offsetL * 0.08;
+    var phase = tick * 0.28 + f.srcId * 0.9 + f.tgtId * 0.6 + (f.id || 0) * 0.17 + f.offsetL * 0.08;
     var flicker = 0.5 + 0.5 * Math.sin(phase);
     drawRocketShape(ctx, f.x, f.y, dirX, dirY, col, flicker, 1, 1);
 
     var supportCount = Math.max(0, Math.floor(count) - 1);
     if (supportCount > 0 && srcNode && tgtNode) {
-        var spacingT = 0.012;
-        var swarmWidth = Math.min(20, 6 + count * 0.35);
+        var spacingT = 0.012 + Math.max(0, trailScale - 1) * 0.004;
+        var swarmWidth = Math.min(22, 6 + count * 0.35 + Math.abs(f.offsetL) * 0.12);
         for (var ui = 1; ui <= supportCount; ui++) {
             var tUnit = f.t - ui * spacingT;
             if (tUnit <= 0 || tUnit >= 1) continue;
@@ -2962,6 +2974,7 @@ function captureSyncSnapshot() {
         }),
         fleets: G.fleets.filter(function (fleet) { return fleet && fleet.active; }).map(function (fleet) {
             return {
+                id: fleet.id || 0,
                 active: true,
                 owner: fleet.owner,
                 count: fleet.count,
@@ -2978,6 +2991,7 @@ function captureSyncSnapshot() {
                 offsetL: fleet.offsetL || 0,
                 spdVar: fleet.spdVar || 1,
                 routeSpeedMult: fleet.routeSpeedMult || 1,
+                trailScale: fleet.trailScale || 1,
                 dmgAcc: fleet.dmgAcc || 0,
                 launchT: fleet.launchT || 0,
             };

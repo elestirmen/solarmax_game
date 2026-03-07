@@ -2,7 +2,7 @@ import { computeSendCount } from './dispatch_math.js';
 import { isDispatchAllowed } from './barrier.js';
 import { computeFriendlyReinforcementRoom } from './reinforcement.js';
 import { isStrategicPulseActiveForNode } from './strategic_pulse.js';
-import { SIM_CONSTANTS, isNodeAssimilated, nodeCapacity, nodeTypeOf, upgradeCost } from './shared_config.js';
+import { SIM_CONSTANTS, buildFleetSpawnProfile, isNodeAssimilated, nodeCapacity, nodeTypeOf, upgradeCost } from './shared_config.js';
 
 function clamp(value, min, max) {
     return value < min ? min : value > max ? max : value;
@@ -121,6 +121,15 @@ export function dispatchUnits(state, owner, srcIds, tgtId, pct) {
         }
 
         state.fleetSerial = Math.max(0, Math.floor(Number(state.fleetSerial) || 0)) + 1;
+        var spawnProfile = buildFleetSpawnProfile({
+            seed: state.seed,
+            srcId: sourceNode.id,
+            tgtId: tgtId,
+            serial: state.fleetSerial,
+            routeQueue: routeQueue,
+            count: count,
+            routeSpeedMult: routeSpeedMult,
+        });
         state.fleets.push({
             id: state.fleetSerial,
             active: true,
@@ -136,9 +145,10 @@ export function dispatchUnits(state, owner, srcIds, tgtId, pct) {
             x: launchPoint.x,
             y: launchPoint.y,
             trail: [],
-            offsetL: 0,
-            spdVar: 1,
+            offsetL: spawnProfile.offsetL,
+            spdVar: spawnProfile.spdVar,
             routeSpeedMult: routeSpeedMult,
+            trailScale: spawnProfile.trailScale,
             dmgAcc: 0,
             launchT: launchT,
         });

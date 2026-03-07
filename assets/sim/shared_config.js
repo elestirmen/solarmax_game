@@ -87,6 +87,10 @@ export var DIFFICULTY_PRESETS = {
     },
 };
 
+function clamp(value, min, max) {
+    return value < min ? min : value > max ? max : value;
+}
+
 export function hashSeed(value) {
     value = String(value || '');
     var hash = 0;
@@ -94,6 +98,49 @@ export function hashSeed(value) {
         hash = ((hash << 5) - hash + value.charCodeAt(i)) | 0;
     }
     return Math.abs(hash) || 1;
+}
+
+export function hashMix(a, b, c, d) {
+    var h = ((a * 73856093) ^ (b * 19349663) ^ (c * 83492791) ^ (d * 2654435761)) >>> 0;
+    return (h % 1000000) / 1000000;
+}
+
+export function buildFleetSpawnProfile(params) {
+    params = params || {};
+
+    var seed = Math.floor(Number(params.seed) || 1);
+    var srcId = Math.floor(Number(params.srcId) || 0);
+    var tgtId = Math.floor(Number(params.tgtId) || 0);
+    var serial = Math.max(1, Math.floor(Number(params.serial) || 1));
+    var routeQueue = Math.max(0, Math.floor(Number(params.routeQueue) || 0));
+    var count = Math.max(1, Number(params.count) || 1);
+    var routeSpeedMult = Math.max(0.6, Number(params.routeSpeedMult) || 1);
+
+    var laneIndex = 0;
+    if (routeQueue > 0) {
+        laneIndex = (routeQueue % 2 === 1 ? 1 : -1) * Math.ceil(routeQueue / 2);
+    }
+
+    var laneWidth = Math.min(15, 2.8 + Math.sqrt(count) * 0.85);
+    var offsetNoise = hashMix(seed, srcId, tgtId, serial);
+    var speedNoise = hashMix(seed + 17, tgtId, serial, routeQueue + 1);
+    var offsetSpread = routeQueue > 0 ? 2.4 : 3.1;
+    var offsetL = laneIndex * laneWidth + (offsetNoise - 0.5) * offsetSpread;
+    var spdVar = clamp(1 + (speedNoise - 0.5) * 0.06, 0.97, 1.03);
+    var trailScale = clamp(
+        0.9 +
+        Math.min(0.22, Math.sqrt(count) * 0.038) +
+        Math.max(0, routeSpeedMult * spdVar - 1) * 0.55 +
+        Math.min(0.12, Math.abs(offsetL) * 0.008),
+        0.9,
+        1.42
+    );
+
+    return {
+        offsetL: offsetL,
+        spdVar: spdVar,
+        trailScale: trailScale,
+    };
 }
 
 export function difficultyConfig(diff) {
