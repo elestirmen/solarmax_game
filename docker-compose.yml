@@ -1,0 +1,19 @@
+services:
+  app:
+    build:
+      context: .
+    container_name: solarmax-app
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    expose:
+      - "3000"
+    networks:
+      - npm-net
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+
+networks:
+  npm-net:
+    external: true
