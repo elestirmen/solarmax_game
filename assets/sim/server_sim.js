@@ -108,6 +108,43 @@ function decayTransientBeams(target, dt) {
     }
 }
 
+function pushTransientShockwaves(target, items, opts) {
+    if (!Array.isArray(target) || !Array.isArray(items) || !items.length) return;
+    opts = opts || {};
+    var limit = Math.max(1, Math.floor(Number(opts.limit) || items.length));
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        if (!item) continue;
+        var life = Number(item.life !== undefined ? item.life : opts.life);
+        if (!Number.isFinite(life) || life <= 0) life = 0.22;
+        target.push({
+            x: Number(item.x) || 0,
+            y: Number(item.y) || 0,
+            radius: Math.max(0, Number(item.radius !== undefined ? item.radius : opts.radius) || 8),
+            grow: Math.max(1, Number(item.grow !== undefined ? item.grow : opts.grow) || 18),
+            life: life,
+            maxLife: life,
+            col: item.color || (Array.isArray(opts.players) && opts.players[item.owner] ? opts.players[item.owner].color : '#ffffff'),
+            alpha: Math.max(0, Number(item.alpha !== undefined ? item.alpha : opts.alpha) || 0.3),
+            fillAlpha: Math.max(0, Number(item.fillAlpha !== undefined ? item.fillAlpha : opts.fillAlpha) || 0),
+            lineWidth: Math.max(0.8, Number(item.lineWidth !== undefined ? item.lineWidth : opts.lineWidth) || 1.4),
+        });
+    }
+    if (target.length > limit) target.splice(0, target.length - limit);
+}
+
+function decayFleetHitVisuals(fleets, dt) {
+    if (!Array.isArray(fleets) || !fleets.length) return;
+    var step = Number(dt);
+    if (!Number.isFinite(step) || step <= 0) step = 0.033;
+    for (var i = 0; i < fleets.length; i++) {
+        var fleet = fleets[i];
+        if (!fleet) continue;
+        fleet.hitFlash = Math.max(0, (Number(fleet.hitFlash) || 0) - step * 2.8);
+        fleet.hitJitter = Math.max(0, (Number(fleet.hitJitter) || 0) - step * 3.6);
+    }
+}
+
 function distance(a, b) {
     var dx = (b.x || 0) - (a.x || 0);
     var dy = (b.y || 0) - (a.y || 0);
@@ -201,6 +238,7 @@ export function buildAuthoritativeState(snapshot, opts) {
         aiProfiles: Array.isArray(snapshot.aiProfiles) ? cloneValue(snapshot.aiProfiles) : [],
         turretBeams: Array.isArray(snapshot.turretBeams) ? cloneValue(snapshot.turretBeams) : [],
         fieldBeams: Array.isArray(snapshot.fieldBeams) ? cloneValue(snapshot.fieldBeams) : [],
+        shockwaves: Array.isArray(snapshot.shockwaves) ? cloneValue(snapshot.shockwaves) : [],
         flowId: Math.max(0, Math.floor(Number(snapshot.flowId) || 0)),
         fleetSerial: Math.max(0, Math.floor(Number(snapshot.fleetSerial) || 0)),
         fog: cloneValue(snapshot.fog || initFog(players.length, nodes.length)),
@@ -256,6 +294,7 @@ export function captureAuthoritativeSnapshot(state) {
         aiProfiles: cloneValue(state.aiProfiles),
         turretBeams: cloneValue(Array.isArray(state.turretBeams) ? state.turretBeams : []),
         fieldBeams: cloneValue(Array.isArray(state.fieldBeams) ? state.fieldBeams : []),
+        shockwaves: cloneValue(Array.isArray(state.shockwaves) ? state.shockwaves : []),
         flowId: state.flowId,
         fleetSerial: state.fleetSerial,
         rngState: state.seed,
@@ -387,6 +426,16 @@ export function simulateAuthoritativeTick(state) {
         limit: 80,
         ownerKey: 'turretOwner',
     });
+    pushTransientShockwaves(state.shockwaves, turretReport && turretReport.impacts, {
+        limit: 80,
+        players: state.players,
+        radius: 4,
+        grow: 9,
+        life: 0.14,
+        alpha: 0.28,
+        fillAlpha: 0.02,
+        lineWidth: 1,
+    });
 
     stepFleetMovement({
         fleets: state.fleets,
@@ -430,6 +479,16 @@ export function simulateAuthoritativeTick(state) {
         limit: 120,
         ownerKey: 'owner',
     });
+    pushTransientShockwaves(state.shockwaves, fieldReport && fieldReport.impacts, {
+        limit: 80,
+        players: state.players,
+        radius: 4,
+        grow: 9,
+        life: 0.14,
+        alpha: 0.2,
+        fillAlpha: 0.02,
+        lineWidth: 1,
+    });
 
     var arrivalReport = resolveFleetArrivals({
         fleets: state.fleets,
@@ -452,6 +511,10 @@ export function simulateAuthoritativeTick(state) {
     state.flows = arrivalReport.flows;
     state.stats.nodesCaptured = (Number(state.stats.nodesCaptured) || 0) + (Number(arrivalReport.statsDelta.nodesCaptured) || 0);
     state.stats.gateCaptures = (Number(state.stats.gateCaptures) || 0) + (Number(arrivalReport.statsDelta.gateCaptures) || 0);
+    pushTransientShockwaves(state.shockwaves, arrivalReport && arrivalReport.shockwaves, {
+        limit: 80,
+        players: state.players,
+    });
 
     var flowReport = stepFlowLinks({
         flows: state.flows,
@@ -494,6 +557,8 @@ export function simulateAuthoritativeTick(state) {
 
     decayTransientBeams(state.turretBeams, SIM_CONSTANTS.TICK_DT);
     decayTransientBeams(state.fieldBeams, SIM_CONSTANTS.TICK_DT);
+    decayTransientBeams(state.shockwaves, SIM_CONSTANTS.TICK_DT);
+    decayFleetHitVisuals(state.fleets, SIM_CONSTANTS.TICK_DT);
     state.tick += 1;
     return state;
 }

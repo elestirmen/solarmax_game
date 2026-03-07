@@ -13,6 +13,20 @@ function normalizeDirection(dx, dy, fallbackX, fallbackY) {
     return { x: x / len, y: y / len };
 }
 
+function fleetTravelDirection(fleet, targetNode, nodes) {
+    fleet = fleet || {};
+    targetNode = targetNode || {};
+    nodes = Array.isArray(nodes) ? nodes : [];
+    if (Number.isFinite(fleet.headingX) && Number.isFinite(fleet.headingY)) {
+        return normalizeDirection(fleet.headingX, fleet.headingY, 1, 0);
+    }
+    var sourceNode = nodes[fleet.srcId];
+    if (sourceNode && sourceNode.pos && targetNode.pos) {
+        return normalizeDirection(targetNode.pos.x - sourceNode.pos.x, targetNode.pos.y - sourceNode.pos.y, 1, 0);
+    }
+    return { x: 1, y: 0 };
+}
+
 export function stepFleetMovement(params) {
     params = params || {};
 
@@ -187,6 +201,7 @@ export function resolveCombatOutcome(params) {
     var def = (Number(targetNode.units) || 0) * defMult;
     var color = players[fleet.owner] ? players[fleet.owner].color : '#fff';
     var captured = atk > def;
+    var impactDir = fleetTravelDirection(fleet, targetNode, params.nodes);
 
     var particleBursts = [
         {
@@ -195,6 +210,28 @@ export function resolveCombatOutcome(params) {
             count: 8 + Math.min(atk, 12),
             color: color,
             isCapture: false,
+            dirX: impactDir.x,
+            dirY: impactDir.y,
+            spread: Math.PI * 0.95,
+            speedMin: 2.2,
+            speedMax: 5.2,
+            drag: 0.94,
+            lifeMin: 0.28,
+            lifeMax: 0.52,
+            radiusScale: 0.95,
+        },
+    ];
+    var shockwaves = [
+        {
+            x: targetNode.pos ? targetNode.pos.x : 0,
+            y: targetNode.pos ? targetNode.pos.y : 0,
+            color: color,
+            radius: targetNode.radius ? targetNode.radius * 0.55 : 10,
+            grow: captured ? 28 : 18,
+            life: captured ? 0.34 : 0.2,
+            alpha: captured ? 0.42 : 0.26,
+            lineWidth: captured ? 2.2 : 1.5,
+            fillAlpha: captured ? 0.08 : 0.04,
         },
     ];
 
@@ -213,6 +250,26 @@ export function resolveCombatOutcome(params) {
             count: 12,
             color: color,
             isCapture: true,
+            dirX: impactDir.x,
+            dirY: impactDir.y,
+            spread: Math.PI * 1.65,
+            speedMin: 2.8,
+            speedMax: 6.2,
+            drag: 0.95,
+            lifeMin: 0.34,
+            lifeMax: 0.68,
+            radiusScale: 1.28,
+        });
+        shockwaves.push({
+            x: targetNode.pos ? targetNode.pos.x : 0,
+            y: targetNode.pos ? targetNode.pos.y : 0,
+            color: '#ffffff',
+            radius: targetNode.radius ? targetNode.radius * 0.25 : 6,
+            grow: (targetNode.radius || 20) + 22,
+            life: 0.42,
+            alpha: 0.26,
+            lineWidth: 1.4,
+            fillAlpha: 0,
         });
         if (humanIndex === fleet.owner) {
             statsDelta.nodesCaptured = 1;
@@ -233,6 +290,7 @@ export function resolveCombatOutcome(params) {
         captured: captured,
         humanInvolved: humanInvolved,
         particleBursts: particleBursts,
+        shockwaves: shockwaves,
         statsDelta: statsDelta,
         audio: audio,
     };
@@ -253,6 +311,7 @@ export function resolveFleetArrivals(params) {
     var nodeCapacity = typeof callbacks.nodeCapacity === 'function' ? callbacks.nodeCapacity : function (node) { return Number(node.maxUnits) || 0; };
 
     var particleBursts = [];
+    var shockwaves = [];
     var audio = [];
     var toasts = [];
     var statsDelta = { nodesCaptured: 0, gateCaptures: 0 };
@@ -295,6 +354,7 @@ export function resolveFleetArrivals(params) {
                 players: players,
                 tune: params.tune,
                 humanIndex: humanIndex,
+                nodes: nodes,
                 callbacks: {
                     nodeTypeOf: nodeTypeOf,
                     nodeLevelDefMult: nodeLevelDefMult,
@@ -303,6 +363,7 @@ export function resolveFleetArrivals(params) {
                 constants: params.constants,
             });
             particleBursts = particleBursts.concat(combatResult.particleBursts);
+            shockwaves = shockwaves.concat(combatResult.shockwaves || []);
             audio = audio.concat(combatResult.audio);
             statsDelta.nodesCaptured += combatResult.statsDelta.nodesCaptured;
             statsDelta.gateCaptures += combatResult.statsDelta.gateCaptures;
@@ -322,6 +383,7 @@ export function resolveFleetArrivals(params) {
         fleets: fleets,
         flows: activeFlows,
         particleBursts: particleBursts,
+        shockwaves: shockwaves,
         audio: audio,
         toasts: toasts,
         statsDelta: statsDelta,

@@ -182,6 +182,7 @@ test('resolveCombatOutcome captures node, resets assimilation, and reports effec
     assert.equal(result.statsDelta.gateCaptures, 1);
     assert.deepEqual(result.audio, ['capture']);
     assert.equal(result.particleBursts.length, 2);
+    assert.equal(result.shockwaves.length >= 1, true);
 });
 
 test('resolveFleetArrivals handles friendly overflow and clears enemy flows on capture', function () {

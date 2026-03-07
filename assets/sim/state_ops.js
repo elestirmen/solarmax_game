@@ -166,6 +166,10 @@ export function dispatchUnits(state, owner, srcIds, tgtId, pct) {
             turnRate: spawnProfile.turnRate,
             throttleBias: spawnProfile.throttleBias,
             lookAhead: spawnProfile.lookAhead,
+            hitFlash: 0,
+            hitJitter: 0,
+            hitDirX: 0,
+            hitDirY: 0,
             dmgAcc: 0,
             launchT: launchT,
         });

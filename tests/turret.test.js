@@ -39,8 +39,10 @@ test('turret damages and kills an enemy fleet with high DPS', function () {
     assert.equal(result.kills, 1);
     assert.equal(result.hits, 1);
     assert.equal(result.shots.length, 1);
+    assert.equal(result.impacts.length, 1);
     assert.equal(fleets[0].active, false);
     assert.equal(fleets[0].count, 0);
+    assert.equal(fleets[0].hitFlash > 0, true);
 });
 
 test('turret does not damage friendly fleet', function () {
@@ -111,6 +113,7 @@ test('turret attacks only one target per tick (closest in range)', function () {
 
     assert.equal(result.hits, 1);
     assert.equal(result.shots.length, 1);
+    assert.equal(result.impacts.length, 1);
     assert.equal(fleets[0].count, 9);
     assert.equal(fleets[1].count, 10);
 });

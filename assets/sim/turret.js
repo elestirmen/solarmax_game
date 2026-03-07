@@ -21,6 +21,7 @@ export function applyTurretDamage(opts) {
     var hits = 0;
     var kills = 0;
     var shots = [];
+    var impacts = [];
     var rangeSq = range * range;
 
     for (var ni = 0; ni < nodes.length; ni++) {
@@ -55,6 +56,9 @@ export function applyTurretDamage(opts) {
         if (damage <= 0) continue;
 
         hits++;
+        var hitLen = Math.sqrt(bestDistSq) || 1;
+        var hitDirX = ((bestFleet.x || 0) - turret.pos.x) / hitLen;
+        var hitDirY = ((bestFleet.y || 0) - turret.pos.y) / hitLen;
         shots.push({
             fromX: turret.pos.x,
             fromY: turret.pos.y,
@@ -63,6 +67,20 @@ export function applyTurretDamage(opts) {
             turretOwner: turret.owner,
         });
         bestFleet.dmgAcc -= damage;
+        bestFleet.hitFlash = Math.max(Number(bestFleet.hitFlash) || 0, Math.min(0.52, 0.18 + damage * 0.05));
+        bestFleet.hitJitter = Math.max(Number(bestFleet.hitJitter) || 0, Math.min(1.15, 0.3 + damage * 0.16));
+        bestFleet.hitDirX = hitDirX;
+        bestFleet.hitDirY = hitDirY;
+        impacts.push({
+            x: bestFleet.x || 0,
+            y: bestFleet.y || 0,
+            owner: turret.owner,
+            damage: damage,
+            killed: (bestFleet.count - damage) <= 0,
+            dirX: hitDirX,
+            dirY: hitDirY,
+            kind: 'turret',
+        });
         bestFleet.count -= damage;
 
         if (bestFleet.count <= 0) {
@@ -73,5 +91,5 @@ export function applyTurretDamage(opts) {
         }
     }
 
-    return { hits: hits, kills: kills, shots: shots };
+    return { hits: hits, kills: kills, shots: shots, impacts: impacts };
 }

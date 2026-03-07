@@ -50,6 +50,7 @@ export function applyDefenseFieldDamage(opts) {
     var hits = 0;
     var kills = 0;
     var arcs = [];
+    var impacts = [];
 
     for (var ni = 0; ni < nodes.length; ni++) {
         var node = nodes[ni];
@@ -73,6 +74,9 @@ export function applyDefenseFieldDamage(opts) {
             if (damage <= 0) continue;
 
             hits++;
+            var hitLen = Math.sqrt(dx * dx + dy * dy) || 1;
+            var hitDirX = dx / hitLen;
+            var hitDirY = dy / hitLen;
             arcs.push({
                 fromX: node.pos.x,
                 fromY: node.pos.y,
@@ -81,6 +85,20 @@ export function applyDefenseFieldDamage(opts) {
                 owner: node.owner,
             });
             fleet.fieldDmgAcc -= damage;
+            fleet.hitFlash = Math.max(Number(fleet.hitFlash) || 0, Math.min(0.48, 0.12 + damage * 0.045));
+            fleet.hitJitter = Math.max(Number(fleet.hitJitter) || 0, Math.min(0.9, 0.22 + damage * 0.12));
+            fleet.hitDirX = hitDirX;
+            fleet.hitDirY = hitDirY;
+            impacts.push({
+                x: fleet.x || 0,
+                y: fleet.y || 0,
+                owner: node.owner,
+                damage: damage,
+                killed: (fleet.count - damage) <= 0,
+                dirX: hitDirX,
+                dirY: hitDirY,
+                kind: 'field',
+            });
             fleet.count -= damage;
 
             if (fleet.count <= 0) {
@@ -92,5 +110,5 @@ export function applyDefenseFieldDamage(opts) {
         }
     }
 
-    return { hits: hits, kills: kills, arcs: arcs };
+    return { hits: hits, kills: kills, arcs: arcs, impacts: impacts };
 }

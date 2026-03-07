@@ -131,4 +131,5 @@ test('simulateAuthoritativeTick keeps turret beam visuals in authoritative snaps
     assert.equal(state.turretBeams.length > 0, true);
     assert.equal(authoritativeSnapshot.turretBeams.length > 0, true);
     assert.equal(authoritativeSnapshot.turretBeams[0].owner, 0);
+    assert.equal(authoritativeSnapshot.shockwaves.length > 0, true);
 });

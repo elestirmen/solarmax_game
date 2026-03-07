@@ -214,7 +214,7 @@ var G = {
     rep: null, aiTicks: [], flowId: 0, fleetSerial: 0,
     aiProfiles: [], mapFeature: { type: 'none' }, wormholes: [],
     stats: { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0 },
-    particles: [], turretBeams: [], fieldBeams: [], mapMode: 'random',
+    particles: [], turretBeams: [], fieldBeams: [], shockwaves: [], mapMode: 'random',
     playerCapital: {}, strategicNodes: [],
     strategicPulse: { active: false, nodeId: -1, cycle: 0, phase: 0, remainingTicks: 0, announcedCycle: -1 },
     powerByPlayer: {}, capByPlayer: {}, unitByPlayer: {},
@@ -690,6 +690,7 @@ function initGame(seedStr, nc, diff, opts) {
     G.particles = [];
     G.turretBeams = [];
     G.fieldBeams = [];
+    G.shockwaves = [];
     for (var i = 0; i < pool.length; i++) { pool[i].active = false; pool[i].trail = []; }
     G.fleets = [];
     G.flows = [];
@@ -910,6 +911,10 @@ function dispatch(owner, srcIds, tgtId, pct) {
         f.headingY = launchDy / launchLen;
         f.bank = 0;
         f.throttle = 0.34 * f.throttleBias;
+        f.hitFlash = 0;
+        f.hitJitter = 0;
+        f.hitDirX = 0;
+        f.hitDirY = 0;
         f.trail = [];
         f.dmgAcc = 0;
         G.fleets.push(f);
@@ -927,13 +932,98 @@ function dispatch(owner, srcIds, tgtId, pct) {
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ COMBAT Ã¢â€â‚¬Ã¢â€â‚¬
-function spawnParticles(x, y, count, color, isCapture) {
+function spawnParticles(x, y, count, color, isCapture, opts) {
+    opts = opts || {};
+    var dirX = Number(opts.dirX);
+    var dirY = Number(opts.dirY);
+    var dirLen = Math.sqrt(dirX * dirX + dirY * dirY);
+    var hasDir = Number.isFinite(dirLen) && dirLen > 0.0001;
+    var baseAngle = hasDir ? Math.atan2(dirY, dirX) : 0;
+    var spread = Number(opts.spread);
+    if (!Number.isFinite(spread) || spread <= 0) spread = Math.PI * 2;
+    var speedMin = Number(opts.speedMin);
+    var speedMax = Number(opts.speedMax);
+    if (!Number.isFinite(speedMin)) speedMin = 2;
+    if (!Number.isFinite(speedMax)) speedMax = 6;
+    var lifeMin = Number(opts.lifeMin);
+    var lifeMax = Number(opts.lifeMax);
+    if (!Number.isFinite(lifeMin)) lifeMin = 0.4;
+    if (!Number.isFinite(lifeMax)) lifeMax = 0.7;
+    var radiusScale = Number(opts.radiusScale);
+    if (!Number.isFinite(radiusScale) || radiusScale <= 0) radiusScale = 1;
+    var drag = Number(opts.drag);
+    if (!Number.isFinite(drag) || drag <= 0 || drag > 1) drag = 0.94;
+    var glow = Number(opts.glow);
+    if (!Number.isFinite(glow) || glow < 0) glow = isCapture ? 0.55 : 0.28;
     for (var i = 0; i < count; i++) {
-        var a = (Math.PI * 2 * i) / count + Math.random() * 0.5;
-        var spd = 2 + Math.random() * 4;
-        G.particles.push({ x: x, y: y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, life: 0.4 + Math.random() * 0.3, maxLife: 0.7, col: color || '#fff', r: isCapture ? 3 : 1.5 });
+        var a = hasDir
+            ? baseAngle + (Math.random() - 0.5) * spread
+            : (Math.PI * 2 * i) / Math.max(1, count) + Math.random() * 0.5;
+        var spd = speedMin + Math.random() * Math.max(0, speedMax - speedMin);
+        var life = lifeMin + Math.random() * Math.max(0, lifeMax - lifeMin);
+        G.particles.push({
+            x: x,
+            y: y,
+            vx: Math.cos(a) * spd,
+            vy: Math.sin(a) * spd,
+            drag: drag,
+            life: life,
+            maxLife: life,
+            col: color || '#fff',
+            glow: glow,
+            r: (isCapture ? 3 : 1.5) * radiusScale,
+        });
     }
     if (G.particles.length > 120) G.particles = G.particles.slice(-100);
+}
+
+function enqueueShockwave(x, y, opts) {
+    opts = opts || {};
+    var life = Number(opts.life);
+    if (!Number.isFinite(life) || life <= 0) life = 0.24;
+    G.shockwaves.push({
+        x: Number(x) || 0,
+        y: Number(y) || 0,
+        radius: Math.max(0, Number(opts.radius) || 8),
+        grow: Math.max(1, Number(opts.grow) || 18),
+        life: life,
+        maxLife: life,
+        col: opts.color || '#ffffff',
+        alpha: Math.max(0, Number(opts.alpha) || 0.3),
+        fillAlpha: Math.max(0, Number(opts.fillAlpha) || 0),
+        lineWidth: Math.max(0.8, Number(opts.lineWidth) || 1.4),
+    });
+    if (G.shockwaves.length > 80) G.shockwaves = G.shockwaves.slice(-72);
+}
+
+function applyImpactFeedback(impacts) {
+    if (!Array.isArray(impacts) || impacts.length === 0) return;
+    for (var i = 0; i < impacts.length; i++) {
+        var impact = impacts[i];
+        if (!impact) continue;
+        var col = impact.owner >= 0 && G.players[impact.owner] ? G.players[impact.owner].color : '#ffffff';
+        spawnParticles(impact.x, impact.y, impact.killed ? 8 : 4, col, false, {
+            dirX: impact.dirX,
+            dirY: impact.dirY,
+            spread: impact.kind === 'field' ? Math.PI * 0.75 : Math.PI * 0.55,
+            speedMin: impact.kind === 'field' ? 1.8 : 2.2,
+            speedMax: impact.killed ? 5.4 : 4.2,
+            drag: 0.92,
+            lifeMin: 0.18,
+            lifeMax: impact.killed ? 0.42 : 0.3,
+            radiusScale: impact.killed ? 1.15 : 0.82,
+            glow: impact.killed ? 0.48 : 0.24,
+        });
+        enqueueShockwave(impact.x, impact.y, {
+            color: col,
+            radius: impact.killed ? 6 : 4,
+            grow: impact.killed ? 16 : 9,
+            life: impact.killed ? 0.24 : 0.14,
+            alpha: impact.kind === 'field' ? 0.2 : 0.28,
+            fillAlpha: impact.killed ? 0.06 : 0.02,
+            lineWidth: impact.killed ? 1.5 : 1,
+        });
+    }
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ FLOW LINKS Ã¢â€â‚¬Ã¢â€â‚¬
@@ -1327,6 +1417,7 @@ function gameTick(runtimeOpts) {
         }
         if (G.turretBeams.length > 80) G.turretBeams = G.turretBeams.slice(-80);
     }
+    applyImpactFeedback(turretReport && turretReport.impacts);
 
     stepFleetMovement({
         fleets: G.fleets,
@@ -1365,6 +1456,7 @@ function gameTick(runtimeOpts) {
         }
         if (G.fieldBeams.length > 120) G.fieldBeams = G.fieldBeams.slice(-120);
     }
+    applyImpactFeedback(fieldReport && fieldReport.impacts);
     var arrivalReport = resolveFleetArrivals({
         fleets: G.fleets,
         nodes: G.nodes,
@@ -1388,7 +1480,11 @@ function gameTick(runtimeOpts) {
     if (arrivalReport.statsDelta.gateCaptures > 0) G.stats.gateCaptures += arrivalReport.statsDelta.gateCaptures;
     for (var ari = 0; ari < arrivalReport.particleBursts.length; ari++) {
         var burst = arrivalReport.particleBursts[ari];
-        spawnParticles(burst.x, burst.y, burst.count, burst.color, burst.isCapture);
+        spawnParticles(burst.x, burst.y, burst.count, burst.color, burst.isCapture, burst);
+    }
+    for (var asi = 0; asi < (arrivalReport.shockwaves || []).length; asi++) {
+        var wave = arrivalReport.shockwaves[asi];
+        enqueueShockwave(wave.x, wave.y, wave);
     }
     for (var ati = 0; ati < arrivalReport.toasts.length; ati++) {
         showGameToast(arrivalReport.toasts[ati]);
@@ -1744,6 +1840,11 @@ function drawRocketShape(ctx, x, y, dirX, dirY, col, flicker, alpha, scale, bank
     ctx.fillStyle = 'rgba(255,210,130,' + (0.12 + throttle * 0.12 + flicker * 0.16) + ')';
     ctx.fill();
 
+    ctx.beginPath();
+    ctx.arc(bx, by, (2.1 + throttle * 1.4 + flicker * 0.8) * scale, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,170,90,' + (0.05 + throttle * 0.08) + ')';
+    ctx.fill();
+
     var noseX = x + dirX * 1.85 * scale + nX * bankShift * 0.08, noseY = y + dirY * 1.85 * scale + nY * bankShift * 0.08;
     var leftSpan = (1.08 + Math.max(0, bank) * 0.58) * scale;
     var rightSpan = (1.08 + Math.max(0, -bank) * 0.58) * scale;
@@ -1789,9 +1890,18 @@ function drawFleetRocket(ctx, f, col, tick) {
     var tl = trail.length;
     var trailScale = clamp(Number(f.trailScale) || 1, 0.85, 1.5);
     var routeVisual = clamp((Number(f.routeSpeedMult) || 1) * (Number(f.spdVar) || 1), 0.85, 2);
+    var hitFlash = clamp(Number(f.hitFlash) || 0, 0, 0.8);
+    var hitJitter = clamp(Number(f.hitJitter) || 0, 0, 1.4);
+    var hitDirX = Number.isFinite(f.hitDirX) ? f.hitDirX : 0;
+    var hitDirY = Number.isFinite(f.hitDirY) ? f.hitDirY : 0;
     var throttle = clamp(Number(f.throttle) || (0.74 + Math.max(0, routeVisual - 1) * 0.18), 0.2, 1.28);
     var leadBank = clamp(Number(f.bank) || 0, -1, 1);
-    var trailAlphaBoost = clamp(0.92 + Math.max(0, routeVisual - 1) * 0.65 + (trailScale - 1) * 0.45, 0.85, 1.55);
+    var jitterPhase = tick * 18 + (f.id || 0) * 1.37;
+    var hitShake = hitJitter * hitFlash;
+    var renderX = f.x + hitDirX * Math.sin(jitterPhase) * hitShake * 0.75 - hitDirY * Math.cos(jitterPhase * 0.9) * hitShake * 0.45;
+    var renderY = f.y + hitDirY * Math.sin(jitterPhase) * hitShake * 0.75 + hitDirX * Math.cos(jitterPhase * 0.9) * hitShake * 0.45;
+    var shipCol = hitFlash > 0 ? blendHex(col, '#ffffff', Math.min(0.6, hitFlash * 0.72)) : col;
+    var trailAlphaBoost = clamp(0.92 + Math.max(0, routeVisual - 1) * 0.65 + (trailScale - 1) * 0.45 + hitFlash * 0.28, 0.85, 1.7);
     var trailWidthBoost = clamp(0.95 + (trailScale - 1) * 0.85, 0.9, 1.5);
     if (tl > 0) {
         var prev = trail[0];
@@ -1809,7 +1919,7 @@ function drawFleetRocket(ctx, f, col, tick) {
         }
         ctx.beginPath();
         ctx.moveTo(prev.x, prev.y);
-        ctx.lineTo(f.x, f.y);
+        ctx.lineTo(renderX, renderY);
         ctx.strokeStyle = hexToRgba(col, 0.28 * trailAlphaBoost);
         ctx.lineWidth = 2.3 * trailWidthBoost;
         ctx.lineCap = 'round';
@@ -1834,7 +1944,13 @@ function drawFleetRocket(ctx, f, col, tick) {
 
     var phase = tick * 0.28 + f.srcId * 0.9 + f.tgtId * 0.6 + (f.id || 0) * 0.17 + f.offsetL * 0.08;
     var flicker = 0.5 + 0.5 * Math.sin(phase);
-    drawRocketShape(ctx, f.x, f.y, dirX, dirY, col, flicker, 1, 1, leadBank, throttle);
+    if (hitFlash > 0.01) {
+        ctx.beginPath();
+        ctx.arc(renderX, renderY, (6.5 + hitShake * 3.2) * trailScale, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,' + (0.08 + hitFlash * 0.18) + ')';
+        ctx.fill();
+    }
+    drawRocketShape(ctx, renderX, renderY, dirX, dirY, shipCol, flicker, 1, 1, leadBank, throttle + hitFlash * 0.18);
 
     var supportCount = Math.max(0, Math.floor(count) - 1);
     if (supportCount > 0 && srcNode && tgtNode) {
@@ -1861,7 +1977,7 @@ function drawFleetRocket(ctx, f, col, tick) {
             var localFlicker = 0.5 + 0.5 * Math.sin(phase + ui * 0.33);
             var alpha = clamp(0.88 - ui * 0.0025, 0.35, 0.88);
             var supportBank = leadBank * clamp(1 - ui / Math.max(2, supportCount + 1), 0.3, 0.92);
-            drawRocketShape(ctx, sx, sy, udx, udy, col, localFlicker, alpha, 0.76, supportBank, throttle * 0.94);
+            drawRocketShape(ctx, sx, sy, udx, udy, shipCol, localFlicker, alpha, 0.76, supportBank, throttle * 0.94 + hitFlash * 0.12);
         }
     }
 }
@@ -2247,9 +2363,31 @@ function render(ctx, cv, tick) {
     for (var pi = 0; pi < G.particles.length; pi++) {
         var p = G.particles[pi];
         var alpha = p.life / p.maxLife;
+        if ((p.glow || 0) > 0) {
+            ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1.8 + p.glow), 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba(p.col, alpha * p.glow * 0.45);
+            ctx.fill();
+        }
         ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         ctx.fillStyle = hexToRgba(p.col, alpha);
         ctx.fill();
+    }
+    for (var swi = 0; swi < G.shockwaves.length; swi++) {
+        var wave = G.shockwaves[swi];
+        var lifeAlpha = clamp(wave.life / Math.max(wave.maxLife, 0.0001), 0, 1);
+        var progress = 1 - lifeAlpha;
+        var radius = (Number(wave.radius) || 0) + (Number(wave.grow) || 0) * progress;
+        if ((Number(wave.fillAlpha) || 0) > 0) {
+            ctx.beginPath();
+            ctx.arc(wave.x, wave.y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba(wave.col || '#ffffff', wave.fillAlpha * lifeAlpha);
+            ctx.fill();
+        }
+        ctx.beginPath();
+        ctx.arc(wave.x, wave.y, radius, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba(wave.col || '#ffffff', (Number(wave.alpha) || 0.3) * lifeAlpha);
+        ctx.lineWidth = (Number(wave.lineWidth) || 1.4) * (1 + progress * 0.3);
+        ctx.stroke();
     }
 
     // drag line (sade)
@@ -2475,15 +2613,33 @@ var customMapStatusEl = $('customMapStatus');
 var howToPlayBtn = $('howToPlayBtn');
 var howToPlayOv = $('howToPlayOverlay');
 var closeHowToPlayBtn = $('closeHowToPlayBtn');
+var pauseHowToPlayBtn = $('pauseHowToPlayBtn');
+
+function openHowToPlayModal() {
+    if (howToPlayOv) howToPlayOv.classList.remove('hidden');
+}
+function closeHowToPlayModal() {
+    if (howToPlayOv) howToPlayOv.classList.add('hidden');
+}
 
 if (howToPlayBtn) {
     howToPlayBtn.addEventListener('click', function () {
-        howToPlayOv.classList.remove('hidden');
+        openHowToPlayModal();
+    });
+}
+if (pauseHowToPlayBtn) {
+    pauseHowToPlayBtn.addEventListener('click', function () {
+        openHowToPlayModal();
     });
 }
 if (closeHowToPlayBtn) {
     closeHowToPlayBtn.addEventListener('click', function () {
-        howToPlayOv.classList.add('hidden');
+        closeHowToPlayModal();
+    });
+}
+if (howToPlayOv) {
+    howToPlayOv.addEventListener('click', function (e) {
+        if (e.target === howToPlayOv) closeHowToPlayModal();
     });
 }
 var roomStatusEl = $('roomStatus'), roomPlayersEl = $('roomPlayers'), roomListEl = $('roomList');
@@ -2502,7 +2658,7 @@ var tuneAiAgg = $('tuneAIAggression'), tuneAiBuf = $('tuneAIBuffer'), tuneAiDec 
 var tuneResetBtn = $('tuneResetBtn'), tuneTogBtn = $('tuneToggleBtn');
 var tuneFogCb = $('tuneFogOfWar'), tuneAiAssistCb = $('tuneAiAssist'), menuFogCb = $('menuFogOfWar');
 var exportMapHudBtn = $('exportMapHudBtn');
-var audioToggleBtn = $('audioToggleBtn'), hudInfoToggleBtn = $('hudInfoToggleBtn');
+var audioToggleBtn = $('audioToggleBtn'), hudInfoToggleBtn = $('hudInfoToggleBtn'), hintToggleBtn = $('hintToggleBtn');
 var tuneVals = { p: $('tuneProductionVal'), f: $('tuneFleetSpeedVal'), d: $('tuneDefenseVal'), fi: $('tuneFlowIntervalVal'), aa: $('tuneAIAggressionVal'), ab: $('tuneAIBufferVal'), ad: $('tuneAIDecisionVal') };
 var UI_PREFS_KEY = 'stellar_ui_prefs_v1';
 var DEFAULT_SFX_VOLUME = 0.85, DEFAULT_MUSIC_VOLUME = 0.55;
@@ -2516,11 +2672,13 @@ function loadUiPrefs() {
         return {
             audioEnabled: parsed && parsed.audioEnabled !== false,
             hudTelemetryVisible: !!(parsed && parsed.hudTelemetryVisible),
+            hintsEnabled: parsed ? parsed.hintsEnabled !== false : true,
         };
     } catch (e) {
         return {
             audioEnabled: true,
             hudTelemetryVisible: false,
+            hintsEnabled: true,
         };
     }
 }
@@ -2529,6 +2687,7 @@ function saveUiPrefs() {
         localStorage.setItem(UI_PREFS_KEY, JSON.stringify({
             audioEnabled: uiPrefs.audioEnabled !== false,
             hudTelemetryVisible: !!uiPrefs.hudTelemetryVisible,
+            hintsEnabled: uiPrefs.hintsEnabled !== false,
         }));
     } catch (e) {}
 }
@@ -2550,6 +2709,10 @@ function syncHudTelemetryVisibility() {
     if (hudTelemetryRow) hudTelemetryRow.classList.toggle('hidden', !uiPrefs.hudTelemetryVisible);
     if (hudInfoToggleBtn) hudInfoToggleBtn.textContent = uiPrefs.hudTelemetryVisible ? 'Tick: Acik' : 'Tick: Kapali';
 }
+function syncHintToggleButton() {
+    if (!hintToggleBtn) return;
+    hintToggleBtn.textContent = uiPrefs.hintsEnabled !== false ? 'Ipucu: Acik' : 'Ipucu: Kapali';
+}
 function syncPauseOverlayContent() {
     var onlineMenu = net.online && G.state === 'playing' && inGameMenuOpen;
     if (pauseTitleEl) pauseTitleEl.textContent = onlineMenu ? 'Mac Menusu' : 'Duraklatildi';
@@ -2566,6 +2729,7 @@ function syncPauseOverlayContent() {
     if (quitBtn) quitBtn.textContent = onlineMenu ? 'Ana Menuye Don' : 'Ana Menu';
     syncAudioToggleButton();
     syncHudTelemetryVisibility();
+    syncHintToggleButton();
 }
 function syncMatchHudControls() {
     if (pauseBtn) {
@@ -2588,6 +2752,11 @@ function setHudTelemetryVisible(visible) {
     uiPrefs.hudTelemetryVisible = !!visible;
     saveUiPrefs();
     syncHudTelemetryVisibility();
+}
+function setHintsEnabled(enabled) {
+    uiPrefs.hintsEnabled = !!enabled;
+    saveUiPrefs();
+    syncHintToggleButton();
 }
 function openPauseMenu() {
     if (G.state !== 'playing') return;
@@ -2926,7 +3095,7 @@ function maybeShowCampaignObjectiveReminder() {
         if (!row.remindAt || G.tick < row.remindAt) continue;
         if (reminderShown[row.id]) continue;
         reminderShown[row.id] = true;
-        if (row.coach) showGameToast((mode === 'daily' ? 'Challenge' : 'Misyon') + ' ipucu: ' + row.coach);
+        if (row.coach && uiPrefs.hintsEnabled !== false) showGameToast((mode === 'daily' ? 'Challenge' : 'Misyon') + ' ipucu: ' + row.coach);
         break;
     }
 }
@@ -3032,6 +3201,10 @@ function captureSyncSnapshot() {
                 turnRate: fleet.turnRate || 6,
                 throttleBias: fleet.throttleBias || 1,
                 lookAhead: fleet.lookAhead || 0.022,
+                hitFlash: fleet.hitFlash || 0,
+                hitJitter: fleet.hitJitter || 0,
+                hitDirX: Number.isFinite(fleet.hitDirX) ? fleet.hitDirX : 0,
+                hitDirY: Number.isFinite(fleet.hitDirY) ? fleet.hitDirY : 0,
                 dmgAcc: fleet.dmgAcc || 0,
                 launchT: fleet.launchT || 0,
             };
@@ -3068,6 +3241,7 @@ function captureSyncSnapshot() {
         aiProfiles: JSON.parse(JSON.stringify(G.aiProfiles || [])),
         turretBeams: JSON.parse(JSON.stringify(G.turretBeams || [])),
         fieldBeams: JSON.parse(JSON.stringify(G.fieldBeams || [])),
+        shockwaves: JSON.parse(JSON.stringify(G.shockwaves || [])),
         flowId: G.flowId,
         fleetSerial: G.fleetSerial,
         rngState: G.rng ? G.rng.s : 1,
@@ -3077,10 +3251,21 @@ function captureSyncSnapshot() {
 
 function advanceTransientVisuals(dt) {
     if (!Number.isFinite(dt) || dt <= 0) return;
+    for (var fi0 = 0; fi0 < G.fleets.length; fi0++) {
+        var visualFleet = G.fleets[fi0];
+        if (!visualFleet) continue;
+        visualFleet.hitFlash = Math.max(0, (Number(visualFleet.hitFlash) || 0) - dt * 2.8);
+        visualFleet.hitJitter = Math.max(0, (Number(visualFleet.hitJitter) || 0) - dt * 3.6);
+    }
     for (var pi = G.particles.length - 1; pi >= 0; pi--) {
         var particle = G.particles[pi];
         particle.x += particle.vx;
         particle.y += particle.vy;
+        var drag = Number(particle.drag);
+        if (Number.isFinite(drag) && drag > 0 && drag < 1) {
+            particle.vx *= drag;
+            particle.vy *= drag;
+        }
         particle.life -= dt;
         if (particle.life <= 0) G.particles.splice(pi, 1);
     }
@@ -3091,6 +3276,10 @@ function advanceTransientVisuals(dt) {
     for (var fi = G.fieldBeams.length - 1; fi >= 0; fi--) {
         G.fieldBeams[fi].life -= dt;
         if (G.fieldBeams[fi].life <= 0) G.fieldBeams.splice(fi, 1);
+    }
+    for (var swi = G.shockwaves.length - 1; swi >= 0; swi--) {
+        G.shockwaves[swi].life -= dt;
+        if (G.shockwaves[swi].life <= 0) G.shockwaves.splice(swi, 1);
     }
 }
 
@@ -3186,6 +3375,7 @@ function applySyncSnapshot(snapshot) {
     G.aiProfiles = JSON.parse(JSON.stringify(snapshot.aiProfiles || []));
     G.turretBeams = JSON.parse(JSON.stringify(Array.isArray(snapshot.turretBeams) ? snapshot.turretBeams : []));
     G.fieldBeams = JSON.parse(JSON.stringify(Array.isArray(snapshot.fieldBeams) ? snapshot.fieldBeams : []));
+    G.shockwaves = JSON.parse(JSON.stringify(Array.isArray(snapshot.shockwaves) ? snapshot.shockwaves : []));
     G.flowId = Math.max(0, Math.floor(Number(snapshot.flowId) || 0));
     G.fleetSerial = Math.max(0, Math.floor(Number(snapshot.fleetSerial) || 0));
     G.fog = JSON.parse(JSON.stringify(snapshot.fog || initFog(G.players.length, G.nodes.length)));
@@ -4269,7 +4459,7 @@ function startCampaignLevel(levelIndex) {
     applyAudioPreference();
     closeScenarioMenu();
     showUI('playing');
-    if (lvl.hint) {
+    if (lvl.hint && uiPrefs.hintsEnabled !== false) {
         setTimeout(function () {
             if (G.campaign.active && G.campaign.levelIndex === idx && G.state === 'playing') showGameToast('Bolum ipucu: ' + lvl.hint);
         }, 1200);
@@ -4424,6 +4614,12 @@ if (hudInfoToggleBtn) {
     hudInfoToggleBtn.addEventListener('click', function () {
         setHudTelemetryVisible(!uiPrefs.hudTelemetryVisible);
         showGameToast(uiPrefs.hudTelemetryVisible ? 'Tick bilgisi acildi.' : 'Tick bilgisi kapatildi.');
+    });
+}
+if (hintToggleBtn) {
+    hintToggleBtn.addEventListener('click', function () {
+        setHintsEnabled(!(uiPrefs.hintsEnabled !== false));
+        showGameToast(uiPrefs.hintsEnabled !== false ? 'Ipuclari acildi.' : 'Ipuclari kapatildi.');
     });
 }
 var speeds = [1, 2, 4], spIdx = 0;
@@ -4753,6 +4949,11 @@ cv.addEventListener('touchend', function (e) {
 }, { passive: false });
 window.addEventListener('keydown', function (e) {
     var pauseKey = e.key === 'Escape' || e.key === 'p' || e.key === 'P';
+    if (e.key === 'Escape' && howToPlayOv && !howToPlayOv.classList.contains('hidden')) {
+        closeHowToPlayModal();
+        e.preventDefault();
+        return;
+    }
     if (G.state === 'playing') {
         if (pauseKey) {
             togglePauseMenu();

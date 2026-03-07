@@ -31,7 +31,9 @@ test('owned assimilated planets chip enemy fleets inside the field', function ()
     assert.equal(result.hits, 1);
     assert.equal(result.kills, 0);
     assert.equal(result.arcs.length, 1);
+    assert.equal(result.impacts.length, 1);
     assert.equal(fleets[0].count, 7);
+    assert.equal(fleets[0].hitFlash > 0, true);
 });
 
 test('field does not harm friendly fleets or incomplete captures', function () {

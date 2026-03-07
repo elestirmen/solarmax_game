@@ -66,6 +66,10 @@
             display: none
         }
 
+        #howToPlayOverlay {
+            z-index: 130
+        }
+
         @keyframes fadeIn {
             from {
                 opacity: 0
@@ -86,6 +90,29 @@
             overflow-y: auto;
             text-align: center;
             box-shadow: 0 0 60px rgba(74, 142, 255, 0.08)
+        }
+
+        .pause-menu-panel {
+            width: min(440px, calc(100vw - 24px));
+        }
+
+        .pause-menu-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .pause-menu-grid button {
+            margin-top: 0;
+            width: 100%;
+            min-width: 0;
+        }
+
+        .pause-menu-meta {
+            margin-top: 14px;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255, 255, 255, 0.08);
         }
 
         .game-title {
@@ -1388,6 +1415,10 @@
                 max-height: none;
             }
 
+            .pause-menu-grid {
+                grid-template-columns: 1fr;
+            }
+
             .menu-panel-wide {
                 min-width: 0;
             }
@@ -2021,16 +2052,20 @@
         </div>
     </div>
     <div id="pauseOverlay" class="overlay hidden">
-        <div class="menu-panel">
+        <div class="menu-panel pause-menu-panel">
             <h2 id="pauseTitle">Duraklatildi</h2>
             <p id="pauseHint" class="menu-status-note hidden"></p>
-            <div class="room-row" style="margin-top:10px">
-                <button id="audioToggleBtn" class="secondary-btn" style="margin:0; flex:1">Ses: Acik</button>
-                <button id="hudInfoToggleBtn" class="secondary-btn" style="margin:0; flex:1">Tick: Kapali</button>
+            <div class="pause-menu-grid">
+                <button id="resumeBtn" class="primary-btn">Devam</button>
+                <button id="quitBtn" class="secondary-btn">Ana Menu</button>
             </div>
-            <div class="room-row" style="margin-top:10px">
-                <button id="resumeBtn" class="primary-btn" style="margin:0; flex:1">Devam</button>
-                <button id="quitBtn" class="secondary-btn" style="margin:0; flex:1">Ana Menu</button>
+            <div class="pause-menu-meta">
+                <div class="pause-menu-grid">
+                    <button id="audioToggleBtn" class="secondary-btn">Ses: Acik</button>
+                    <button id="hudInfoToggleBtn" class="secondary-btn">Tick: Kapali</button>
+                    <button id="hintToggleBtn" class="secondary-btn">Ipucu: Acik</button>
+                    <button id="pauseHowToPlayBtn" class="secondary-btn">Nasil Oynanir?</button>
+                </div>
             </div>
         </div>
     </div>
