@@ -1984,9 +1984,8 @@ function drawFleetRocket(ctx, f, col, tick) {
         var spacingT = getFleetUnitSpacingT(f);
         var visibleSupportCount = Math.min(supportCount, Math.max(1, Math.min(24, Math.round(Math.sqrt(count) * 4.2))));
         var swarmLaneCount = Math.max(2, Math.min(6, Math.round(Math.sqrt(visibleSupportCount * 0.9))));
-        var swarmWingGap = Math.min(16, 5.2 + Math.sqrt(visibleSupportCount) * 1.7 + Math.abs(f.offsetL) * 0.08);
-        var swarmPush = Math.min(7.4, 2.2 + Math.sqrt(count) * 0.42);
-        var swarmFlutter = Math.min(3.8, 1.1 + Math.sqrt(count) * 0.24);
+        var swarmWingGap = Math.min(13.5, 4.8 + Math.sqrt(visibleSupportCount) * 1.28 + Math.abs(f.offsetL) * 0.04);
+        var swarmPush = Math.min(5.6, 1.8 + Math.sqrt(count) * 0.34);
         var visualStep = supportCount / visibleSupportCount;
         for (var vi = 0; vi < visibleSupportCount; vi++) {
             var unitIndex = Math.min(supportCount, Math.round(vi * visualStep) + 1);
@@ -1997,7 +1996,6 @@ function drawFleetRocket(ctx, f, col, tick) {
             var centeredLane = rowCount <= 1 ? 0 : lane - (rowCount - 1) * 0.5;
             var jitter = hashMix(G.seed, f.id || 0, unitIndex, supportCount);
             var driftNoise = hashMix(G.seed + 31, f.srcId + unitIndex, f.tgtId, f.id || 0);
-            var driftPhase = phase * 1.85 + unitIndex * 0.63 + driftNoise * Math.PI * 2;
             var depthT = (row + 1) * spacingT * 0.55 + (driftNoise - 0.5) * spacingT * 0.28;
             var tUnit = f.t - depthT;
             if (tUnit <= 0) continue;
@@ -2010,15 +2008,17 @@ function drawFleetRocket(ctx, f, col, tick) {
             udx /= ulen; udy /= ulen;
             var unx = -udy, uny = udx;
 
-            var offsetL = centeredLane * swarmWingGap + (jitter - 0.5) * swarmWingGap * 0.52 + Math.sin(driftPhase) * swarmFlutter;
-            var pushBack = row * swarmPush + (driftNoise - 0.5) * swarmPush * 0.58 + Math.cos(driftPhase * 0.82) * swarmPush * 0.32;
+            var settlePhase = tick * 0.045 + unitIndex * 0.37 + driftNoise * Math.PI * 2;
+            var microDrift = Math.sin(settlePhase) * (0.18 + row * 0.04);
+            var offsetL = centeredLane * swarmWingGap + (jitter - 0.5) * swarmWingGap * 0.18 + microDrift;
+            var pushBack = row * swarmPush + (driftNoise - 0.5) * swarmPush * 0.22;
             var fade = Math.min(1, curveT * 5) * Math.min(1, (1 - curveT) * 5);
             var sx = pt.x + unx * offsetL * fade - udx * pushBack * fade;
             var sy = pt.y + uny * offsetL * fade - udy * pushBack * fade;
             var localFlicker = 0.5 + 0.5 * Math.sin(phase + unitIndex * 0.33);
             var alpha = clamp(0.9 - row * 0.08 - vi * 0.004, 0.32, 0.9);
             var supportScale = clamp(0.82 - row * 0.04, 0.62, 0.82);
-            var supportBank = leadBank * clamp(1 - row * 0.12, 0.26, 0.92) + Math.sin(driftPhase) * 0.05;
+            var supportBank = leadBank * clamp(1 - row * 0.12, 0.26, 0.92) + (driftNoise - 0.5) * 0.02;
             drawRocketShape(ctx, sx, sy, udx, udy, shipCol, localFlicker, alpha, supportScale, supportBank, throttle * 0.94 + hitFlash * 0.12);
         }
     }
