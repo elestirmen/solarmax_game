@@ -41,7 +41,7 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     COLORS_BG = '#080c15', COL_NEUTRAL = '#5a6272', COL_FOG = '#2e3340',
     COL_GRID = 'rgba(255,255,255,0.025)', COL_GLOW = 'rgba(255,255,255,0.35)',
     PLAYER_COLORS = ['#4a8eff', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'],
-    TRAIL_LEN = 12, MAX_ORBITERS = 72, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 3, ORBIT_MAX_RINGS = 5,
+    TRAIL_LEN = 12, MAX_ORBIT_SQUADS = 12, MAX_ORBIT_SHIPS_PER_SQUAD = 6, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 14, ORBIT_MAX_RINGS = 3,
     NODE_LEVEL_MAX = 3,
     DDA_MAX_BOOST = 0.2,
     WORMHOLE_SPEED_MULT = 2.0,
@@ -221,6 +221,12 @@ var G = {
     campaign: { active: false, levelIndex: -1, unlocked: 1, completed: 0, reminderShown: {} },
     daily: { active: false, challenge: null, reminderShown: {}, bestTick: 0, completed: false },
 };
+var orbitalVisualCache = {};
+
+function resetOrbitalVisuals() {
+    orbitalVisualCache = {};
+}
+
 var ACHIEVEMENTS = [
     { id: 'first_win', name: 'Ilk Zafer', check: function () { return G.winner === G.human; } },
     { id: 'capture_10', name: '10 Gezegen Fethet', check: function () { return G.stats.nodesCaptured >= 10; } },
@@ -691,6 +697,7 @@ function initGame(seedStr, nc, diff, opts) {
     G.turretBeams = [];
     G.fieldBeams = [];
     G.shockwaves = [];
+    resetOrbitalVisuals();
     for (var i = 0; i < pool.length; i++) { pool[i].active = false; pool[i].trail = []; }
     G.fleets = [];
     G.flows = [];
@@ -1982,6 +1989,202 @@ function drawFleetRocket(ctx, f, col, tick) {
     }
 }
 
+function desiredOrbitSquadCount(node) {
+    var visibleShips = desiredOrbitVisibleShipCount(node);
+    if (visibleShips <= 0) return 0;
+    var preferredShipsPerSquad = Math.max(3, MAX_ORBIT_SHIPS_PER_SQUAD - 2);
+    return Math.min(MAX_ORBIT_SQUADS, Math.max(1, Math.ceil(visibleShips / preferredShipsPerSquad)));
+}
+
+function desiredOrbitVisibleShipCount(node) {
+    var uCount = Math.max(0, Math.floor(node.units || 0));
+    if (uCount <= 0 || node.owner < 0 || node.kind === 'turret') return 0;
+    var unitPerVisibleShip = Math.max(2.8, ORBIT_UNIT_STEP * 0.2);
+    var scaled = Math.ceil(uCount / unitPerVisibleShip);
+    if (uCount >= 18) scaled += 1;
+    if (uCount >= 45) scaled += 2;
+    if (uCount >= 90) scaled += 2;
+    return clamp(scaled, 1, MAX_ORBIT_SQUADS * MAX_ORBIT_SHIPS_PER_SQUAD);
+}
+
+function buildOrbitalSquad(node, slot) {
+    var lane = slot % ORBIT_MAX_RINGS;
+    var seedBase = G.seed + node.id * 97 + slot * 37;
+    var orbitDir = hashMix(G.seed + node.id * 13, node.id, 7, 5) > 0.5 ? 1 : -1;
+    return {
+        slot: slot,
+        lane: lane,
+        phase: (slot * 2.39996323 + hashMix(seedBase, node.id, slot, 11) * Math.PI * 2) % (Math.PI * 2),
+        speedMult: 0.88 + hashMix(seedBase + 29, node.id, slot, 17) * 0.58,
+        turnDir: orbitDir,
+        tilt: (node.id * 0.61 + lane * 0.94 + hashMix(seedBase + 53, node.id, slot, 23) * 0.65) % (Math.PI * 2),
+        precession: (hashMix(seedBase + 67, node.id, slot, 29) - 0.5) * 0.0011,
+        radiusBias: (hashMix(seedBase + 97, node.id, slot, 37) - 0.5) * 3.1,
+        ellipseRatio: 0.58 + hashMix(seedBase + 113, node.id, slot, 41) * 0.14,
+        bobblePhase: hashMix(seedBase + 131, node.id, slot, 43) * Math.PI * 2,
+        bobbleAmp: 0.18 + hashMix(seedBase + 149, node.id, slot, 47) * 0.34,
+        members: 1,
+        wingSpread: 1.2 + hashMix(seedBase + 181, node.id, slot, 59) * 0.72,
+        radialLag: 0.18 + hashMix(seedBase + 191, node.id, slot, 61) * 0.2,
+        baseScale: 0.34 + hashMix(seedBase + 197, node.id, slot, 67) * 0.12,
+        bankBias: (hashMix(seedBase + 211, node.id, slot, 71) - 0.5) * 0.42,
+        throttleBias: 0.82 + hashMix(seedBase + 227, node.id, slot, 73) * 0.22,
+        presence: 0
+    };
+}
+
+function getNodeOrbitalSquads(node) {
+    var desired = desiredOrbitSquadCount(node);
+    var visibleShips = desiredOrbitVisibleShipCount(node);
+    if (desired <= 0) return [];
+
+    var signature = G.seed + ':' + node.id + ':' + node.radius + ':' + node.kind;
+    var entry = orbitalVisualCache[node.id];
+    if (!entry || entry.signature !== signature) {
+        entry = { signature: signature, squads: [] };
+        orbitalVisualCache[node.id] = entry;
+    }
+
+    while (entry.squads.length < desired) {
+        entry.squads.push(buildOrbitalSquad(node, entry.squads.length));
+    }
+
+    var baseMembers = desired > 0 ? Math.floor(visibleShips / desired) : 0;
+    var extraMembers = desired > 0 ? (visibleShips % desired) : 0;
+    for (var i = 0; i < entry.squads.length; i++) {
+        var squad = entry.squads[i];
+        var target = i < desired ? 1 : 0;
+        if (i < desired) squad.members = clamp(baseMembers + (i < extraMembers ? 1 : 0), 1, MAX_ORBIT_SHIPS_PER_SQUAD);
+        else squad.members = 0;
+        squad.presence += (target - squad.presence) * (target > squad.presence ? 0.18 : 0.24);
+        squad.presence = clamp(squad.presence, 0, 1);
+    }
+
+    while (entry.squads.length > desired && entry.squads[entry.squads.length - 1].presence < 0.04) {
+        entry.squads.pop();
+    }
+
+    var active = [];
+    for (var ai = 0; ai < entry.squads.length; ai++) {
+        if (entry.squads[ai].presence > 0.04) active.push(entry.squads[ai]);
+    }
+    return active;
+}
+
+function getOrbitalFrame(node, squad, tick) {
+    var baseRadius = node.radius + 12.5 + squad.lane * 8.4 + squad.radiusBias - (node.defense ? squad.lane * 0.55 : 0);
+    var bobble = Math.sin(tick * 0.021 + squad.bobblePhase + squad.slot * 0.61) * squad.bobbleAmp;
+    var rx = Math.max(node.radius + 9, baseRadius + bobble);
+    var ry = rx * clamp(squad.ellipseRatio + Math.sin(tick * 0.01 + squad.bobblePhase) * 0.015, 0.56, 0.82);
+    var tilt = squad.tilt + tick * squad.precession;
+    var orbitSpeed = ORBIT_SPD * squad.speedMult * Math.pow((node.radius + 12) / rx, 0.42) * squad.turnDir;
+    var angle = tick * orbitSpeed + squad.phase;
+
+    return {
+        rx: rx,
+        ry: ry,
+        tilt: tilt,
+        cosT: Math.cos(tilt),
+        sinT: Math.sin(tilt),
+        angle: angle,
+        orbitDir: squad.turnDir,
+    };
+}
+
+function orbitalPoint(node, frame, angle) {
+    var lx = Math.cos(angle) * frame.rx;
+    var ly = Math.sin(angle) * frame.ry;
+    return {
+        x: node.pos.x + lx * frame.cosT - ly * frame.sinT,
+        y: node.pos.y + lx * frame.sinT + ly * frame.cosT,
+        localX: lx,
+        localY: ly
+    };
+}
+
+function orbitalTangent(frame, angle) {
+    var dx = -Math.sin(angle) * frame.rx * frame.orbitDir;
+    var dy = Math.cos(angle) * frame.ry * frame.orbitDir;
+    var tx = dx * frame.cosT - dy * frame.sinT;
+    var ty = dx * frame.sinT + dy * frame.cosT;
+    var len = Math.sqrt(tx * tx + ty * ty) || 1;
+    return { x: tx / len, y: ty / len };
+}
+
+function orbitalRadial(point, node) {
+    var rx = point.x - node.pos.x;
+    var ry = point.y - node.pos.y;
+    var len = Math.sqrt(rx * rx + ry * ry) || 1;
+    return { x: rx / len, y: ry / len };
+}
+
+function drawOrbitalTrack(ctx, node, frame, col, frontPass, alpha, width) {
+    ctx.save();
+    ctx.translate(node.pos.x, node.pos.y);
+    ctx.rotate(frame.tilt);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, frame.rx, frame.ry, 0, frontPass ? 0 : Math.PI, frontPass ? Math.PI : Math.PI * 2);
+    ctx.strokeStyle = hexToRgba(col, alpha);
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawOrbitalSquadron(ctx, node, squad, col, tick, frontPass) {
+    if (!squad || squad.presence <= 0.04) return;
+
+    var baseCol = col && col.indexOf('#') === 0 ? col : '#c8d6e5';
+    var frame = getOrbitalFrame(node, squad, tick);
+    var lead = orbitalPoint(node, frame, frame.angle);
+    var shipIsFront = lead.localY >= 0;
+    var arcAlpha = (frontPass ? 0.14 : 0.06) * squad.presence + (node.defense ? 0.02 : 0);
+    drawOrbitalTrack(ctx, node, frame, baseCol, frontPass, arcAlpha, frontPass ? 1.05 : 0.85);
+    if (shipIsFront !== frontPass) return;
+
+    var tangent = orbitalTangent(frame, frame.angle);
+    var radial = orbitalRadial(lead, node);
+    var dirX = tangent.x, dirY = tangent.y;
+    var nX = -dirY, nY = dirX;
+    var formationTightness = node.defense ? 0.82 : 1.02;
+    var leadScale = (squad.baseScale + (frontPass ? 0.06 : 0)) * (0.9 + squad.presence * 0.18);
+    var spread = squad.wingSpread * leadScale * 3.15 * formationTightness;
+    var trailGap = leadScale * 4.9 * (node.defense ? 0.84 : 1);
+    var radialGap = leadScale * 3.2 * squad.radialLag;
+    var shipAlpha = (frontPass ? 0.8 : 0.38) * squad.presence;
+    var shipCol = frontPass ? blendHex(baseCol, '#ffffff', 0.08 + squad.presence * 0.08) : blendHex(baseCol, '#8fa3bf', 0.24);
+    var radialLean = clamp(lead.localY / Math.max(1, frame.ry), -1, 1);
+    var bank = clamp(frame.orbitDir * (0.18 + squad.bankBias) + radialLean * 0.14, -0.68, 0.68);
+    var throttle = clamp(squad.throttleBias + (frontPass ? 0.08 : -0.03) + (node.defense ? 0.05 : 0), 0.55, 1.15);
+    var flickerBase = tick * 0.32 + squad.phase + squad.slot * 0.73;
+    var members = Math.max(1, squad.members);
+    var formation = [
+        { back: 0, lateral: 0, radial: 0, scale: 1 },
+        { back: 1.05, lateral: 1, radial: 0.34, scale: 0.82 },
+        { back: 1.05, lateral: -1, radial: -0.34, scale: 0.82 },
+        { back: 1.95, lateral: 0, radial: 0.16, scale: 0.74 },
+        { back: 2.15, lateral: 1.6, radial: 0.52, scale: 0.64 },
+        { back: 2.15, lateral: -1.6, radial: -0.52, scale: 0.64 }
+    ];
+
+    if (frontPass) {
+        ctx.beginPath();
+        ctx.arc(lead.x, lead.y, leadScale * 6.2, 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba(baseCol, 0.08 * squad.presence);
+        ctx.fill();
+    }
+
+    for (var mi = 0; mi < members && mi < formation.length; mi++) {
+        var form = formation[mi];
+        var px = lead.x - dirX * trailGap * form.back + nX * spread * form.lateral + radial.x * radialGap * form.radial;
+        var py = lead.y - dirY * trailGap * form.back + nY * spread * form.lateral + radial.y * radialGap * form.radial;
+        var scale = leadScale * form.scale;
+        var alpha = shipAlpha * (1 - mi * 0.08);
+        var flicker = 0.5 + 0.5 * Math.sin(flickerBase + mi * 0.57);
+        drawRocketShape(ctx, px, py, dirX, dirY, shipCol, flicker, alpha, scale, bank * (1 - mi * 0.18), throttle - mi * 0.04);
+    }
+}
+
 function render(ctx, cv, tick) {
     ctx.fillStyle = COLORS_BG; ctx.fillRect(0, 0, cv.width, cv.height);
     ctx.save(); ctx.translate(cv.width / 2, cv.height / 2); ctx.scale(G.cam.zoom, G.cam.zoom); ctx.translate(-G.cam.x, -G.cam.y);
@@ -2203,75 +2406,16 @@ function render(ctx, cv, tick) {
             ctx.fill();
         }
         var hasOrbiters = (vis || n.owner === G.human) && n.owner >= 0 && n.kind !== 'turret';
-        var orbData = [];
+        var orbitalSquads = [];
         if (hasOrbiters) {
-            var uCount = Math.max(0, Math.floor(n.units));
-            var orbiters = Math.min(MAX_ORBITERS, Math.round(uCount / ORBIT_UNIT_STEP));
-            if (uCount > 0 && orbiters < 1) orbiters = 1;
-            hasOrbiters = orbiters > 0;
-            if (hasOrbiters) {
-                // Stable orbital distribution: density scales with unit count.
-                var GOLDEN = 2.39996323;
-                var assigned = 0;
-                var basePhase = n.id * 0.113;
-                var ringStep = 6.8;
-                var ringStart = n.radius + 7.5;
-                var minSpacing = 7.6;
-                for (var ring = 0; ring < ORBIT_MAX_RINGS && assigned < orbiters; ring++) {
-                    var rr = ringStart + ring * ringStep;
-                    var rrY = rr * (0.56 + Math.min(0.26, ring * 0.08));
-                    var ringCap = Math.max(8, Math.floor((Math.PI * 2 * rr) / minSpacing));
-                    var count = Math.min(ringCap, orbiters - assigned);
-                    if (count <= 0) break;
-                    var tilt = (n.id * 0.73 + ring * 1.17 + 0.21) % (Math.PI * 2);
-                    // Outer rings move slower for a more natural orbit feel.
-                    var speedMag = ORBIT_SPD * Math.pow((n.radius + 9) / rr, 0.5) * (1 + ring * 0.04);
-                    var baseSpeed = (ring % 2 === 0 ? 1 : -1) * speedMag;
-                    var cosT = Math.cos(tilt), sinT = Math.sin(tilt);
-                    var rd = { rr: rr, rrY: rrY, tilt: tilt, cosT: cosT, sinT: sinT, baseSpeed: baseSpeed, count: count, ring: ring, dots: [] };
-                    for (var oi = 0; oi < count; oi++) {
-                        var phase = basePhase + oi * GOLDEN + ring * 1.37;
-                        var angle = tick * baseSpeed + phase;
-                        var wobble = Math.sin(tick * 0.045 + oi * 1.7 + ring * 0.9) * 0.9;
-                        var lx = Math.cos(angle) * (rr + wobble);
-                        var ly = Math.sin(angle) * (rrY + wobble * 0.35);
-                        var ox = n.pos.x + lx * cosT - ly * sinT;
-                        var oy = n.pos.y + lx * sinT + ly * cosT;
-                        var dotR = Math.max(1.2, 1.9 - ring * 0.17 + (oi % 9 === 0 ? 0.22 : 0));
-                        var behind = Math.sin(angle) < 0;
-                        rd.dots.push({ ox: ox, oy: oy, dotR: dotR, behind: behind, angle: angle, oi: oi });
-                    }
-                    orbData.push(rd);
-                    assigned += count;
-                }
-            }
+            orbitalSquads = getNodeOrbitalSquads(n);
+            hasOrbiters = orbitalSquads.length > 0;
         }
 
         // Ã¢â€â‚¬Ã¢â€â‚¬ PASS 1: Back-half orbit tracks + back warriors (BEHIND planet) Ã¢â€â‚¬Ã¢â€â‚¬
         if (hasOrbiters) {
-            for (var ri = 0; ri < orbData.length; ri++) {
-                var rd = orbData[ri];
-                // draw back half of orbit track
-                ctx.save();
-                ctx.translate(n.pos.x, n.pos.y);
-                ctx.rotate(rd.tilt);
-                ctx.beginPath();
-                ctx.ellipse(0, 0, rd.rr, rd.rrY, 0, Math.PI, Math.PI * 2); // back arc
-                ctx.strokeStyle = hexToRgba(col, 0.07 + rd.ring * 0.02);
-                ctx.lineWidth = 0.8;
-                ctx.stroke();
-                ctx.restore();
-                // draw back warriors (dimmer = depth cue)
-                for (var di = 0; di < rd.dots.length; di++) {
-                    var d = rd.dots[di];
-                    if (!d.behind) continue;
-                    // glow (dimmer for back)
-                    ctx.beginPath(); ctx.arc(d.ox, d.oy, d.dotR + 1.5, 0, Math.PI * 2);
-                    ctx.fillStyle = hexToRgba(col, 0.08); ctx.fill();
-                    // core dot (dimmer)
-                    ctx.beginPath(); ctx.arc(d.ox, d.oy, d.dotR * 0.85, 0, Math.PI * 2);
-                    ctx.fillStyle = hexToRgba(col, 0.35); ctx.fill();
-                }
+            for (var osi = 0; osi < orbitalSquads.length; osi++) {
+                drawOrbitalSquadron(ctx, n, orbitalSquads[osi], col, tick, false);
             }
         }
 
@@ -2314,32 +2458,8 @@ function render(ctx, cv, tick) {
 
         // Ã¢â€â‚¬Ã¢â€â‚¬ PASS 2: Front-half orbit tracks + front warriors (IN FRONT of planet) Ã¢â€â‚¬Ã¢â€â‚¬
         if (hasOrbiters) {
-            for (var ri = 0; ri < orbData.length; ri++) {
-                var rd = orbData[ri];
-                // draw front half of orbit track
-                ctx.save();
-                ctx.translate(n.pos.x, n.pos.y);
-                ctx.rotate(rd.tilt);
-                ctx.beginPath();
-                ctx.ellipse(0, 0, rd.rr, rd.rrY, 0, 0, Math.PI); // front arc
-                ctx.strokeStyle = hexToRgba(col, 0.12 + rd.ring * 0.03);
-                ctx.lineWidth = 0.8;
-                ctx.stroke();
-                ctx.restore();
-                // draw front warriors (brighter = closer)
-                for (var di = 0; di < rd.dots.length; di++) {
-                    var d = rd.dots[di];
-                    if (d.behind) continue;
-                    // glow
-                    ctx.beginPath(); ctx.arc(d.ox, d.oy, d.dotR + 2, 0, Math.PI * 2);
-                    ctx.fillStyle = hexToRgba(col, 0.18); ctx.fill();
-                    // core dot (bright)
-                    ctx.beginPath(); ctx.arc(d.ox, d.oy, d.dotR, 0, Math.PI * 2);
-                    ctx.fillStyle = hexToRgba(col, 0.85 + (d.oi % 5 === 0 ? 0.15 : 0)); ctx.fill();
-                    // bright center
-                    ctx.beginPath(); ctx.arc(d.ox, d.oy, d.dotR * 0.35, 0, Math.PI * 2);
-                    ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.fill();
-                }
+            for (var osj = 0; osj < orbitalSquads.length; osj++) {
+                drawOrbitalSquadron(ctx, n, orbitalSquads[osj], col, tick, true);
             }
         }
 
