@@ -494,58 +494,191 @@
 
         .room-list {
             margin-top: 8px;
-            max-height: 168px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 10px;
+            max-height: 220px;
             overflow-y: auto;
-            border: 1px solid var(--panel-border);
-            border-radius: var(--radius);
-            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(91, 139, 255, 0.22);
+            border-radius: 14px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+                rgba(255, 255, 255, 0.03);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
         }
 
         .room-list-empty {
-            padding: 10px;
+            padding: 16px 10px;
             text-align: center;
             font-size: .78rem;
             color: var(--text-dim);
         }
 
         .room-item {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+                rgba(8, 13, 24, 0.78);
+            box-shadow: 0 8px 22px rgba(3, 7, 18, 0.22);
+            transition: transform .18s ease, border-color .18s ease, background .18s ease, box-shadow .18s ease;
+        }
+
+        .room-item:hover {
+            transform: translateY(-1px);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.075), rgba(255, 255, 255, 0.03)),
+                rgba(10, 16, 29, 0.88);
+            border-color: rgba(133, 170, 255, 0.26);
+            box-shadow: 0 12px 28px rgba(13, 20, 38, 0.28);
+        }
+
+        .room-item-featured {
+            background:
+                linear-gradient(135deg, rgba(74, 142, 255, 0.18), rgba(99, 102, 241, 0.1)),
+                rgba(13, 20, 37, 0.94);
+            border-color: rgba(118, 170, 255, 0.34);
+            box-shadow:
+                inset 0 0 0 1px rgba(150, 198, 255, 0.14),
+                0 16px 30px rgba(21, 44, 86, 0.2);
+            transform: translateY(-1px);
+        }
+
+        .room-item-featured::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 10px;
+            bottom: 10px;
+            width: 3px;
+            border-radius: 999px;
+            background: linear-gradient(180deg, rgba(126, 180, 255, 0.95), rgba(89, 117, 255, 0.8));
+        }
+
+        .room-item-header {
             display: flex;
             align-items: center;
-            gap: 8px;
-            padding: 8px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            justify-content: space-between;
+            gap: 12px;
         }
 
-        .room-item:last-child {
-            border-bottom: none;
-        }
-
-        .room-item-main {
-            flex: 1;
-            text-align: left;
+        .room-item-title {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
             min-width: 0;
         }
 
-        .room-item-code {
-            font-size: .86rem;
-            font-weight: 700;
-            letter-spacing: .06em;
-            color: #d6e4ff;
+        .room-item-main {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            width: 100%;
         }
 
-        .room-item-meta {
-            font-size: .73rem;
+        .room-item-badges {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .room-item-code {
+            font-size: .92rem;
+            font-weight: 700;
+            letter-spacing: .08em;
+            color: #eef4ff;
+        }
+
+        .room-item-featured .room-item-code {
+            font-size: 1rem;
+            color: #ffffff;
+        }
+
+        .room-item-owner {
+            font-size: .76rem;
+            color: #d6e4ff;
+            opacity: 0.9;
+        }
+
+        .room-item-pill {
+            display: inline-flex;
+            align-items: center;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            background: rgba(255, 255, 255, 0.05);
+            font-size: .67rem;
             color: var(--text-dim);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
+        }
+
+        .room-item-pill-featured {
+            color: #edf5ff;
+            font-weight: 600;
+            background: rgba(74, 142, 255, 0.18);
+            border-color: rgba(125, 175, 255, 0.32);
+        }
+
+        .room-item-note {
+            font-size: .75rem;
+            color: var(--text-dim);
+            line-height: 1.35;
         }
 
         .room-join-btn {
             width: auto;
             margin: 0;
-            padding: 7px 10px;
-            font-size: .78rem;
+            min-width: 112px;
+            padding: 10px 15px;
+            font-size: .8rem;
+            font-weight: 600;
+            letter-spacing: .03em;
+            flex: 0 0 auto;
+            border: 1px solid rgba(104, 156, 255, 0.28);
+            border-radius: 12px;
+            background: rgba(74, 142, 255, 0.1);
+            color: #edf4ff;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+            cursor: pointer;
+            transition: transform .15s ease, box-shadow .2s ease, filter .2s ease;
+        }
+
+        .room-join-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 22px rgba(48, 92, 180, 0.18);
+            filter: brightness(1.05);
+        }
+
+        .room-join-btn-featured {
+            min-width: 134px;
+            padding: 11px 17px;
+            font-size: .82rem;
+            border-color: rgba(126, 180, 255, 0.42);
+            background: linear-gradient(135deg, rgba(74, 142, 255, 0.88), rgba(99, 102, 241, 0.78));
+            color: #fff;
+            box-shadow: 0 12px 28px rgba(41, 82, 168, 0.22);
+        }
+
+        .room-join-btn-featured:hover {
+            box-shadow: 0 14px 32px rgba(41, 82, 168, 0.28);
+        }
+
+        @media (max-width: 640px) {
+            .room-item-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .room-join-btn {
+                width: 100%;
+            }
         }
 
         #hud {
@@ -619,6 +752,10 @@
             flex-wrap: wrap;
         }
 
+        .hud-center-top.hidden {
+            display: none;
+        }
+
         #hudCap {
             color: var(--text-dim);
             font-size: .78rem;
@@ -644,6 +781,21 @@
 
         #hudRight button:hover {
             background: rgba(255, 255, 255, 0.12)
+        }
+
+        #hudRight button:disabled {
+            opacity: 0.45;
+            cursor: not-allowed;
+        }
+
+        #hudRight button.hud-exit-btn {
+            background: rgba(255, 96, 96, 0.16);
+            border-color: rgba(255, 96, 96, 0.42);
+            color: #ffd3d3;
+        }
+
+        #hudRight button.hud-exit-btn:hover {
+            background: rgba(255, 96, 96, 0.24);
         }
 
         #powerSidebar {
@@ -1491,8 +1643,16 @@
     </div>
     <div id="pauseOverlay" class="overlay hidden">
         <div class="menu-panel">
-            <h2>Duraklatildi</h2><button id="resumeBtn" class="primary-btn">Devam</button><button id="quitBtn"
-                class="secondary-btn">Ana Menu</button>
+            <h2 id="pauseTitle">Duraklatildi</h2>
+            <p id="pauseHint" class="menu-status-note hidden"></p>
+            <div class="room-row" style="margin-top:10px">
+                <button id="audioToggleBtn" class="secondary-btn" style="margin:0; flex:1">Ses: Acik</button>
+                <button id="hudInfoToggleBtn" class="secondary-btn" style="margin:0; flex:1">Tick: Kapali</button>
+            </div>
+            <div class="room-row" style="margin-top:10px">
+                <button id="resumeBtn" class="primary-btn" style="margin:0; flex:1">Devam</button>
+                <button id="quitBtn" class="secondary-btn" style="margin:0; flex:1">Ana Menu</button>
+            </div>
         </div>
     </div>
     <div id="gameOverOverlay" class="overlay hidden">
@@ -1538,7 +1698,7 @@
             </div>
         </div>
         <div id="hudCenter">
-            <div class="hud-center-top"><span id="hudTick">Tick: 0</span><span id="hudCap">Cap 0/0</span><span id="pingDisplay" class="ping-display"></span></div>
+            <div id="hudTelemetryRow" class="hud-center-top"><span id="hudTick">Tick: 0</span><span id="hudCap">Cap 0/0</span><span id="pingDisplay" class="ping-display"></span></div>
             <span id="hudMeta">Secili node bilgisi burada gorunur.</span>
         </div>
         <div id="hudRight"><button id="pauseBtn" title="Duraklat">||</button><button id="speedBtn" title="Hiz">1x</button><button id="themeBtn" title="Tema">TEMA</button><button id="chatToggle" title="Sohbet">SOHBET</button><button id="exportMapHudBtn" title="Haritayi Disa Aktar">MAP</button>
@@ -1574,5 +1734,3 @@
 </body>
 
 </html>
-
-

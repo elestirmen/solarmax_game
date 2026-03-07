@@ -80,3 +80,24 @@ test('simulateAuthoritativeTick advances state and resolves game over when only 
     assert.equal(state.state, 'gameOver');
     assert.equal(state.winner, 0);
 });
+
+test('simulateAuthoritativeTick keeps turret beam visuals in authoritative snapshots', function () {
+    var snapshot = baseSnapshot();
+    snapshot.nodes = [
+        { id: 0, pos: { x: 0, y: 0 }, radius: 24, owner: 0, units: 12, level: 1, kind: 'turret', prodAcc: 0, defense: false, assimilationProgress: 1, assimilationLock: 0 },
+        { id: 1, pos: { x: 240, y: 0 }, radius: 24, owner: 1, units: 18, level: 1, kind: 'core', prodAcc: 0, defense: false, assimilationProgress: 1, assimilationLock: 0 },
+    ];
+    snapshot.fleets = [
+        { active: true, owner: 1, count: 10, srcId: 1, tgtId: 0, t: 0, speed: 0, arcLen: 1, cpx: 0, cpy: 0, x: 30, y: 0, trail: [], offsetL: 0, spdVar: 1, routeSpeedMult: 1, dmgAcc: 0.6, launchT: 0 },
+    ];
+    var state = buildAuthoritativeState(snapshot, {
+        manifest: { seed: 'sim-seed', difficulty: 'normal', rulesMode: 'advanced', fogEnabled: false },
+    });
+
+    simulateAuthoritativeTick(state);
+    var authoritativeSnapshot = captureAuthoritativeSnapshot(state);
+
+    assert.equal(state.turretBeams.length > 0, true);
+    assert.equal(authoritativeSnapshot.turretBeams.length > 0, true);
+    assert.equal(authoritativeSnapshot.turretBeams[0].owner, 0);
+});

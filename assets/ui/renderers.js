@@ -24,31 +24,41 @@ export function renderRoomListUI(container, rooms, opts) {
     }
 
     var frag = doc.createDocumentFragment();
+    var featuredIndex = rooms.length ? 0 : -1;
     for (var i = 0; i < rooms.length; i++) {
         var room = rooms[i] || {};
-        var item = createTextElement(doc, 'div', 'room-item');
+        var isFeatured = i === featuredIndex;
+        var item = createTextElement(doc, 'div', 'room-item' + (isFeatured ? ' room-item-featured' : ''));
+        var header = createTextElement(doc, 'div', 'room-item-header');
+        var title = createTextElement(doc, 'div', 'room-item-title');
         var main = createTextElement(doc, 'div', 'room-item-main');
+        var badges = createTextElement(doc, 'div', 'room-item-badges');
         var code = createTextElement(doc, 'span', 'room-item-code', room.code || '-----');
+        var owner = createTextElement(doc, 'div', 'room-item-owner', 'Acan: ' + (room.hostName || 'Host'));
+        var featuredBadge = isFeatured ? createTextElement(doc, 'span', 'room-item-pill room-item-pill-featured', 'Acik Oda') : null;
+        var slots = createTextElement(doc, 'span', 'room-item-pill', (room.players || 0) + '/' + (room.maxPlayers || 0) + ' oyuncu');
         var modeText = room.mode === 'daily'
             ? ((room.modeLabel || 'Gunluk') + (room.challengeKey ? (' ' + room.challengeKey) : ''))
             : (room.mode === 'custom' ? (room.modeLabel || 'Custom') : (room.modeLabel || 'Standart'));
-        var metaText = (room.hostName || 'Host') +
-            ' | ' + (room.players || 0) + '/' + (room.maxPlayers || 0) +
-            ' | ' + modeText +
-            ' | ' + (room.difficulty || 'normal') +
-            ' | ' + (room.nodeCount || 0) + ' node' +
-            (room.aiCount ? (' | AI ' + room.aiCount) : '') +
-            ' | ' + (room.rulesMode || 'advanced') +
-            (room.challengeTitle ? (' | ' + room.challengeTitle) : '');
-        var meta = createTextElement(doc, 'span', 'room-item-meta', metaText);
-        var joinBtn = createTextElement(doc, 'button', 'room-join-btn secondary-btn', 'Katil');
+        var mode = createTextElement(doc, 'span', 'room-item-pill', modeText);
+        var noteLabel = room.mode === 'custom' ? 'Harita' : (room.mode === 'daily' ? 'Challenge' : '');
+        var noteText = room.challengeTitle ? (noteLabel + ': ' + room.challengeTitle) : '';
+        var note = noteText ? createTextElement(doc, 'div', 'room-item-note', noteText) : null;
+        var joinBtn = createTextElement(doc, 'button', 'room-join-btn' + (isFeatured ? ' room-join-btn-featured' : ''), isFeatured ? 'Odaya Katil' : 'Katil');
         joinBtn.type = 'button';
         joinBtn.setAttribute('data-room-code', room.code || '');
 
-        main.appendChild(code);
-        main.appendChild(meta);
+        title.appendChild(code);
+        title.appendChild(owner);
+        if (featuredBadge) badges.appendChild(featuredBadge);
+        badges.appendChild(slots);
+        badges.appendChild(mode);
+        header.appendChild(title);
+        header.appendChild(joinBtn);
+        main.appendChild(badges);
+        item.appendChild(header);
+        if (note) main.appendChild(note);
         item.appendChild(main);
-        item.appendChild(joinBtn);
         frag.appendChild(item);
     }
     container.appendChild(frag);

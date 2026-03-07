@@ -75,6 +75,39 @@ function humanPlayerCount(players) {
     return total;
 }
 
+function pushTransientBeams(target, items, opts) {
+    if (!Array.isArray(target) || !Array.isArray(items) || !items.length) return;
+    opts = opts || {};
+    var life = Number(opts.life);
+    var limit = Math.max(1, Math.floor(Number(opts.limit) || items.length));
+    var ownerKey = opts.ownerKey || 'owner';
+    if (!Number.isFinite(life) || life <= 0) life = 0.1;
+    for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        if (!item) continue;
+        target.push({
+            fromX: Number(item.fromX) || 0,
+            fromY: Number(item.fromY) || 0,
+            toX: Number(item.toX) || 0,
+            toY: Number(item.toY) || 0,
+            owner: Number(item[ownerKey]),
+            life: life,
+            maxLife: life,
+        });
+    }
+    if (target.length > limit) target.splice(0, target.length - limit);
+}
+
+function decayTransientBeams(target, dt) {
+    if (!Array.isArray(target) || !target.length) return;
+    var step = Number(dt);
+    if (!Number.isFinite(step) || step <= 0) step = 0.033;
+    for (var i = target.length - 1; i >= 0; i--) {
+        target[i].life = (Number(target[i].life) || 0) - step;
+        if (target[i].life <= 0) target.splice(i, 1);
+    }
+}
+
 function distance(a, b) {
     var dx = (b.x || 0) - (a.x || 0);
     var dy = (b.y || 0) - (a.y || 0);
@@ -166,6 +199,8 @@ export function buildAuthoritativeState(snapshot, opts) {
         unitByPlayer: cloneValue(snapshot.unitByPlayer || {}),
         aiTicks: Array.isArray(snapshot.aiTicks) ? snapshot.aiTicks.slice() : [],
         aiProfiles: Array.isArray(snapshot.aiProfiles) ? cloneValue(snapshot.aiProfiles) : [],
+        turretBeams: Array.isArray(snapshot.turretBeams) ? cloneValue(snapshot.turretBeams) : [],
+        fieldBeams: Array.isArray(snapshot.fieldBeams) ? cloneValue(snapshot.fieldBeams) : [],
         flowId: Math.max(0, Math.floor(Number(snapshot.flowId) || 0)),
         fleetSerial: Math.max(0, Math.floor(Number(snapshot.fleetSerial) || 0)),
         fog: cloneValue(snapshot.fog || initFog(players.length, nodes.length)),
@@ -219,6 +254,8 @@ export function captureAuthoritativeSnapshot(state) {
         unitByPlayer: cloneValue(state.unitByPlayer),
         aiTicks: Array.isArray(state.aiTicks) ? state.aiTicks.slice() : [],
         aiProfiles: cloneValue(state.aiProfiles),
+        turretBeams: cloneValue(Array.isArray(state.turretBeams) ? state.turretBeams : []),
+        fieldBeams: cloneValue(Array.isArray(state.fieldBeams) ? state.fieldBeams : []),
         flowId: state.flowId,
         fleetSerial: state.fleetSerial,
         rngState: state.seed,
@@ -337,13 +374,18 @@ export function simulateAuthoritativeTick(state) {
         },
     });
 
-    applyTurretDamage({
+    var turretReport = applyTurretDamage({
         nodes: state.nodes,
         fleets: state.fleets,
         dt: SIM_CONSTANTS.TICK_DT,
         range: SIM_CONSTANTS.TURRET_RANGE,
         dps: SIM_CONSTANTS.TURRET_DPS,
         minGarrison: SIM_CONSTANTS.TURRET_MIN_GARRISON,
+    });
+    pushTransientBeams(state.turretBeams, turretReport && turretReport.shots, {
+        life: 0.12,
+        limit: 80,
+        ownerKey: 'turretOwner',
     });
 
     stepFleetMovement({
@@ -369,7 +411,7 @@ export function simulateAuthoritativeTick(state) {
         },
     });
 
-    applyDefenseFieldDamage({
+    var fieldReport = applyDefenseFieldDamage({
         nodes: state.nodes,
         fleets: state.fleets,
         dt: SIM_CONSTANTS.TICK_DT,
@@ -382,6 +424,11 @@ export function simulateAuthoritativeTick(state) {
             bulwarkDpsBonus: 1.18,
             relayRangeBonus: 6,
         },
+    });
+    pushTransientBeams(state.fieldBeams, fieldReport && fieldReport.arcs, {
+        life: 0.1,
+        limit: 120,
+        ownerKey: 'owner',
     });
 
     var arrivalReport = resolveFleetArrivals({
@@ -445,6 +492,8 @@ export function simulateAuthoritativeTick(state) {
         state.state = 'gameOver';
     }
 
+    decayTransientBeams(state.turretBeams, SIM_CONSTANTS.TICK_DT);
+    decayTransientBeams(state.fieldBeams, SIM_CONSTANTS.TICK_DT);
     state.tick += 1;
     return state;
 }

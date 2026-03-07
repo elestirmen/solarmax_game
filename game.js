@@ -343,6 +343,16 @@ function isNodeAssimilated(node) {
     if ((node.assimilationLock || 0) > 0) return false;
     return node.assimilationProgress === undefined || node.assimilationProgress >= 1;
 }
+function preferredCameraNodeForPlayer(playerIndex) {
+    var preferredId = G.playerCapital && G.playerCapital[playerIndex] !== undefined ? Number(G.playerCapital[playerIndex]) : -1;
+    if (isFinite(preferredId) && preferredId >= 0 && G.nodes[preferredId] && G.nodes[preferredId].owner === playerIndex) {
+        return G.nodes[preferredId];
+    }
+    for (var i = 0; i < G.nodes.length; i++) {
+        if (G.nodes[i] && G.nodes[i].owner === playerIndex) return G.nodes[i];
+    }
+    return G.nodes[0] || null;
+}
 function upgradeCost(node) {
     var cost = 18 + node.radius * 0.85 + (node.level - 1) * 14;
     if (node.kind === 'relay') cost *= 0.92;
@@ -693,7 +703,7 @@ function initGame(seedStr, nc, diff, opts) {
         G.players.push({ idx: pi, color: PLAYER_COLORS[pi % PLAYER_COLORS.length], isAI: pi >= humanCount, alive: true });
     }
     var localPlayerIndex = opts.localPlayerIndex !== undefined ? Number(opts.localPlayerIndex) : 0;
-    G.human = clamp(Math.floor(localPlayerIndex), 0, humanCount - 1);
+    G.human = clamp(Math.floor(localPlayerIndex), 0, totalPlayers - 1);
     G.aiTicks = [];
     G.aiProfiles = [];
     for (var ai = 0; ai < G.players.length; ai++) {
@@ -714,7 +724,7 @@ function initGame(seedStr, nc, diff, opts) {
     G.powerByPlayer = computePowerByPlayer();
     G.strategicPulse = currentStrategicPulse(0);
     G.strategicPulse.announcedCycle = -1;
-    var pn = null; for (var ni = 0; ni < G.nodes.length; ni++) if (G.nodes[ni].owner === 0) { pn = G.nodes[ni]; break; }
+    var pn = preferredCameraNodeForPlayer(G.human);
     if (pn) { G.cam.x = pn.pos.x; G.cam.y = pn.pos.y; } G.cam.zoom = 1;
     if (!keepReplay) G.rec = { events: [], seed: G.seed, nc: nc, diff: diff, rulesMode: G.rulesMode };
     if (!keepReplay) G.rep = null;
@@ -1401,20 +1411,7 @@ function gameTick(runtimeOpts) {
     if (net.online && !runtimeOpts.skipNetworkSync) sendOnlineStateHash();
     maybeShowCampaignObjectiveReminder();
     refreshCampaignMissionPanels();
-    // particles
-    for (var pi = G.particles.length - 1; pi >= 0; pi--) {
-        var p = G.particles[pi];
-        p.x += p.vx; p.y += p.vy; p.life -= TICK_DT;
-        if (p.life <= 0) G.particles.splice(pi, 1);
-    }
-    for (var bi = G.turretBeams.length - 1; bi >= 0; bi--) {
-        G.turretBeams[bi].life -= TICK_DT;
-        if (G.turretBeams[bi].life <= 0) G.turretBeams.splice(bi, 1);
-    }
-    for (var fi = G.fieldBeams.length - 1; fi >= 0; fi--) {
-        G.fieldBeams[fi].life -= TICK_DT;
-        if (G.fieldBeams[fi].life <= 0) G.fieldBeams.splice(fi, 1);
-    }
+    advanceTransientVisuals(TICK_DT);
     checkEnd(); G.tick++;
 }
 function checkEnd() {
@@ -2447,9 +2444,9 @@ if (closeHowToPlayBtn) {
 var roomStatusEl = $('roomStatus'), roomPlayersEl = $('roomPlayers'), roomListEl = $('roomList');
 var chatMessagesEl = $('chatMessages');
 var tabSingle = $('tabSingle'), tabMulti = $('tabMulti'), panelSingle = $('panelSingle'), panelMulti = $('panelMulti');
-var resumeBtn = $('resumeBtn'), quitBtn = $('quitBtn');
+var pauseTitleEl = $('pauseTitle'), pauseHintEl = $('pauseHint'), resumeBtn = $('resumeBtn'), quitBtn = $('quitBtn');
 var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameOverStats'), repBtn = $('replayBtn'), expRepBtn = $('exportReplayBtn'), restartBtn = $('restartBtn'), nextLevelBtn = $('nextLevelBtn');
-var hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), hudCap = $('hudCap'), hudMeta = $('hudMeta'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
+var hudTelemetryRow = $('hudTelemetryRow'), hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), hudCap = $('hudCap'), hudMeta = $('hudMeta'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
 var sendPctQuickBtns = Array.prototype.slice.call(document.querySelectorAll('.send-quick-btn'));
 var powerSidebar = $('powerSidebar'), powerListEl = $('powerList');
 var scenarioOv = $('scenarioOverlay'), scenarioStartBtn = $('scenarioStartBtn'), scenarioCloseBtn = $('scenarioCloseBtn'), scenarioProgressEl = $('scenarioProgress'), scenarioBubbleListEl = $('scenarioBubbleList'), scenarioMissionEl = $('scenarioMission');
@@ -2460,8 +2457,131 @@ var tuneAiAgg = $('tuneAIAggression'), tuneAiBuf = $('tuneAIBuffer'), tuneAiDec 
 var tuneResetBtn = $('tuneResetBtn'), tuneTogBtn = $('tuneToggleBtn');
 var tuneFogCb = $('tuneFogOfWar'), tuneAiAssistCb = $('tuneAiAssist'), menuFogCb = $('menuFogOfWar');
 var exportMapHudBtn = $('exportMapHudBtn');
+var audioToggleBtn = $('audioToggleBtn'), hudInfoToggleBtn = $('hudInfoToggleBtn');
 var tuneVals = { p: $('tuneProductionVal'), f: $('tuneFleetSpeedVal'), d: $('tuneDefenseVal'), fi: $('tuneFlowIntervalVal'), aa: $('tuneAIAggressionVal'), ab: $('tuneAIBufferVal'), ad: $('tuneAIDecisionVal') };
-var tuningOpen = false, lastRepData = null, powerRenderKey = '';
+var UI_PREFS_KEY = 'stellar_ui_prefs_v1';
+var DEFAULT_SFX_VOLUME = 0.85, DEFAULT_MUSIC_VOLUME = 0.55;
+var tuningOpen = false, lastRepData = null, powerRenderKey = '', inGameMenuOpen = false;
+var uiPrefs = loadUiPrefs();
+
+function loadUiPrefs() {
+    try {
+        var raw = localStorage.getItem(UI_PREFS_KEY);
+        var parsed = raw ? JSON.parse(raw) : {};
+        return {
+            audioEnabled: parsed && parsed.audioEnabled !== false,
+            hudTelemetryVisible: !!(parsed && parsed.hudTelemetryVisible),
+        };
+    } catch (e) {
+        return {
+            audioEnabled: true,
+            hudTelemetryVisible: false,
+        };
+    }
+}
+function saveUiPrefs() {
+    try {
+        localStorage.setItem(UI_PREFS_KEY, JSON.stringify({
+            audioEnabled: uiPrefs.audioEnabled !== false,
+            hudTelemetryVisible: !!uiPrefs.hudTelemetryVisible,
+        }));
+    } catch (e) {}
+}
+function applyAudioPreference() {
+    if (typeof AudioFX === 'undefined') return;
+    AudioFX.setSfxVolume(uiPrefs.audioEnabled ? DEFAULT_SFX_VOLUME : 0);
+    AudioFX.setMusicVolume(uiPrefs.audioEnabled ? DEFAULT_MUSIC_VOLUME : 0);
+    if (!uiPrefs.audioEnabled) {
+        AudioFX.stopMusic();
+    } else if (G.state === 'playing' || G.state === 'paused') {
+        AudioFX.startMusic();
+    }
+}
+function syncAudioToggleButton() {
+    if (!audioToggleBtn) return;
+    audioToggleBtn.textContent = uiPrefs.audioEnabled ? 'Ses: Acik' : 'Ses: Kapali';
+}
+function syncHudTelemetryVisibility() {
+    if (hudTelemetryRow) hudTelemetryRow.classList.toggle('hidden', !uiPrefs.hudTelemetryVisible);
+    if (hudInfoToggleBtn) hudInfoToggleBtn.textContent = uiPrefs.hudTelemetryVisible ? 'Tick: Acik' : 'Tick: Kapali';
+}
+function syncPauseOverlayContent() {
+    var onlineMenu = net.online && G.state === 'playing' && inGameMenuOpen;
+    if (pauseTitleEl) pauseTitleEl.textContent = onlineMenu ? 'Mac Menusu' : 'Duraklatildi';
+    if (pauseHintEl) {
+        if (onlineMenu) {
+            pauseHintEl.textContent = 'Ana menuye donersin. Ayrilirsan yerine AI devam eder.';
+            pauseHintEl.classList.remove('hidden');
+        } else {
+            pauseHintEl.textContent = '';
+            pauseHintEl.classList.add('hidden');
+        }
+    }
+    if (resumeBtn) resumeBtn.textContent = onlineMenu ? 'Oyuna Don' : 'Devam';
+    if (quitBtn) quitBtn.textContent = onlineMenu ? 'Ana Menuye Don' : 'Ana Menu';
+    syncAudioToggleButton();
+    syncHudTelemetryVisibility();
+}
+function syncMatchHudControls() {
+    if (pauseBtn) {
+        pauseBtn.textContent = net.online ? 'CIKIS' : '||';
+        pauseBtn.title = net.online ? 'Ana Menuye Don' : 'Duraklat';
+        pauseBtn.classList.toggle('hud-exit-btn', !!net.online);
+    }
+    if (spdBtn) {
+        spdBtn.disabled = !!net.online;
+        spdBtn.title = net.online ? 'Online maclarda devre disi' : 'Hiz';
+    }
+}
+function setAudioEnabled(enabled) {
+    uiPrefs.audioEnabled = !!enabled;
+    saveUiPrefs();
+    applyAudioPreference();
+    syncAudioToggleButton();
+}
+function setHudTelemetryVisible(visible) {
+    uiPrefs.hudTelemetryVisible = !!visible;
+    saveUiPrefs();
+    syncHudTelemetryVisibility();
+}
+function openPauseMenu() {
+    if (G.state !== 'playing') return;
+    if (net.online) {
+        inGameMenuOpen = true;
+        syncPauseOverlayContent();
+        showUI(G.state);
+        return;
+    }
+    G.state = 'paused';
+    showUI('paused');
+}
+function closePauseMenu() {
+    if (net.online) {
+        if (!inGameMenuOpen) return;
+        inGameMenuOpen = false;
+        syncPauseOverlayContent();
+        showUI(G.state);
+        return;
+    }
+    if (G.state === 'paused') {
+        G.state = 'playing';
+        showUI('playing');
+    }
+}
+function togglePauseMenu() {
+    if (net.online) {
+        if (inGameMenuOpen) closePauseMenu();
+        else openPauseMenu();
+        return;
+    }
+    if (G.state === 'paused') closePauseMenu();
+    else openPauseMenu();
+}
+
+syncPauseOverlayContent();
+syncHudTelemetryVisibility();
+syncMatchHudControls();
+if (!uiPrefs.audioEnabled) applyAudioPreference();
 
 function labelForPlayer(idx) {
     var label = '';
@@ -2892,11 +3012,32 @@ function captureSyncSnapshot() {
         unitByPlayer: JSON.parse(JSON.stringify(G.unitByPlayer || {})),
         aiTicks: Array.isArray(G.aiTicks) ? G.aiTicks.slice() : [],
         aiProfiles: JSON.parse(JSON.stringify(G.aiProfiles || [])),
+        turretBeams: JSON.parse(JSON.stringify(G.turretBeams || [])),
+        fieldBeams: JSON.parse(JSON.stringify(G.fieldBeams || [])),
         flowId: G.flowId,
         fleetSerial: G.fleetSerial,
         rngState: G.rng ? G.rng.s : 1,
         lastAppliedSeq: net.lastAppliedSeq,
     };
+}
+
+function advanceTransientVisuals(dt) {
+    if (!Number.isFinite(dt) || dt <= 0) return;
+    for (var pi = G.particles.length - 1; pi >= 0; pi--) {
+        var particle = G.particles[pi];
+        particle.x += particle.vx;
+        particle.y += particle.vy;
+        particle.life -= dt;
+        if (particle.life <= 0) G.particles.splice(pi, 1);
+    }
+    for (var bi = G.turretBeams.length - 1; bi >= 0; bi--) {
+        G.turretBeams[bi].life -= dt;
+        if (G.turretBeams[bi].life <= 0) G.turretBeams.splice(bi, 1);
+    }
+    for (var fi = G.fieldBeams.length - 1; fi >= 0; fi--) {
+        G.fieldBeams[fi].life -= dt;
+        if (G.fieldBeams[fi].life <= 0) G.fieldBeams.splice(fi, 1);
+    }
 }
 
 function handleAuthoritativeState(payload) {
@@ -2989,6 +3130,8 @@ function applySyncSnapshot(snapshot) {
     G.stats = JSON.parse(JSON.stringify(snapshot.stats || G.stats || {}));
     G.aiTicks = Array.isArray(snapshot.aiTicks) ? snapshot.aiTicks.slice() : [];
     G.aiProfiles = JSON.parse(JSON.stringify(snapshot.aiProfiles || []));
+    G.turretBeams = JSON.parse(JSON.stringify(Array.isArray(snapshot.turretBeams) ? snapshot.turretBeams : []));
+    G.fieldBeams = JSON.parse(JSON.stringify(Array.isArray(snapshot.fieldBeams) ? snapshot.fieldBeams : []));
     G.flowId = Math.max(0, Math.floor(Number(snapshot.flowId) || 0));
     G.fleetSerial = Math.max(0, Math.floor(Number(snapshot.fleetSerial) || 0));
     G.fog = JSON.parse(JSON.stringify(snapshot.fog || initFog(G.players.length, G.nodes.length)));
@@ -3113,7 +3256,9 @@ if (roomListEl) {
 }
 
 function showUI(st) {
-    mainMenu.classList.toggle('hidden', st !== 'mainMenu'); pauseOv.classList.toggle('hidden', st !== 'paused'); goOv.classList.toggle('hidden', st !== 'gameOver');
+    if (st !== 'playing') inGameMenuOpen = false;
+    var pauseVisible = st === 'paused' || (st === 'playing' && inGameMenuOpen);
+    mainMenu.classList.toggle('hidden', st !== 'mainMenu'); pauseOv.classList.toggle('hidden', !pauseVisible); goOv.classList.toggle('hidden', st !== 'gameOver');
     var ig = st === 'playing' || st === 'paused' || st === 'replay'; hud.classList.toggle('hidden', !ig || st === 'replay'); repBar.classList.toggle('hidden', st !== 'replay');
     if (powerSidebar) powerSidebar.classList.toggle('hidden', !ig || st === 'replay');
     var cp = document.getElementById('chatPanel'); if (cp) cp.classList.toggle('hidden', !ig || !net.online);
@@ -3126,6 +3271,9 @@ function showUI(st) {
     if (st === 'playing' && tuningOpen) { tunePanel.classList.remove('hidden'); tuneOpen.classList.add('hidden'); }
     else if (st === 'playing') { tunePanel.classList.add('hidden'); tuneOpen.classList.remove('hidden'); }
     else { tunePanel.classList.add('hidden'); tuneOpen.classList.add('hidden'); }
+    syncPauseOverlayContent();
+    syncMatchHudControls();
+    syncHudTelemetryVisibility();
     refreshCampaignMissionPanels();
 }
 
@@ -3150,6 +3298,14 @@ function appendChatMessage(text, color) {
         chatMessagesEl.removeChild(chatMessagesEl.firstChild);
     }
     chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+}
+function chatColorForPlayer(index) {
+    var idx = Math.floor(Number(index));
+    if (isFinite(idx) && idx >= 0) {
+        if (G.players && G.players[idx] && G.players[idx].color) return G.players[idx].color;
+        return PLAYER_COLORS[idx % PLAYER_COLORS.length];
+    }
+    return 'var(--danger)';
 }
 
 function renderRoomPlayers(players, hostId) {
@@ -3180,6 +3336,7 @@ function renderRoomList(rooms) {
 
 function clearRoomState(message, opts) {
     opts = opts || {};
+    inGameMenuOpen = false;
     net.online = false;
     net.authoritativeEnabled = false;
     net.authoritativeReady = false;
@@ -3211,6 +3368,8 @@ function clearRoomState(message, opts) {
     if (leaveRoomBtn) leaveRoomBtn.style.display = 'none';
     if (multiRoomTypeIn) multiRoomTypeIn.value = 'standard';
     syncRoomTypeInputs();
+    syncPauseOverlayContent();
+    syncMatchHudControls();
     requestLobby();
 }
 
@@ -3400,12 +3559,15 @@ function ensureSocket() {
     });
 
     net.socket.on('playerLeft', function (payload) {
+        var leftName = (payload && payload.name) ? payload.name : 'Bir oyuncu';
+        var leftColor = chatColorForPlayer(payload && payload.index);
         if (G.state === 'playing' && G.players && G.players[payload.index]) {
             G.players[payload.index].isAI = true;
-            console.log(payload.name + ' ayrildi. Yerine Yapay Zeka gecti.');
+            appendChatMessage(leftName + ' oyundan ayrildi. Yerine Yapay Zeka gecti.', leftColor);
         } else if (net.players) {
             net.players = net.players.filter(function (p) { return p.index !== payload.index; });
             renderRoomPlayers(net.players, net.isHost ? net.socket.id : null);
+            appendChatMessage(leftName + ' odadan ayrildi.', leftColor);
         }
     });
     net.socket.on('playerRejoined', function (payload) {
@@ -3489,8 +3651,9 @@ function ensureSocket() {
             (net.authoritativeEnabled ? ' | Sunucu state senkronu bekleniyor...' : ''),
             false
         );
-        if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
+        applyAudioPreference();
         showUI('playing');
+        showGameToast('Ana menu icin sag ustteki CIKIS butonunu kullan.');
     });
 
     net.socket.on('roomCommand', function (cmd) {
@@ -3915,7 +4078,7 @@ function finalizeLocalGameStart(fogOn) {
     G.daily.completed = false;
     resetSelectionAndSpeed();
     if (tuneFogCb) tuneFogCb.checked = !!fogOn;
-    if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
+    applyAudioPreference();
     showUI('playing');
 }
 function startSinglePlayerGame() {
@@ -3961,7 +4124,7 @@ function startDailyChallengeGame() {
     resetSelectionAndSpeed();
     if (menuFogCb) menuFogCb.checked = !!challenge.fog;
     if (tuneFogCb) tuneFogCb.checked = !!challenge.fog;
-    if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
+    applyAudioPreference();
     showUI('playing');
     showGameToast('Gunluk challenge acildi: ' + challenge.title);
 }
@@ -4049,7 +4212,7 @@ function startCampaignLevel(levelIndex) {
     if (menuFogCb) menuFogCb.checked = !!lvl.fog;
     if (tuneFogCb) tuneFogCb.checked = !!lvl.fog;
     resetSelectionAndSpeed();
-    if (typeof AudioFX !== 'undefined') AudioFX.startMusic();
+    applyAudioPreference();
     closeScenarioMenu();
     showUI('playing');
     if (lvl.hint) {
@@ -4186,13 +4349,29 @@ repFileIn.addEventListener('change', function () {
         repFileIn.value = '';
     }; r.readAsText(f);
 });
-pauseBtn.addEventListener('click', function () { if (net.online) return; if (G.state === 'playing') { G.state = 'paused'; showUI('paused'); } });
-resumeBtn.addEventListener('click', function () { if (G.state === 'paused') { G.state = 'playing'; showUI('playing'); } });
+pauseBtn.addEventListener('click', function () {
+    togglePauseMenu();
+});
+resumeBtn.addEventListener('click', function () {
+    closePauseMenu();
+});
 quitBtn.addEventListener('click', function () {
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
-    clearRoomState('');
+    clearRoomState(net.online ? 'Mactan ayrildin. Yerine AI devam ediyor.' : '');
     G.state = 'mainMenu'; showUI('mainMenu');
 });
+if (audioToggleBtn) {
+    audioToggleBtn.addEventListener('click', function () {
+        setAudioEnabled(!uiPrefs.audioEnabled);
+        showGameToast(uiPrefs.audioEnabled ? 'Ses acildi.' : 'Ses kapatildi.');
+    });
+}
+if (hudInfoToggleBtn) {
+    hudInfoToggleBtn.addEventListener('click', function () {
+        setHudTelemetryVisible(!uiPrefs.hudTelemetryVisible);
+        showGameToast(uiPrefs.hudTelemetryVisible ? 'Tick bilgisi acildi.' : 'Tick bilgisi kapatildi.');
+    });
+}
 var speeds = [1, 2, 4], spIdx = 0;
 spdBtn.addEventListener('click', function () { if (net.online) return; spIdx = (spIdx + 1) % 3; G.speed = speeds[spIdx]; spdBtn.textContent = G.speed + 'x'; recEvt('speed', { speed: G.speed }); });
 var themeBtn = $('themeBtn');
@@ -4519,8 +4698,14 @@ cv.addEventListener('touchend', function (e) {
     }
 }, { passive: false });
 window.addEventListener('keydown', function (e) {
+    var pauseKey = e.key === 'Escape' || e.key === 'p' || e.key === 'P';
     if (G.state === 'playing') {
-        if (!net.online && (e.key === 'Escape' || e.key === 'p')) { G.state = 'paused'; showUI('paused'); }
+        if (pauseKey) {
+            togglePauseMenu();
+            e.preventDefault();
+            return;
+        }
+        if (inGameMenuOpen) return;
         if (e.key === 'a') { G.nodes.forEach(function (n) { if (n.owner === G.human) { n.selected = true; inp.sel.add(n.id); } }); }
         if (e.key === 'u' || e.key === 'U') {
             var targetIds = Array.from(inp.sel);
@@ -4539,7 +4724,12 @@ window.addEventListener('keydown', function (e) {
             setSendPct(100);
         }
     }
-    else if (G.state === 'paused') { if (!net.online && (e.key === 'Escape' || e.key === 'p')) { G.state = 'playing'; showUI('playing'); } }
+    else if (G.state === 'paused') {
+        if (pauseKey) {
+            closePauseMenu();
+            e.preventDefault();
+        }
+    }
 });
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ GAME LOOP Ã¢â€â‚¬Ã¢â€â‚¬
@@ -4605,6 +4795,7 @@ function loop(ts) {
         var useAuthoritativeState = net.online && net.authoritativeEnabled && G.state === 'playing';
         if (useAuthoritativeState) {
             acc = 0;
+            advanceTransientVisuals(rawDt);
             if (net.authoritativeReady) maybeSendOnlinePing();
         } else {
             var es = G.state === 'replay' && G.rep ? (G.rep.paused ? 0 : G.rep.speed) : G.speed;
@@ -4647,5 +4838,3 @@ function loop(ts) {
 }
 showUI('mainMenu');
 requestAnimationFrame(function (ts) { lastT = ts; loop(ts); });
-
-
