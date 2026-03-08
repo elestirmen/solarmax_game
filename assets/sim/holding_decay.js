@@ -1,4 +1,5 @@
-import { SIM_CONSTANTS, isNodeAssimilated } from './shared_config.js';
+import { SIM_CONSTANTS } from './shared_config.js';
+import { isPointInsideFriendlyTerritory } from './territory.js';
 
 function resolveFleetPoint(fleet) {
     if (Number.isFinite(fleet.x) && Number.isFinite(fleet.y)) {
@@ -17,10 +18,6 @@ export function isHoldingFleetSupplied(params) {
     params = params || {};
 
     var fleet = params.fleet || null;
-    var nodes = Array.isArray(params.nodes) ? params.nodes : [];
-    var callbacks = params.callbacks || {};
-    var constants = params.constants || {};
-
     if (!fleet || !fleet.active || !fleet.holding) return true;
 
     var owner = Math.floor(Number(fleet.owner));
@@ -29,20 +26,13 @@ export function isHoldingFleetSupplied(params) {
     var fleetPoint = resolveFleetPoint(fleet);
     if (!fleetPoint) return false;
 
-    var supplyDist = Number(constants.holdSupplyDist);
-    if (!Number.isFinite(supplyDist) || supplyDist <= 0) supplyDist = SIM_CONSTANTS.SUPPLY_DIST;
-    var assimilatedFn = typeof callbacks.isNodeAssimilated === 'function' ? callbacks.isNodeAssimilated : isNodeAssimilated;
-
-    for (var i = 0; i < nodes.length; i++) {
-        var node = nodes[i];
-        if (!node || node.owner !== owner || !node.pos || !assimilatedFn(node)) continue;
-        var reach = supplyDist + Math.max(0, Number(node.radius) || 0);
-        var dx = fleetPoint.x - (Number(node.pos.x) || 0);
-        var dy = fleetPoint.y - (Number(node.pos.y) || 0);
-        if (dx * dx + dy * dy <= reach * reach) return true;
-    }
-
-    return false;
+    return isPointInsideFriendlyTerritory({
+        owner: owner,
+        point: fleetPoint,
+        nodes: params.nodes,
+        callbacks: params.callbacks,
+        constants: params.constants,
+    });
 }
 
 export function stepHoldingFleetDecay(params) {

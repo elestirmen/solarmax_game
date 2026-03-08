@@ -142,6 +142,70 @@ test('stepFleetMovement updates heading, bank, and throttle toward the route tan
     assert.equal(fleets[0].throttle > 0.3, true);
 });
 
+test('stepFleetMovement boosts friendly fleets inside their territory', function () {
+    var fleets = [
+        {
+            active: true,
+            owner: 0,
+            srcId: -1,
+            tgtId: -1,
+            t: 0.2,
+            speed: 80,
+            spdVar: 1,
+            arcLen: 100,
+            routeSpeedMult: 1,
+            cpx: 50,
+            cpy: 0,
+            x: 30,
+            y: 0,
+            fromX: 0,
+            fromY: 0,
+            toX: 100,
+            toY: 0,
+            trail: [],
+            offsetL: 0,
+            launchT: 0,
+        },
+        {
+            active: true,
+            owner: 0,
+            srcId: -1,
+            tgtId: -1,
+            t: 0.2,
+            speed: 80,
+            spdVar: 1,
+            arcLen: 100,
+            routeSpeedMult: 1,
+            cpx: 350,
+            cpy: 0,
+            x: 330,
+            y: 0,
+            fromX: 300,
+            fromY: 0,
+            toX: 400,
+            toY: 0,
+            trail: [],
+            offsetL: 0,
+            launchT: 0,
+        },
+    ];
+    var nodes = [
+        { owner: 0, radius: 24, level: 1, kind: 'core', pos: { x: 0, y: 0 } },
+    ];
+
+    stepFleetMovement({
+        fleets: fleets,
+        nodes: nodes,
+        dt: 1 / 30,
+        tune: { fspeed: 80 },
+        mapFeature: { type: 'none' },
+        callbacks: { clamp: clamp, bezPt: bezPt },
+        constants: { baseFleetSpeed: 80, gravitySpeedMult: 0.75, territorySpeedMult: 1.18, trailLen: 12 },
+    });
+
+    assert.equal(fleets[0].t > fleets[1].t, true);
+});
+
 test('stepFleetMovement converts empty-space arrivals into holding fleets', function () {
     var fleets = [{
         active: true,

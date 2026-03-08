@@ -457,6 +457,7 @@ export function simulateAuthoritativeTick(state) {
         constants: {
             baseFleetSpeed: SIM_CONSTANTS.FLEET_SPEED,
             gravitySpeedMult: SIM_CONSTANTS.GRAVITY_SPEED_MULT,
+            territorySpeedMult: SIM_CONSTANTS.TERRITORY_SPEED_MULT,
             trailLen: SIM_CONSTANTS.TRAIL_LEN,
         },
     });
@@ -523,9 +524,11 @@ export function simulateAuthoritativeTick(state) {
             isNodeAssimilated: isNodeAssimilated,
         },
         constants: {
-            holdSupplyDist: SIM_CONSTANTS.SUPPLY_DIST,
             holdDecayGraceTicks: SIM_CONSTANTS.HOLD_DECAY_GRACE_TICKS,
             holdDecayIntervalTicks: SIM_CONSTANTS.HOLD_DECAY_INTERVAL_TICKS,
+            territoryRadiusBase: SIM_CONSTANTS.TERRITORY_RADIUS_BASE,
+            territoryRadiusNodeRadiusMult: SIM_CONSTANTS.TERRITORY_RADIUS_NODE_RADIUS_MULT,
+            territoryRadiusLevelBonus: SIM_CONSTANTS.TERRITORY_RADIUS_LEVEL_BONUS,
         },
     });
 

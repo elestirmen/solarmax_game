@@ -22,6 +22,7 @@ import { applyPlayerCommandWithOps } from './assets/sim/command_apply.js';
 import { sanitizeCommandData } from './assets/sim/command_schema.js';
 import { resolveFleetArrivals, stepFleetMovement } from './assets/sim/fleet_step.js';
 import { stepHoldingFleetDecay } from './assets/sim/holding_decay.js';
+import { territoryRadiusForNode } from './assets/sim/territory.js';
 import { stepFlowLinks } from './assets/sim/flow_step.js';
 import { CAMPAIGN_LEVELS } from './assets/campaign/levels.js';
 import { buildDailyChallenge, dailyChallengeKey } from './assets/campaign/daily_challenge.js';
@@ -49,6 +50,10 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     GRAVITY_RADIUS = 170,
     GRAVITY_SPEED_MULT = 1.35,
     SUPPLY_DIST = 220,
+    TERRITORY_RADIUS_BASE = 88,
+    TERRITORY_RADIUS_NODE_RADIUS_MULT = 1.7,
+    TERRITORY_RADIUS_LEVEL_BONUS = 14,
+    TERRITORY_SPEED_MULT = 1.18,
     HOLD_DECAY_GRACE_TICKS = 300,
     HOLD_DECAY_INTERVAL_TICKS = 36,
     ISOLATED_PROD_PENALTY = 0.6,
@@ -298,9 +303,23 @@ var G = {
     daily: { active: false, challenge: null, reminderShown: {}, bestTick: 0, completed: false },
 };
 var orbitalVisualCache = {};
+var territoryLayerCanvas = null;
+var territoryLayerCtx = null;
 
 function resetOrbitalVisuals() {
     orbitalVisualCache = {};
+}
+
+function ensureTerritoryLayerCanvas(width, height) {
+    width = Math.max(1, Math.floor(Number(width) || 1));
+    height = Math.max(1, Math.floor(Number(height) || 1));
+    if (!territoryLayerCanvas) {
+        territoryLayerCanvas = document.createElement('canvas');
+        territoryLayerCtx = territoryLayerCanvas.getContext('2d', { alpha: true });
+    }
+    if (territoryLayerCanvas.width !== width) territoryLayerCanvas.width = width;
+    if (territoryLayerCanvas.height !== height) territoryLayerCanvas.height = height;
+    return territoryLayerCtx;
 }
 
 var ACHIEVEMENTS = [
@@ -1696,6 +1715,10 @@ function gameTick(runtimeOpts) {
         constants: {
             baseFleetSpeed: FLEET_SPEED,
             gravitySpeedMult: GRAVITY_SPEED_MULT,
+            territorySpeedMult: TERRITORY_SPEED_MULT,
+            territoryRadiusBase: TERRITORY_RADIUS_BASE,
+            territoryRadiusNodeRadiusMult: TERRITORY_RADIUS_NODE_RADIUS_MULT,
+            territoryRadiusLevelBonus: TERRITORY_RADIUS_LEVEL_BONUS,
             trailLen: TRAIL_LEN,
         },
     });
@@ -1757,9 +1780,11 @@ function gameTick(runtimeOpts) {
             isNodeAssimilated: isNodeAssimilated,
         },
         constants: {
-            holdSupplyDist: SUPPLY_DIST,
             holdDecayGraceTicks: HOLD_DECAY_GRACE_TICKS,
             holdDecayIntervalTicks: HOLD_DECAY_INTERVAL_TICKS,
+            territoryRadiusBase: TERRITORY_RADIUS_BASE,
+            territoryRadiusNodeRadiusMult: TERRITORY_RADIUS_NODE_RADIUS_MULT,
+            territoryRadiusLevelBonus: TERRITORY_RADIUS_LEVEL_BONUS,
         },
     });
     for (var ati = 0; ati < arrivalReport.toasts.length; ati++) {
@@ -2527,6 +2552,109 @@ function drawOrbitalSquadron(ctx, node, squad, col, tick, frontPass) {
     }
 }
 
+function fillTerritoryCircleSet(ctx, territories, color, alpha, expand) {
+    if (!territories.length || alpha <= 0) return;
+    ctx.beginPath();
+    for (var i = 0; i < territories.length; i++) {
+        var territory = territories[i];
+        var radius = Math.max(2, territory.radius + expand);
+        ctx.moveTo(territory.x + radius, territory.y);
+        ctx.arc(territory.x, territory.y, radius, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = hexToRgba(color, alpha);
+    ctx.fill();
+}
+
+function strokeTerritoryCircleSet(ctx, territories, color, alpha, expand, lineWidth) {
+    if (!territories.length || alpha <= 0) return;
+    ctx.beginPath();
+    for (var i = 0; i < territories.length; i++) {
+        var territory = territories[i];
+        var radius = Math.max(2, territory.radius + expand);
+        ctx.moveTo(territory.x + radius, territory.y);
+        ctx.arc(territory.x, territory.y, radius, 0, Math.PI * 2);
+    }
+    ctx.strokeStyle = hexToRgba(color, alpha);
+    ctx.lineWidth = Math.max(0.5, lineWidth || 1);
+    ctx.stroke();
+}
+
+function drawTerritoryBridgeSet(ctx, territories, color, alpha, expand) {
+    if (territories.length < 2 || alpha <= 0) return;
+    ctx.strokeStyle = hexToRgba(color, alpha);
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (var i = 0; i < territories.length; i++) {
+        var a = territories[i];
+        for (var j = i + 1; j < territories.length; j++) {
+            var b = territories[j];
+            var dx = b.x - a.x;
+            var dy = b.y - a.y;
+            var distSq = dx * dx + dy * dy;
+            var joinThreshold = a.radius + b.radius + 10;
+            if (distSq > joinThreshold * joinThreshold) continue;
+            ctx.lineWidth = Math.max(18, Math.min(a.radius, b.radius) * 1.42 + expand * 2);
+            ctx.beginPath();
+            ctx.moveTo(a.x, a.y);
+            ctx.lineTo(b.x, b.y);
+            ctx.stroke();
+        }
+    }
+}
+
+function drawTerritories(ctx, tick) {
+    var territoryCfg = {
+        territoryRadiusBase: TERRITORY_RADIUS_BASE,
+        territoryRadiusNodeRadiusMult: TERRITORY_RADIUS_NODE_RADIUS_MULT,
+        territoryRadiusLevelBonus: TERRITORY_RADIUS_LEVEL_BONUS,
+    };
+    var byOwner = {};
+
+    for (var i = 0; i < G.nodes.length; i++) {
+        var node = G.nodes[i];
+        if (!node || node.owner < 0) continue;
+        if (G.tune.fogEnabled && node.owner !== G.human && !G.fog.vis[G.human][node.id]) continue;
+        if (!byOwner[node.owner]) byOwner[node.owner] = [];
+        byOwner[node.owner].push({
+            node: node,
+            x: Number(node.pos.x) || 0,
+            y: Number(node.pos.y) || 0,
+            radius: territoryRadiusForNode(node, territoryCfg),
+        });
+    }
+    for (var ownerKey in byOwner) {
+        if (!Object.prototype.hasOwnProperty.call(byOwner, ownerKey)) continue;
+        var owner = Math.floor(Number(ownerKey));
+        var territories = byOwner[ownerKey];
+        var color = G.players[owner] ? G.players[owner].color : COL_NEUTRAL;
+        var fillAlpha = owner === G.human ? 0.085 : 0.052;
+        var layer = ensureTerritoryLayerCanvas(ctx.canvas.width, ctx.canvas.height);
+        if (!layer) continue;
+
+        function prepareLayer() {
+            layer.setTransform(1, 0, 0, 1, 0, 0);
+            layer.clearRect(0, 0, territoryLayerCanvas.width, territoryLayerCanvas.height);
+            layer.translate(ctx.canvas.width / 2, ctx.canvas.height / 2);
+            layer.scale(G.cam.zoom, G.cam.zoom);
+            layer.translate(-G.cam.x, -G.cam.y);
+        }
+
+        function compositeLayer(alpha) {
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.globalCompositeOperation = 'screen';
+            ctx.globalAlpha = alpha;
+            ctx.drawImage(territoryLayerCanvas, 0, 0);
+            ctx.restore();
+        }
+
+        prepareLayer();
+        drawTerritoryBridgeSet(layer, territories, color, 1, 0);
+        fillTerritoryCircleSet(layer, territories, color, 1, 0);
+        compositeLayer(fillAlpha);
+    }
+}
+
 function render(ctx, cv, tick) {
     pruneSelectedFleetIds();
     ctx.fillStyle = COLORS_BG; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -2548,6 +2676,7 @@ function render(ctx, cv, tick) {
     for (var x = sx; x <= G.cam.x + hw; x += sp) for (var y = sy; y <= G.cam.y + hh; y += sp) { ctx.beginPath(); ctx.arc(x, y, 0.4, 0, Math.PI * 2); ctx.fill(); }
 
     drawMapFeature(ctx, tick);
+    drawTerritories(ctx, tick);
 
     for (var tr = 0; tr < G.nodes.length; tr++) {
         var turretNode = G.nodes[tr];

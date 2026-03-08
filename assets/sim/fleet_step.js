@@ -1,5 +1,6 @@
 import { resolveFriendlyArrival } from './reinforcement.js';
 import { getFleetUnitSpacingT } from './shared_config.js';
+import { isPointInsideFriendlyTerritory } from './territory.js';
 
 function normalizeDirection(dx, dy, fallbackX, fallbackY) {
     var x = Number(dx);
@@ -183,6 +184,7 @@ export function stepFleetMovement(params) {
     var dt = Number(params.dt);
     var baseFleetSpeed = Number(constants.baseFleetSpeed);
     var gravitySpeedMult = Number(constants.gravitySpeedMult);
+    var territorySpeedMult = Number(constants.territorySpeedMult);
     var trailLen = Number(constants.trailLen);
     var clamp = typeof callbacks.clamp === 'function' ? callbacks.clamp : defaultClamp;
     var bezPt = typeof callbacks.bezPt === 'function' ? callbacks.bezPt : defaultBezPt;
@@ -190,6 +192,7 @@ export function stepFleetMovement(params) {
     if (!Number.isFinite(dt) || dt <= 0) dt = 1 / 30;
     if (!Number.isFinite(baseFleetSpeed) || baseFleetSpeed <= 0) baseFleetSpeed = 80;
     if (!Number.isFinite(gravitySpeedMult) || gravitySpeedMult <= 0) gravitySpeedMult = 1;
+    if (!Number.isFinite(territorySpeedMult) || territorySpeedMult <= 0) territorySpeedMult = 1;
     if (!Number.isFinite(trailLen) || trailLen < 0) trailLen = 12;
 
     for (var i = fleets.length - 1; i >= 0; i--) {
@@ -214,6 +217,15 @@ export function stepFleetMovement(params) {
             var gdy = (Number(fleet.y) || 0) - (Number(mapFeature.y) || 0);
             var gravityR = Number(mapFeature.r) || 0;
             if (gdx * gdx + gdy * gdy <= gravityR * gravityR) speedMult *= gravitySpeedMult;
+        }
+        if (territorySpeedMult > 1 && isPointInsideFriendlyTerritory({
+            owner: fleet.owner,
+            point: { x: Number(fleet.x) || 0, y: Number(fleet.y) || 0 },
+            nodes: nodes,
+            callbacks: callbacks,
+            constants: constants,
+        })) {
+            speedMult *= territorySpeedMult;
         }
         var fleetTrailScale = Number(fleet.trailScale);
         if (!Number.isFinite(fleetTrailScale) || fleetTrailScale <= 0) fleetTrailScale = 1;
