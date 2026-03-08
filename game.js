@@ -21,6 +21,7 @@ import { computeSyncHash } from './assets/sim/state_hash.js';
 import { applyPlayerCommandWithOps } from './assets/sim/command_apply.js';
 import { sanitizeCommandData } from './assets/sim/command_schema.js';
 import { resolveFleetArrivals, stepFleetMovement } from './assets/sim/fleet_step.js';
+import { stepHoldingFleetDecay } from './assets/sim/holding_decay.js';
 import { stepFlowLinks } from './assets/sim/flow_step.js';
 import { CAMPAIGN_LEVELS } from './assets/campaign/levels.js';
 import { buildDailyChallenge, dailyChallengeKey } from './assets/campaign/daily_challenge.js';
@@ -48,6 +49,8 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     GRAVITY_RADIUS = 170,
     GRAVITY_SPEED_MULT = 1.35,
     SUPPLY_DIST = 220,
+    HOLD_DECAY_GRACE_TICKS = 300,
+    HOLD_DECAY_INTERVAL_TICKS = 36,
     ISOLATED_PROD_PENALTY = 0.6,
     DEFENSE_PROD_PENALTY = 0.75,
     DEFENSE_BONUS = 1.25,
@@ -265,7 +268,7 @@ function fleetSelectionRadius(fleet) {
 function mkFleet() {
     return {
         id: 0, active: false, owner: -1, count: 0, srcId: -1, tgtId: -1, t: 0, speed: 0, arcLen: 1, cpx: 0, cpy: 0, x: 0, y: 0,
-        fromX: 0, fromY: 0, toX: 0, toY: 0, holding: false, routeSrcKey: '', routeTgtKey: '',
+        fromX: 0, fromY: 0, toX: 0, toY: 0, holding: false, holdUnsuppliedTicks: 0, routeSrcKey: '', routeTgtKey: '',
         trail: [], offsetL: 0, spdVar: 1, routeSpeedMult: 1, trailScale: 1,
         headingX: 1, headingY: 0, bank: 0, throttle: 0.3, turnRate: 6, throttleBias: 1, lookAhead: 0.022,
         dmgAcc: 0, launchT: 0
@@ -987,6 +990,7 @@ function createDispatchedFleetLocal(owner, params) {
     f.toX = targetPos.x;
     f.toY = targetPos.y;
     f.holding = false;
+    f.holdUnsuppliedTicks = 0;
     f.routeSrcKey = sourceKey;
     f.routeTgtKey = targetKey;
     f.t = -launchDelay;
@@ -1090,6 +1094,7 @@ function dispatch(owner, srcIds, tgtId, pct) {
             sourceFleet.count = 0;
             sourceFleet.active = false;
             sourceFleet.holding = false;
+            sourceFleet.holdUnsuppliedTicks = 0;
             sourceFleet.trail = [];
         }
         didSend = true;
@@ -1745,6 +1750,18 @@ function gameTick(runtimeOpts) {
         var wave = arrivalReport.shockwaves[asi];
         enqueueShockwave(wave.x, wave.y, wave);
     }
+    stepHoldingFleetDecay({
+        fleets: G.fleets,
+        nodes: G.nodes,
+        callbacks: {
+            isNodeAssimilated: isNodeAssimilated,
+        },
+        constants: {
+            holdSupplyDist: SUPPLY_DIST,
+            holdDecayGraceTicks: HOLD_DECAY_GRACE_TICKS,
+            holdDecayIntervalTicks: HOLD_DECAY_INTERVAL_TICKS,
+        },
+    });
     for (var ati = 0; ati < arrivalReport.toasts.length; ati++) {
         showGameToast(arrivalReport.toasts[ati]);
     }
@@ -3768,6 +3785,7 @@ function captureSyncSnapshot() {
                 toX: fleet.toX,
                 toY: fleet.toY,
                 holding: !!fleet.holding,
+                holdUnsuppliedTicks: Math.max(0, Math.floor(Number(fleet.holdUnsuppliedTicks) || 0)),
                 routeSrcKey: fleet.routeSrcKey || '',
                 routeTgtKey: fleet.routeTgtKey || '',
                 t: fleet.t,

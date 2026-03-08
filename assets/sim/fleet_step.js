@@ -74,6 +74,8 @@ function holdingFleetRadius(fleet) {
 
 function mergeHoldingFleet(fleets, fleet, index) {
     var mergeRadius = Math.max(10, holdingFleetRadius(fleet));
+    var fleetCount = Math.max(0, Math.floor(Number(fleet.count) || 0));
+    var fleetUnsuppliedTicks = Math.max(0, Math.floor(Number(fleet.holdUnsuppliedTicks) || 0));
     for (var i = 0; i < fleets.length; i++) {
         if (i === index) continue;
         var other = fleets[i];
@@ -81,7 +83,13 @@ function mergeHoldingFleet(fleets, fleet, index) {
         var dx = (Number(other.x) || 0) - (Number(fleet.x) || 0);
         var dy = (Number(other.y) || 0) - (Number(fleet.y) || 0);
         if (dx * dx + dy * dy > mergeRadius * mergeRadius) continue;
-        other.count = Math.max(0, Math.floor(Number(other.count) || 0)) + Math.max(0, Math.floor(Number(fleet.count) || 0));
+        var otherCount = Math.max(0, Math.floor(Number(other.count) || 0));
+        var otherUnsuppliedTicks = Math.max(0, Math.floor(Number(other.holdUnsuppliedTicks) || 0));
+        var totalCount = otherCount + fleetCount;
+        other.count = totalCount;
+        other.holdUnsuppliedTicks = totalCount > 0
+            ? Math.floor(((otherUnsuppliedTicks * otherCount) + (fleetUnsuppliedTicks * fleetCount)) / totalCount)
+            : 0;
         other.hitFlash = Math.max(Number(other.hitFlash) || 0, Number(fleet.hitFlash) || 0);
         other.hitJitter = Math.max(Number(other.hitJitter) || 0, Number(fleet.hitJitter) || 0);
         fleets.splice(index, 1);
@@ -92,6 +100,7 @@ function mergeHoldingFleet(fleets, fleet, index) {
 
 function parkFleetAtTarget(fleets, fleet, index, targetPoint) {
     fleet.holding = true;
+    fleet.holdUnsuppliedTicks = 0;
     fleet.t = 0;
     fleet.arcLen = 1;
     fleet.launchT = 0;

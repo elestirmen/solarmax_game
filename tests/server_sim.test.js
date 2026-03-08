@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { SIM_CONSTANTS } from '../assets/sim/shared_config.js';
 import {
     applyCommandToAuthoritativeState,
     buildAuthoritativeState,
@@ -132,4 +133,74 @@ test('simulateAuthoritativeTick keeps turret beam visuals in authoritative snaps
     assert.equal(authoritativeSnapshot.turretBeams.length > 0, true);
     assert.equal(authoritativeSnapshot.turretBeams[0].owner, 0);
     assert.equal(authoritativeSnapshot.shockwaves.length > 0, true);
+});
+
+test('simulateAuthoritativeTick decays unsupplied holding fleets after the grace period', function () {
+    var snapshot = baseSnapshot();
+    snapshot.fleets = [
+        {
+            id: 1,
+            active: true,
+            holding: true,
+            owner: 0,
+            count: 10,
+            holdUnsuppliedTicks: 0,
+            srcId: -1,
+            tgtId: -1,
+            fromX: 420,
+            fromY: 0,
+            toX: 420,
+            toY: 0,
+            cpx: 420,
+            cpy: 0,
+            x: 420,
+            y: 0,
+            trail: [],
+        },
+    ];
+    var state = buildAuthoritativeState(snapshot, {
+        manifest: { seed: 'sim-seed', difficulty: 'normal', rulesMode: 'advanced', fogEnabled: false },
+    });
+
+    for (var i = 0; i < SIM_CONSTANTS.HOLD_DECAY_GRACE_TICKS + SIM_CONSTANTS.HOLD_DECAY_INTERVAL_TICKS; i++) {
+        simulateAuthoritativeTick(state);
+    }
+
+    assert.equal(state.fleets[0].count, 9);
+    assert.equal(state.fleets[0].holdUnsuppliedTicks > SIM_CONSTANTS.HOLD_DECAY_GRACE_TICKS, true);
+});
+
+test('simulateAuthoritativeTick keeps supplied holding fleets stable', function () {
+    var snapshot = baseSnapshot();
+    snapshot.fleets = [
+        {
+            id: 1,
+            active: true,
+            holding: true,
+            owner: 0,
+            count: 10,
+            holdUnsuppliedTicks: 0,
+            srcId: -1,
+            tgtId: -1,
+            fromX: 180,
+            fromY: 0,
+            toX: 180,
+            toY: 0,
+            cpx: 180,
+            cpy: 0,
+            x: 180,
+            y: 0,
+            trail: [],
+        },
+    ];
+    var state = buildAuthoritativeState(snapshot, {
+        manifest: { seed: 'sim-seed', difficulty: 'normal', rulesMode: 'advanced', fogEnabled: false },
+    });
+
+    for (var i = 0; i < SIM_CONSTANTS.HOLD_DECAY_GRACE_TICKS + SIM_CONSTANTS.HOLD_DECAY_INTERVAL_TICKS; i++) {
+        simulateAuthoritativeTick(state);
+    }
+
+    assert.equal(state.fleets[0].count, 10);
+    assert.equal(state.fleets[0].holdUnsuppliedTicks, 0);
 });

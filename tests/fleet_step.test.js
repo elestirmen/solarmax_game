@@ -178,6 +178,7 @@ test('stepFleetMovement converts empty-space arrivals into holding fleets', func
     });
 
     assert.equal(fleets[0].holding, true);
+    assert.equal(fleets[0].holdUnsuppliedTicks, 0);
     assert.equal(fleets[0].t, 0);
     assert.equal(fleets[0].x, 90);
     assert.equal(fleets[0].y, 40);

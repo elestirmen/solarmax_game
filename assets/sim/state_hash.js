@@ -47,6 +47,7 @@ export function computeSyncHash(state) {
         hash = mixHash(hash, Number(fleet.srcId) || 0);
         hash = mixHash(hash, Number(fleet.tgtId) || 0);
         hash = mixHash(hash, fleet.holding ? 1 : 0);
+        hash = mixHash(hash, Number(fleet.holdUnsuppliedTicks) || 0);
         hash = mixHash(hash, scaledInt(fleet.count, 100));
         hash = mixHash(hash, scaledInt(fleet.t, 10000));
         hash = mixHash(hash, scaledInt(fleet.x, 10));

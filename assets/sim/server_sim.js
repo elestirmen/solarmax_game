@@ -4,6 +4,7 @@ import { stepNodeEconomy } from './node_economy.js';
 import { applyTurretDamage } from './turret.js';
 import { applyDefenseFieldDamage } from './defense_field.js';
 import { stepFleetMovement, resolveFleetArrivals } from './fleet_step.js';
+import { stepHoldingFleetDecay } from './holding_decay.js';
 import { stepFlowLinks } from './flow_step.js';
 import { resolveMatchEndState } from './end_state.js';
 import { getRulesetConfig } from './ruleset.js';
@@ -514,6 +515,18 @@ export function simulateAuthoritativeTick(state) {
     pushTransientShockwaves(state.shockwaves, arrivalReport && arrivalReport.shockwaves, {
         limit: 80,
         players: state.players,
+    });
+    stepHoldingFleetDecay({
+        fleets: state.fleets,
+        nodes: state.nodes,
+        callbacks: {
+            isNodeAssimilated: isNodeAssimilated,
+        },
+        constants: {
+            holdSupplyDist: SIM_CONSTANTS.SUPPLY_DIST,
+            holdDecayGraceTicks: SIM_CONSTANTS.HOLD_DECAY_GRACE_TICKS,
+            holdDecayIntervalTicks: SIM_CONSTANTS.HOLD_DECAY_INTERVAL_TICKS,
+        },
     });
 
     var flowReport = stepFlowLinks({

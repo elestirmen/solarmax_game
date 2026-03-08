@@ -162,6 +162,7 @@ function createDispatchedFleet(state, params) {
         toX: targetPos.x,
         toY: targetPos.y,
         holding: false,
+        holdUnsuppliedTicks: 0,
         routeSrcKey: sourceKey,
         routeTgtKey: targetKey,
         t: -launchDelay,
@@ -303,6 +304,7 @@ export function dispatchUnits(state, owner, srcIds, tgtId, pct) {
             sourceFleet.count = 0;
             sourceFleet.active = false;
             sourceFleet.holding = false;
+            sourceFleet.holdUnsuppliedTicks = 0;
             sourceFleet.trail = [];
         }
 
