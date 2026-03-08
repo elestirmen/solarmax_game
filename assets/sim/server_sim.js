@@ -453,6 +453,7 @@ export function simulateAuthoritativeTick(state) {
                     y: u * u * p0.y + 2 * u * t * cp.y + t * t * p2.y,
                 };
             },
+            isNodeTerritoryActive: isNodeAssimilated,
         },
         constants: {
             baseFleetSpeed: SIM_CONSTANTS.FLEET_SPEED,
@@ -521,7 +522,7 @@ export function simulateAuthoritativeTick(state) {
         fleets: state.fleets,
         nodes: state.nodes,
         callbacks: {
-            isNodeAssimilated: isNodeAssimilated,
+            isNodeTerritoryActive: isNodeAssimilated,
         },
         constants: {
             holdDecayGraceTicks: SIM_CONSTANTS.HOLD_DECAY_GRACE_TICKS,

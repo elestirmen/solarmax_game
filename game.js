@@ -1711,6 +1711,7 @@ function gameTick(runtimeOpts) {
         callbacks: {
             clamp: clamp,
             bezPt: bezPt,
+            isNodeTerritoryActive: isNodeAssimilated,
         },
         constants: {
             baseFleetSpeed: FLEET_SPEED,
@@ -1777,7 +1778,7 @@ function gameTick(runtimeOpts) {
         fleets: G.fleets,
         nodes: G.nodes,
         callbacks: {
-            isNodeAssimilated: isNodeAssimilated,
+            isNodeTerritoryActive: isNodeAssimilated,
         },
         constants: {
             holdDecayGraceTicks: HOLD_DECAY_GRACE_TICKS,
@@ -2613,6 +2614,7 @@ function drawTerritories(ctx, tick) {
     for (var i = 0; i < G.nodes.length; i++) {
         var node = G.nodes[i];
         if (!node || node.owner < 0) continue;
+        if (!isNodeAssimilated(node)) continue;
         if (G.tune.fogEnabled && node.owner !== G.human && !G.fog.vis[G.human][node.id]) continue;
         if (!byOwner[node.owner]) byOwner[node.owner] = [];
         byOwner[node.owner].push({

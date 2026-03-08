@@ -28,3 +28,20 @@ test('isPointInsideFriendlyTerritory matches only owned node borders', function 
         nodes: nodes,
     }), false);
 });
+
+test('isPointInsideFriendlyTerritory ignores nodes that are not fully assimilated', function () {
+    var nodes = [
+        { owner: 0, radius: 24, level: 1, kind: 'core', pos: { x: 0, y: 0 }, assimilationProgress: 0.6, assimilationLock: 0 },
+    ];
+
+    assert.equal(isPointInsideFriendlyTerritory({
+        owner: 0,
+        point: { x: 90, y: 0 },
+        nodes: nodes,
+        callbacks: {
+            isNodeTerritoryActive: function (node) {
+                return node.assimilationProgress >= 1 && (node.assimilationLock || 0) <= 0;
+            },
+        },
+    }), false);
+});
