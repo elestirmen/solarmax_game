@@ -12,6 +12,10 @@
 </p>
 
 <p align="center">
+  <a href="./README.md">TR</a> • <a href="./README.en.md">EN</a>
+</p>
+
+<p align="center">
   <a href="#-hızlı-başlangıç">Hızlı Başlangıç</a> •
   <a href="#-özellikler">Özellikler</a> •
   <a href="#-nasıl-oynanır">Nasıl Oynanır</a> •
