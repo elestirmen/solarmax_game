@@ -133,8 +133,10 @@ var DIFFICULTY_PRESETS = {
     },
 };
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ STARS (background) Ã¢â€â‚¬Ã¢â€â‚¬
-var stars = []; for (var i = 0; i < 300; i++)stars.push({ x: Math.random() * MAP_W * 1.5 - MAP_W * 0.25, y: Math.random() * MAP_H * 1.5 - MAP_H * 0.25, r: Math.random() * 1.5 + 0.3, b: Math.random() * 0.5 + 0.3 });
+// Ã¢â€â‚¬Ã¢â€â‚¬ SPACE BACKDROP (background) Ã¢â€â‚¬Ã¢â€â‚¬
+var stars = [];
+var spaceNebulas = [];
+var spaceDustBands = [];
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ SEEDED RNG Ã¢â€â‚¬Ã¢â€â‚¬
 function RNG(s) { this.s = s | 0; if (!this.s) this.s = 1; }
@@ -142,6 +144,69 @@ RNG.prototype.next = function () { var t = this.s += 0x6d2b79f5; t = Math.imul(t
 RNG.prototype.nextInt = function (a, b) { return a + Math.floor(this.next() * (b - a + 1)); };
 RNG.prototype.nextFloat = function (a, b) { return a + this.next() * (b - a); };
 function hashSeed(s) { var h = 0; for (var i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; } return Math.abs(h) || 1; }
+
+function seedSpaceBackdrop() {
+    var rng = new RNG(hashSeed('stellar-space-backdrop-v2'));
+    var starPalette = ['#d9e7ff', '#b7dbff', '#9fe8ff', '#ffe6bc'];
+    var nebulaPalette = [
+        { core: '#3d7cff', edge: '#10305f' },
+        { core: '#26c6da', edge: '#0a3751' },
+        { core: '#ff9f6e', edge: '#4b1f1a' },
+        { core: '#7ee081', edge: '#103d2c' }
+    ];
+    stars.length = 0;
+    spaceNebulas.length = 0;
+    spaceDustBands.length = 0;
+
+    for (var i = 0; i < 440; i++) {
+        stars.push({
+            x: rng.nextFloat(-MAP_W * 0.42, MAP_W * 1.42),
+            y: rng.nextFloat(-MAP_H * 0.42, MAP_H * 1.42),
+            r: rng.nextFloat(0.35, 1.9),
+            b: rng.nextFloat(0.22, 0.72),
+            depth: rng.nextFloat(0.74, 1.08),
+            twinkle: rng.nextFloat(0.6, 1.7),
+            phase: rng.nextFloat(0, Math.PI * 2),
+            col: starPalette[rng.nextInt(0, starPalette.length - 1)],
+            glow: rng.next() > 0.9 ? rng.nextFloat(2.4, 5.8) : 0,
+            glint: rng.next() > 0.955 ? rng.nextFloat(3, 7) : 0
+        });
+    }
+
+    for (var ni = 0; ni < 11; ni++) {
+        var nebulaTint = nebulaPalette[rng.nextInt(0, nebulaPalette.length - 1)];
+        spaceNebulas.push({
+            x: rng.nextFloat(-MAP_W * 0.18, MAP_W * 1.18),
+            y: rng.nextFloat(-MAP_H * 0.18, MAP_H * 1.18),
+            rx: rng.nextFloat(120, 280),
+            ry: rng.nextFloat(70, 170),
+            depth: rng.nextFloat(0.8, 0.96),
+            alpha: rng.nextFloat(0.16, 0.34),
+            rot: rng.nextFloat(0, Math.PI * 2),
+            phase: rng.nextFloat(0, Math.PI * 2),
+            drift: rng.nextFloat(6, 18),
+            core: nebulaTint.core,
+            edge: nebulaTint.edge
+        });
+    }
+
+    for (var di = 0; di < 7; di++) {
+        var dustTint = nebulaPalette[rng.nextInt(0, nebulaPalette.length - 1)];
+        spaceDustBands.push({
+            x: rng.nextFloat(-MAP_W * 0.22, MAP_W * 1.22),
+            y: rng.nextFloat(-MAP_H * 0.22, MAP_H * 1.22),
+            rx: rng.nextFloat(210, 420),
+            ry: rng.nextFloat(34, 72),
+            depth: rng.nextFloat(0.86, 1),
+            alpha: rng.nextFloat(0.06, 0.12),
+            rot: rng.nextFloat(0, Math.PI * 2),
+            phase: rng.nextFloat(0, Math.PI * 2),
+            color: dustTint.core
+        });
+    }
+}
+
+seedSpaceBackdrop();
 
 var planetTexCache = {};
 function buildPermTable(rnd) { var p = new Uint8Array(512); for (var i = 0; i < 256; i++) p[i] = i; for (var i = 0; i < 255; i++) { var j = i + ~~(rnd() * (256 - i)), t = p[i]; p[i] = p[j]; p[j] = t; } for (var i = 256; i < 512; i++) p[i] = p[i - 256]; return p; }
@@ -1853,6 +1918,142 @@ function hexToRgba(h, a) { var c = hexRgb(h); return c ? 'rgba(' + c.r + ',' + c
 function blendHex(a, b, t) { var ca = hexRgb(a), cb = hexRgb(b); if (!ca || !cb) return a; t = Math.max(0, Math.min(1, t)); return '#' + [0,1,2].map(function(i){ var v = Math.round((i===0?ca.r:i===1?ca.g:ca.b) * (1-t) + (i===0?cb.r:i===1?cb.g:cb.b) * t); return ('0' + Math.max(0,Math.min(255,v)).toString(16)).slice(-2); }).join(''); }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ RENDERING Ã¢â€â‚¬Ã¢â€â‚¬
+function drawScreenBackdrop(ctx, cv, tick) {
+    var baseGrad = ctx.createLinearGradient(0, 0, 0, cv.height);
+    baseGrad.addColorStop(0, '#091322');
+    baseGrad.addColorStop(0.55, COLORS_BG);
+    baseGrad.addColorStop(1, '#04070d');
+    ctx.fillStyle = baseGrad;
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+
+    var rimA = ctx.createRadialGradient(cv.width * 0.18, cv.height * 0.2, 0, cv.width * 0.18, cv.height * 0.2, Math.max(cv.width, cv.height) * 0.75);
+    rimA.addColorStop(0, 'rgba(66, 135, 245, 0.22)');
+    rimA.addColorStop(0.42, 'rgba(37, 92, 180, 0.12)');
+    rimA.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = rimA;
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    var rimB = ctx.createRadialGradient(cv.width * 0.82, cv.height * 0.78, 0, cv.width * 0.82, cv.height * 0.78, Math.max(cv.width, cv.height) * 0.7);
+    rimB.addColorStop(0, 'rgba(255, 148, 88, 0.16)');
+    rimB.addColorStop(0.38, 'rgba(110, 43, 23, 0.12)');
+    rimB.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = rimB;
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    var aurora = ctx.createLinearGradient(0, cv.height * (0.15 + Math.sin(tick * 0.003) * 0.015), cv.width, cv.height * 0.85);
+    aurora.addColorStop(0, 'rgba(40, 118, 188, 0)');
+    aurora.addColorStop(0.3, 'rgba(40, 118, 188, 0.06)');
+    aurora.addColorStop(0.7, 'rgba(52, 182, 172, 0.05)');
+    aurora.addColorStop(1, 'rgba(52, 182, 172, 0)');
+    ctx.fillStyle = aurora;
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.restore();
+
+    var vignette = ctx.createRadialGradient(cv.width * 0.5, cv.height * 0.5, Math.min(cv.width, cv.height) * 0.18, cv.width * 0.5, cv.height * 0.5, Math.max(cv.width, cv.height) * 0.78);
+    vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+    vignette.addColorStop(0.68, 'rgba(2, 4, 9, 0.16)');
+    vignette.addColorStop(1, 'rgba(2, 3, 7, 0.56)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, cv.width, cv.height);
+}
+
+function projectBackdropPoint(x, y, depth) {
+    return {
+        x: x + G.cam.x * (1 - depth),
+        y: y + G.cam.y * (1 - depth)
+    };
+}
+
+function drawBackdropEllipse(ctx, x, y, rx, ry, rotation, colorStops, alpha, composite) {
+    ctx.save();
+    if (composite) ctx.globalCompositeOperation = composite;
+    ctx.globalAlpha = alpha;
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    ctx.scale(rx, ry);
+    var grad = ctx.createRadialGradient(0, 0, 0.04, 0, 0, 1);
+    for (var i = 0; i < colorStops.length; i++) grad.addColorStop(colorStops[i].stop, colorStops[i].color);
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(0, 0, 1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+}
+
+function drawWorldBackdrop(ctx, tick, hw, hh) {
+    for (var di = 0; di < spaceDustBands.length; di++) {
+        var band = spaceDustBands[di];
+        var bandOffset = Math.sin(tick * 0.002 + band.phase) * band.rx * 0.03;
+        var bandPt = projectBackdropPoint(band.x + bandOffset, band.y + Math.cos(tick * 0.0016 + band.phase) * band.ry * 0.16, band.depth);
+        if (Math.abs(bandPt.x - G.cam.x) > hw + band.rx + 80 || Math.abs(bandPt.y - G.cam.y) > hh + band.ry + 80) continue;
+        drawBackdropEllipse(ctx, bandPt.x, bandPt.y, band.rx, band.ry, band.rot, [
+            { stop: 0, color: hexToRgba(blendHex(band.color, '#ffffff', 0.22), 0.95) },
+            { stop: 0.45, color: hexToRgba(band.color, 0.36) },
+            { stop: 1, color: hexToRgba(band.color, 0) }
+        ], band.alpha, 'screen');
+    }
+
+    for (var ni = 0; ni < spaceNebulas.length; ni++) {
+        var nebula = spaceNebulas[ni];
+        var driftX = Math.sin(tick * 0.0014 + nebula.phase) * nebula.drift;
+        var driftY = Math.cos(tick * 0.001 + nebula.phase * 1.7) * nebula.drift * 0.6;
+        var nebulaPt = projectBackdropPoint(nebula.x + driftX, nebula.y + driftY, nebula.depth);
+        if (Math.abs(nebulaPt.x - G.cam.x) > hw + nebula.rx + 120 || Math.abs(nebulaPt.y - G.cam.y) > hh + nebula.ry + 120) continue;
+
+        drawBackdropEllipse(ctx, nebulaPt.x, nebulaPt.y, nebula.rx, nebula.ry, nebula.rot, [
+            { stop: 0, color: hexToRgba(blendHex(nebula.core, '#ffffff', 0.18), 0.78) },
+            { stop: 0.35, color: hexToRgba(nebula.core, 0.34) },
+            { stop: 0.74, color: hexToRgba(nebula.edge, 0.2) },
+            { stop: 1, color: hexToRgba(nebula.edge, 0) }
+        ], nebula.alpha, 'screen');
+
+        drawBackdropEllipse(ctx, nebulaPt.x - nebula.rx * 0.14, nebulaPt.y - nebula.ry * 0.08, nebula.rx * 0.44, nebula.ry * 0.34, nebula.rot * 0.85, [
+            { stop: 0, color: hexToRgba('#ffffff', 0.34) },
+            { stop: 0.4, color: hexToRgba(blendHex(nebula.core, '#ffffff', 0.45), 0.24) },
+            { stop: 1, color: 'rgba(255,255,255,0)' }
+        ], nebula.alpha * 0.58, 'lighter');
+    }
+
+    ctx.save();
+    for (var si = 0; si < stars.length; si++) {
+        var star = stars[si];
+        var starPt = projectBackdropPoint(star.x, star.y, star.depth);
+        if (Math.abs(starPt.x - G.cam.x) > hw + star.glow + 30 || Math.abs(starPt.y - G.cam.y) > hh + star.glow + 30) continue;
+        var twinkle = 0.56 + 0.44 * Math.sin(tick * 0.024 * star.twinkle + star.phase);
+        var alpha = star.b * twinkle;
+        if (star.glow > 0) {
+            ctx.beginPath();
+            ctx.arc(starPt.x, starPt.y, star.glow, 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba(star.col, alpha * 0.08);
+            ctx.fill();
+        }
+        if (star.r < 1) {
+            var side = Math.max(1, star.r * 1.3);
+            ctx.fillStyle = hexToRgba(star.col, alpha);
+            ctx.fillRect(starPt.x - side * 0.5, starPt.y - side * 0.5, side, side);
+        } else {
+            ctx.beginPath();
+            ctx.arc(starPt.x, starPt.y, star.r, 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba(star.col, alpha);
+            ctx.fill();
+        }
+        if (star.glint > 0) {
+            ctx.strokeStyle = hexToRgba(star.col, alpha * 0.24);
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(starPt.x - star.glint, starPt.y);
+            ctx.lineTo(starPt.x + star.glint, starPt.y);
+            ctx.moveTo(starPt.x, starPt.y - star.glint * 0.72);
+            ctx.lineTo(starPt.x, starPt.y + star.glint * 0.72);
+            ctx.stroke();
+        }
+    }
+    ctx.restore();
+}
+
 function nodeTypeLetter(kind) {
     if (kind === 'forge') return 'F';
     if (kind === 'bulwark') return 'B';
@@ -2659,17 +2860,11 @@ function drawTerritories(ctx, tick) {
 
 function render(ctx, cv, tick) {
     pruneSelectedFleetIds();
-    ctx.fillStyle = COLORS_BG; ctx.fillRect(0, 0, cv.width, cv.height);
+    drawScreenBackdrop(ctx, cv, tick);
     ctx.save(); ctx.translate(cv.width / 2, cv.height / 2); ctx.scale(G.cam.zoom, G.cam.zoom); ctx.translate(-G.cam.x, -G.cam.y);
 
     var hw = cv.width / 2 / G.cam.zoom, hh = cv.height / 2 / G.cam.zoom;
-    // Ã¢â€â‚¬Ã¢â€â‚¬ STARS Ã¢â€â‚¬Ã¢â€â‚¬
-    for (var i = 0; i < stars.length; i++) {
-        var s = stars[i];
-        if (Math.abs(s.x - G.cam.x) > hw + 50 || Math.abs(s.y - G.cam.y) > hh + 50) continue;
-        var twinkle = 0.6 + 0.4 * Math.sin(tick * 0.03 + i * 2.1);
-        ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fillStyle = 'rgba(200,220,255,' + s.b * twinkle + ')'; ctx.fill();
-    }
+    drawWorldBackdrop(ctx, tick, hw, hh);
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ GRID Ã¢â€â‚¬Ã¢â€â‚¬
     var sp = 100;
