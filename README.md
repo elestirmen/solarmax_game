@@ -1,218 +1,293 @@
-# Stellar Conquest
+<p align="center">
+  <img src="https://img.shields.io/badge/Stellar%20Conquest-v1.0.0-blue?style=for-the-badge" alt="Version" />
+  <img src="https://img.shields.io/badge/JavaScript-ES%20Modules-yellow?style=flat-square" alt="JavaScript" />
+  <img src="https://img.shields.io/badge/Vite-5-646CFF?style=flat-square" alt="Vite" />
+  <img src="https://img.shields.io/badge/Socket.IO-4-010101?style=flat-square" alt="Socket.IO" />
+</p>
 
-> Real-time space conquest strategy — fast macro decisions, deep map control, no micromanagement clutter.
+<h1 align="center">Stellar Conquest</h1>
 
-Stellar Conquest is a browser-based strategy game where players capture planets, route fleets, control territory, and outmaneuver opponents through timing and positioning — not unit spam. Playable solo or against live opponents in multiplayer rooms.
+<p align="center">
+  <strong>Gerçek zamanlı uzay fetih stratejisi</strong> — hızlı makro kararlar, derin harita kontrolü, mikro yönetim karmaşası yok.
+</p>
 
----
-
-## Features
-
-**Core mechanics**
-- Planet capture through fleet dispatch and attrition combat
-- Persistent flow links — set routing priorities once and let your economy run
-- Parked fleets that hold ground but decay when supply is cut
-- Territory and assimilation — borders that grow organically around your worlds
-- Turrets and defense fields on fortified nodes
-- Wormholes, gravity wells, and barrier gates that reshape routing
-
-**Game modes**
-- **Skirmish** — freeform match against AI or friends
-- **Campaign** — structured mission ladder with handcrafted objectives
-- **Daily challenge** — seeded procedural scenario, one attempt per day
-- **Custom maps** — full in-game map editor and export
-- **Multiplayer** — real-time rooms with Socket.IO, up to 6 players
-- **Replays** — record and replay any match
-
-**AI**
-- Heuristic-driven opponent tuned for fast browser execution
-- Multiple difficulty levels with dynamic difficulty adjustment
-- Aware of territory, turrets, supply, and threat geometry
+<p align="center">
+  <a href="#-hızlı-başlangıç">Hızlı Başlangıç</a> •
+  <a href="#-özellikler">Özellikler</a> •
+  <a href="#-nasıl-oynanır">Nasıl Oynanır</a> •
+  <a href="#-kurulum">Kurulum</a> •
+  <a href="#-canlı-demo">Canlı Demo</a>
+</p>
 
 ---
 
-## Project Structure
+## 📖 Özet
 
-```
-stellar_conquest.html   Main game page (singleplayer entry)
-game.js                 Single canonical game client (~6 100 lines, plain JS)
-server.js               Multiplayer server (Express + Socket.IO)
-index.html              Vite dev entry
-
-assets/
-  sim/                  Deterministic simulation modules (shared client ↔ server)
-    ai.js               AI heuristics and targeting
-    barrier.js          Barrier gate dispatch rules
-    cap.js              Unit cap computation
-    command_apply.js    Authoritative command application
-    defense_field.js    Defense field damage and stats
-    dispatch_math.js    Fleet send-count calculation
-    fleet_step.js       Fleet movement and arrival resolution
-    flow_step.js        Flow link propagation
-    holding_decay.js    Parked fleet supply decay
-    map_gen.js          Procedural map generation
-    match_manifest.js   Match configuration and seed handling
-    node_economy.js     Planet production stepping
-    reinforcement.js    Friendly reinforcement room computation
-    ruleset.js          Ruleset config (territory, assimilation, flow, etc.)
-    server_sim.js       Authoritative server-side simulation wrapper
-    state_hash.js       Deterministic sync hash
-    state_metrics.js    Ownership, supply, and power metrics
-    strategic_pulse.js  Timed production pulse events
-    territory.js        Territory radius and border geometry
-    turret.js           Turret targeting and damage
-    ...
-  campaign/
-    levels.js           Campaign mission definitions
-    daily_challenge.js  Daily seed generation
-    objectives.js       Objective evaluation logic
-  ui/
-    renderers.js        Leaderboard, mission panel, room list renderers
-  audio.js              Sound engine
-
-tests/                  Node.js built-in test runner — one file per sim module
-```
+**Stellar Conquest**, gezegenleri ele geçirdiğiniz, filoları yönlendirdiğiniz, bölge kontrolü kurduğunuz ve zamanlama ile konumlandırma üzerinden rakiplerinizi alt ettiğiniz tarayıcı tabanlı bir strateji oyunudur. Birim spam’i yerine zamanlama ve pozisyonlama öne çıkar. Tek oyunculu veya çok oyunculu odalarda canlı rakiplerle oynanabilir.
 
 ---
 
-## Getting Started
+## ⚡ Hızlı Başlangıç
 
 ```bash
+# Bağımlılıkları yükle
 npm install
-```
 
-### Singleplayer / local dev
-
-```bash
+# Tek oyunculu / geliştirme modu
 npm run dev
-```
+# → http://localhost:5173
 
-Open `http://localhost:5173` — Vite serves the client with hot reload.
-
-### Multiplayer server
-
-```bash
+# Çok oyunculu sunucu
 npm run server
+# → http://localhost:3000
 ```
 
-Open `http://localhost:3000` — Express serves the built client and handles Socket.IO rooms.
-
-### Production build
-
-```bash
-npm run build
-```
-
-Outputs to `dist/`. `server.js` auto-detects:
-- **dist mode** — serves the Vite bundle when `dist/` exists
-- **source mode** — falls back to raw source files otherwise
-
----
-
-## Testing
-
-Tests use the Node.js built-in test runner — no extra dependencies required.
-
-```bash
-npm test
-```
-
-Every simulation module has a corresponding test file in `tests/`. The suite covers fleet movement, dispatch math, territory, turret damage, flow propagation, map generation, state hashing, and more.
-
----
-
-## Docker Deployment
+**Docker ile tek komut:**
 
 ```bash
 docker compose up -d --build
 ```
 
-Starts the game server in a `solarmax-app` container on port `3000`.
+---
 
-| Detail | Value |
-|---|---|
-| Container name | `solarmax-app` |
-| Internal port | `3000` |
-| Persistent data | `./data` volume |
-| External network | `npm-net` (must exist) |
+## ✨ Özellikler
 
-If you run the app behind a reverse proxy, enable **WebSocket forwarding** for Socket.IO. The live instance uses Nginx Proxy Manager with Let's Encrypt TLS.
+### Çekirdek Mekanikler
 
-**Live deployment:** [`https://solarmax.urgup.keenetic.link`](https://solarmax.urgup.keenetic.link)
+| Mekanik | Açıklama |
+|--------|----------|
+| **Gezegen ele geçirme** | Filo gönderimi ve yıpranma savaşı ile |
+| **Flow bağlantıları** | Bir kez öncelik ver, ekonomini otomatik çalıştır |
+| **Park filoları** | Bölgeyi tutar, tedarik kesilince zayıflar |
+| **Bölge & asimilasyon** | Dünyaların etrafında organik büyüyen sınırlar |
+| **Savunma** | Güçlendirilmiş düğümlerde taretler ve savunma alanları |
+| **Harita öğeleri** | Solucan delikleri, yerçekimi kuyuları, bariyer kapıları |
+
+### Oyun Modları
+
+- **Skirmish** — AI veya arkadaşlarla serbest maç
+- **Campaign** — El yapımı görevlerle yapılandırılmış misyon merdiveni
+- **Günlük meydan okuma** — Tohumlu prosedürel senaryo, günde bir deneme
+- **Özel haritalar** — Oyun içi harita editörü ve dışa aktarma
+- **Çok oyunculu** — Socket.IO ile gerçek zamanlı odalar, 6 oyunculuya kadar
+- **Replay** — Her maçı kaydet ve tekrar izle
+
+### AI
+
+- Tarayıcıda hızlı çalışan sezgisel rakip
+- Dinamik zorluk ayarlamalı birden fazla zorluk seviyesi
+- Bölge, taretler, tedarik ve tehdit geometrisinden haberdar
 
 ---
 
-## Multiplayer Protocol
+## 🎮 Nasıl Oynanır
 
-- Room codes are 5 characters
-- Match result is accepted only after **all active players** report the same winner index
-- Rematch and result votes are cleared on player disconnect
-- The server runs an authoritative simulation tick and reconciles client state via sync hash
+### Temel Kontroller (PC)
 
----
+| Eylem | Kontrol |
+|-------|---------|
+| Gezegen seç | Sol tık |
+| Çoklu seçim | Shift + sol tık |
+| Kutu seçimi | Boş alanda sürükle |
+| Filo gönder | Seçiliyken hedefe sol tık (HUD’daki Send % kadar) |
+| Toplu gönderim | Ctrl + sürükle-bırak |
+| Flow aç/kapat | Sağ tık (hedefe) |
+| Savunma modu | Kendi gezegene sağ tık |
+| Kamera | Orta tuş + sürükle |
+| Zoom | Mouse tekerleği |
 
-## Tech Stack
+### Klavye Kısayolları
 
-| Layer | Technology |
-|---|---|
-| Game client | Plain JavaScript (ES modules), Canvas 2D |
-| Dev server | Vite 5 |
-| Multiplayer | Express 4 + Socket.IO 4 |
-| Build | Vite (ESM bundle) |
-| Tests | Node.js built-in `node:test` |
-| Container | Docker + Docker Compose |
+| Tuş | İşlev |
+|-----|-------|
+| `1`–`9` | Send % (10–90) |
+| `0` | Send % 100 |
+| `U` | Seçili gezegenleri yükselt |
+| `A` | Tüm gezegenleri seç |
+| `Esc` / `P` | Duraklat / Devam |
 
-No frameworks, no heavyweight runtime — the entire game logic runs in a single `game.js` file that can be opened directly in a browser.
+### Mobil
 
----
-
-## Design Philosophy
-
-The game is built around **fast macro decisions over heavy micro**. The guiding principles:
-
-- **Simple input loop** — select, drag/send, set flow, reposition, time your attacks. New systems must create better decisions, not more buttons.
-- **Map-level depth** — mechanics should affect routing, territory, timing windows, and objective pressure — not produce more unit types to memorize.
-- **Cross-mode reusability** — every feature should work in skirmish, campaign, daily challenge, custom maps, and multiplayer.
-- **Readability first** — players should understand why a fleet is faster, slower, decaying, or contested from visuals alone. Mobile must stay viable.
+- Tek parmakla seç ve sürükle
+- İki parmakla haritayı pan/zoom yap
 
 ---
 
-## Roadmap
+## 📁 Proje Yapısı
 
-The current game has a strong foundation: real-time planet conquest, campaign scenarios, daily challenges, replays, custom maps, multiplayer rooms, territory, assimilation, and flow mechanics.
+```
+stellar_conquest.html   Ana oyun sayfası (tek oyunculu giriş)
+game.js                 Tek kanonik oyun istemcisi (~6.100 satır, düz JS)
+server.js               Çok oyunculu sunucu (Express + Socket.IO)
+index.html              Vite geliştirme girişi
 
-The next stage deepens this identity rather than chasing a traditional RTS feature set.
+assets/
+  sim/                  Deterministik simülasyon modülleri (istemci ↔ sunucu paylaşımlı)
+    ai.js               AI sezgileri ve hedefleme
+    barrier.js          Bariyer kapısı gönderim kuralları
+    cap.js              Birim kap hesaplaması
+    command_apply.js    Yetkili komut uygulaması
+    defense_field.js    Savunma alanı hasarı ve istatistikleri
+    dispatch_math.js    Filo gönderim sayısı hesaplaması
+    fleet_step.js       Filo hareketi ve varış çözümlemesi
+    flow_step.js        Flow bağlantı yayılımı
+    holding_decay.js    Park filo tedarik azalması
+    map_gen.js          Prosedürel harita üretimi
+    territory.js        Bölge yarıçapı ve sınır geometrisi
+    turret.js           Taret hedefleme ve hasar
+    ...
+  campaign/
+    levels.js           Kampanya misyon tanımları
+    daily_challenge.js  Günlük tohum üretimi
+    objectives.js       Hedef değerlendirme mantığı
+  ui/
+    renderers.js        Lider tablosu, misyon paneli, oda listesi render’ları
+  audio.js              Ses motoru
 
-### Short-term (highest leverage, builds on existing systems)
-
-1. **Territory 2.0 and Contested Fronts** — turn territory from a passive modifier into a real frontline system with contested zones, visual distinction, and AI frontier awareness
-2. **Sector Mutators v1** — one dominant environmental rule per map (ion storms, pulse-rich sectors, blackout zones, unstable corridors) that changes routing and tempo without changing the control scheme
-3. **AI Frontier Awareness** — stop drip-feeding into defended fronts, stage parked fleets before pushes, evaluate contested territory correctly
-4. **Visual Readability Pass** — stronger frontier rendering, clearer fleet state indicators, better mobile HUD compression
-
-### Mid-term (identity and retention)
-
-5. **Commander / Doctrine System** — pre-match strategic identity via one passive bonus, one active ability, one tradeoff. Families: Logistics, Assimilation, Siege, Territory, Pulse
-6. **Campaign Expansion** — evolve from skirmish ladder to structured teaching and challenge missions with survival, escort, boss, and objective variants
-7. **PvE Objectives and Boss Encounters** — mega-turrets, ancient cores, timed defense events — bosses that create spatial problems solved through routing and timing
-8. **Mode Wrappers and Playlists** — Ranked, Chaos, Ironman, Puzzle Sector, Zen, Frontier — same controls, different strategic context
-
-### Long-term (competitive shell and ecosystem)
-
-9. **Competitive Layer** — Elo/MMR, seasons, spectator mode, replay browser, match history
-10. **Faction Identity** — asymmetry through doctrine defaults and territory behavior differences, not unit production lines
-11. **Social and Community Features** — challenge seeds, replay sharing, community map spotlight, tournaments
-
-### What not to build
-
-- Giant tech trees
-- Many separate unit classes
-- High-APM active ability spam
-- One-off mechanics that only work in one obscure mode
-- AI that compensates for weakness through production cheats
+tests/                  Node.js yerleşik test çalıştırıcı — sim modülü başına bir dosya
+```
 
 ---
 
-## License
+## 🛠 Kurulum
 
-Private project.
+### Gereksinimler
+
+- **Node.js** 18+ (ES modülleri için)
+- **npm** veya **pnpm**
+
+### Tek Oyunculu / Yerel Geliştirme
+
+```bash
+npm install
+npm run dev
+```
+
+`http://localhost:5173` adresini açın — Vite istemciyi hot reload ile sunar.
+
+### Çok Oyunculu Sunucu
+
+```bash
+npm run server
+```
+
+`http://localhost:3000` — Express derlenmiş istemciyi sunar ve Socket.IO odalarını yönetir.
+
+### Üretim Derlemesi
+
+```bash
+npm run build
+```
+
+Çıktı `dist/` klasörüne yazılır. `server.js` otomatik algılar:
+
+- **dist modu** — `dist/` mevcutsa Vite paketini sunar
+- **kaynak modu** — aksi halde ham kaynak dosyalarına döner
+
+### Docker ile Dağıtım
+
+```bash
+docker compose up -d --build
+```
+
+Oyun sunucusu `solarmax-app` konteynerinde port `3000` üzerinde başlar.
+
+| Detay | Değer |
+|-------|-------|
+| Konteyner adı | `solarmax-app` |
+| Dahili port | `3000` |
+| Kalıcı veri | `./data` volume |
+| Harici ağ | `npm-net` (mevcut olmalı) |
+
+Ters proxy arkasında çalıştırıyorsanız Socket.IO için **WebSocket yönlendirmesini** etkinleştirin. Canlı örnek Nginx Proxy Manager ve Let's Encrypt TLS kullanır.
+
+---
+
+## 🧪 Testler
+
+Node.js yerleşik test çalıştırıcısı kullanılır — ek bağımlılık gerekmez.
+
+```bash
+npm test
+```
+
+Her simülasyon modülünün `tests/` altında karşılık gelen bir test dosyası vardır. Filo hareketi, gönderim matematiği, bölge, taret hasarı, flow yayılımı, harita üretimi, durum hash’leme ve daha fazlası kapsanır.
+
+---
+
+## 🌐 Çok Oyunculu Protokolü
+
+- Oda kodları 5 karakterdir
+- Maç sonucu yalnızca **tüm aktif oyuncular** aynı kazanan indeksini bildirdikten sonra kabul edilir
+- Rematch ve sonuç oyları oyuncu bağlantısı kesildiğinde temizlenir
+- Sunucu yetkili simülasyon tick’i çalıştırır ve istemci durumunu sync hash ile uyumlu hale getirir
+
+---
+
+## 🔗 Canlı Demo
+
+**[https://solarmax.urgup.keenetic.link](https://solarmax.urgup.keenetic.link)**
+
+---
+
+## 🛡 Teknoloji Yığını
+
+| Katman | Teknoloji |
+|--------|-----------|
+| Oyun istemcisi | Düz JavaScript (ES modülleri), Canvas 2D |
+| Geliştirme sunucusu | Vite 5 |
+| Çok oyunculu | Express 4 + Socket.IO 4 |
+| Derleme | Vite (ESM paketi) |
+| Testler | Node.js yerleşik `node:test` |
+| Konteyner | Docker + Docker Compose |
+
+Framework yok, ağır runtime yok — tüm oyun mantığı tarayıcıda doğrudan açılabilen tek bir `game.js` dosyasında çalışır.
+
+---
+
+## 💡 Tasarım Felsefesi
+
+Oyun **ağır mikro yerine hızlı makro kararlar** etrafında kuruludur:
+
+- **Basit girdi döngüsü** — seç, sürükle/gönder, flow ayarla, konumlandır, saldırı zamanlamasını yap. Yeni sistemler daha fazla buton değil, daha iyi kararlar üretmeli.
+- **Harita düzeyinde derinlik** — mekanikler rota, bölge, zaman pencereleri ve hedef baskısını etkilemeli; ezberlenecek birim türü çoğaltmamalı.
+- **Modlar arası yeniden kullanım** — her özellik skirmish, kampanya, günlük meydan okuma, özel haritalar ve çok oyunculuda çalışmalı.
+- **Okunabilirlik öncelikli** — oyuncu bir filonun neden hızlı, yavaş, zayıflayan veya çatışmalı olduğunu görselden anlayabilmeli. Mobil uyum korunmalı.
+
+---
+
+## 🗺 Yol Haritası
+
+### Kısa vadeli
+
+1. **Bölge 2.0 ve Çatışmalı Cepheler** — bölgeyi pasif değiştiriciden gerçek bir cephe sistemine dönüştürme
+2. **Sektör Mutatörleri v1** — harita başına bir baskın çevresel kural (iyon fırtınaları, pulse zengin sektörler, karartma bölgeleri)
+3. **AI Cephe Farkındalığı** — savunulan cephelere damla damla beslemeyi bırakma, itmeden önce park filoları konuşlandırma
+4. **Görsel Okunabilirlik Geçişi** — daha güçlü cephe render’ı, net filo durum göstergeleri, daha iyi mobil HUD
+
+### Orta vadeli
+
+5. **Komutan / Doktrin Sistemi** — maç öncesi stratejik kimlik (bir pasif bonus, bir aktif yetenek, bir tradeoff)
+6. **Kampanya Genişlemesi** — hayatta kalma, eskort, boss ve hedef varyantlarıyla yapılandırılmış öğretim ve meydan okuma misyonları
+7. **PvE Hedefleri ve Boss Karşılaşmaları** — mega taretler, antik çekirdekler, zamanlı savunma olayları
+8. **Mod Sarmalayıcıları ve Çalma Listeleri** — Ranked, Chaos, Ironman, Puzzle Sector, Zen, Frontier
+
+### Uzun vadeli
+
+9. **Rekabet Katmanı** — Elo/MMR, sezonlar, izleyici modu, replay tarayıcı, maç geçmişi
+10. **Faksiyon Kimliği** — doktrin varsayılanları ve bölge davranış farklarıyla asimetri
+11. **Sosyal ve Topluluk Özellikleri** — meydan okuma tohumları, replay paylaşımı, topluluk harita vitrinleri, turnuvalar
+
+### Yapılmayacaklar
+
+- Dev tech ağaçları
+- Çok sayıda ayrı birim sınıfı
+- Yüksek APM aktif yetenek spam’i
+- Sadece tek bir modda çalışan tek seferlik mekanikler
+- Zayıflığı üretim hilesiyle telafi eden AI
+
+---
+
+## 📄 Lisans
+
+Özel proje.
