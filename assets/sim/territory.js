@@ -51,15 +51,34 @@ export function isPointInsideFriendlyTerritory(params) {
     var x = Number(point.x);
     var y = Number(point.y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    var owners = {};
+    var ownerCount = 0;
 
     for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i];
         if (!node || node.owner !== owner || !isTerritoryNodeActive(node, callbacks)) continue;
-        var radius = territoryRadiusForNode(node, constants);
-        var dx = x - (Number(node.pos.x) || 0);
-        var dy = y - (Number(node.pos.y) || 0);
-        if (dx * dx + dy * dy <= radius * radius) return true;
+        var _radius = territoryRadiusForNode(node, constants);
+        var _dx = x - (Number(node.pos.x) || 0);
+        var _dy = y - (Number(node.pos.y) || 0);
+        if (_dx * _dx + _dy * _dy > _radius * _radius) continue;
+        if (!owners[node.owner]) {
+            owners[node.owner] = true;
+            ownerCount++;
+        }
     }
 
-    return false;
+    for (var j = 0; j < nodes.length; j++) {
+        var other = nodes[j];
+        if (!other || other.owner === owner || !isTerritoryNodeActive(other, callbacks)) continue;
+        var radius = territoryRadiusForNode(other, constants);
+        var dx = x - (Number(other.pos.x) || 0);
+        var dy = y - (Number(other.pos.y) || 0);
+        if (dx * dx + dy * dy > radius * radius) continue;
+        if (!owners[other.owner]) {
+            owners[other.owner] = true;
+            ownerCount++;
+        }
+    }
+
+    return ownerCount === 1 && owners[owner] === true;
 }

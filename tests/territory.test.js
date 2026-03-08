@@ -45,3 +45,21 @@ test('isPointInsideFriendlyTerritory ignores nodes that are not fully assimilate
         },
     }), false);
 });
+
+test('isPointInsideFriendlyTerritory treats overlapping enemy borders as contested', function () {
+    var nodes = [
+        { owner: 0, radius: 24, level: 1, kind: 'core', pos: { x: 0, y: 0 } },
+        { owner: 1, radius: 24, level: 1, kind: 'core', pos: { x: 110, y: 0 } },
+    ];
+
+    assert.equal(isPointInsideFriendlyTerritory({
+        owner: 0,
+        point: { x: 55, y: 0 },
+        nodes: nodes,
+    }), false);
+    assert.equal(isPointInsideFriendlyTerritory({
+        owner: 1,
+        point: { x: 55, y: 0 },
+        nodes: nodes,
+    }), false);
+});
