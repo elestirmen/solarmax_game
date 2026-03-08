@@ -35,3 +35,24 @@ test('computeSyncHash changes when ownership changes', function () {
 
     assert.notEqual(computeSyncHash(baseState), computeSyncHash(variant));
 });
+
+test('computeSyncHash changes when a parked fleet route changes', function () {
+    var baseState = {
+        tick: 18,
+        players: [{ alive: true, isAI: false }],
+        nodes: [],
+        fleets: [
+            { active: true, holding: true, owner: 0, srcId: -1, tgtId: -1, count: 9, t: 0, x: 60, y: 40, fromX: 60, fromY: 40, toX: 60, toY: 40, cpx: 60, cpy: 40 },
+        ],
+    };
+    var variant = {
+        tick: 18,
+        players: [{ alive: true, isAI: false }],
+        nodes: [],
+        fleets: [
+            { active: true, holding: true, owner: 0, srcId: -1, tgtId: -1, count: 9, t: 0, x: 60, y: 40, fromX: 90, fromY: 40, toX: 90, toY: 40, cpx: 90, cpy: 40 },
+        ],
+    };
+
+    assert.notEqual(computeSyncHash(baseState), computeSyncHash(variant));
+});

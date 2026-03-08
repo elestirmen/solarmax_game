@@ -28,6 +28,24 @@ export function sanitizeNodeIdList(value, limit) {
     return result;
 }
 
+export function sanitizeFiniteCoord(value) {
+    var n = Number(value);
+    if (!Number.isFinite(n)) return null;
+    return Math.round(n * 1000) / 1000;
+}
+
+export function sanitizePointTarget(value) {
+    value = value && typeof value === 'object' ? value : {};
+    var x = sanitizeFiniteCoord(value.x);
+    var y = sanitizeFiniteCoord(value.y);
+    if (x === null || y === null) return null;
+    return { x: x, y: y };
+}
+
+export function sanitizeFleetIdList(value, limit) {
+    return sanitizeNodeIdList(value, limit);
+}
+
 export function sanitizeCommandData(type, rawData, opts) {
     rawData = rawData && typeof rawData === 'object' ? rawData : {};
     opts = opts || {};
@@ -37,14 +55,19 @@ export function sanitizeCommandData(type, rawData, opts) {
 
     if (type === 'send') {
         var sources = sanitizeNodeIdList(rawData.sources, nodeListLimit);
+        var fleetIds = sanitizeFleetIdList(rawData.fleetIds, nodeListLimit);
         var targetId = sanitizeNodeId(rawData.tgtId !== undefined ? rawData.tgtId : rawData.targetId);
+        var targetPoint = sanitizePointTarget(rawData.targetPoint !== undefined ? rawData.targetPoint : rawData.point);
         var pctRaw = Number(rawData.pct !== undefined ? rawData.pct : rawData.percent);
-        if (sources.length === 0 || targetId === null || !Number.isFinite(pctRaw)) return null;
-        return {
+        if ((sources.length === 0 && fleetIds.length === 0) || (targetId === null && !targetPoint) || !Number.isFinite(pctRaw)) return null;
+        var result = {
             sources: sources,
-            tgtId: targetId,
+            fleetIds: fleetIds,
             pct: Math.max(0.05, Math.min(1, pctRaw)),
         };
+        if (targetId !== null) result.tgtId = targetId;
+        else result.targetPoint = targetPoint;
+        return result;
     }
 
     if (type === 'flow' || type === 'rmFlow') {

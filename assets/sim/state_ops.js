@@ -57,6 +57,143 @@ function tangentDir(p0, cp, p2, t, step) {
     return { x: dx / len, y: dy / len };
 }
 
+function normalizePointTarget(point) {
+    point = point && typeof point === 'object' ? point : null;
+    if (!point) return null;
+    var x = Number(point.x);
+    var y = Number(point.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x: x, y: y };
+}
+
+function normalizeDispatchOrder(srcIdsOrData, tgtId, pct) {
+    var raw = srcIdsOrData && typeof srcIdsOrData === 'object' && !Array.isArray(srcIdsOrData)
+        ? srcIdsOrData
+        : { sources: srcIdsOrData, tgtId: tgtId, pct: pct };
+    var targetId = raw.tgtId !== undefined ? raw.tgtId : raw.targetId;
+    var normalizedTargetId = Number.isFinite(Number(targetId)) ? Math.floor(Number(targetId)) : null;
+
+    return {
+        sources: Array.isArray(raw.sources) ? raw.sources.slice() : [],
+        fleetIds: Array.isArray(raw.fleetIds) ? raw.fleetIds.slice() : [],
+        tgtId: normalizedTargetId,
+        targetPoint: normalizePointTarget(raw.targetPoint !== undefined ? raw.targetPoint : raw.point),
+        pct: clamp(typeof raw.pct === 'number' ? raw.pct : Number(raw.percent !== undefined ? raw.percent : raw.pct), 0.05, 1),
+    };
+}
+
+function computeFleetSendCount(fleetCount, pct) {
+    var available = Math.max(0, Math.floor(Number(fleetCount) || 0));
+    if (available <= 0) return 0;
+    if (pct >= 0.999) return available;
+    return Math.min(available, Math.max(1, Math.floor(available * pct)));
+}
+
+function makeRoutePointKey(point) {
+    point = point || { x: 0, y: 0 };
+    return Math.round((Number(point.x) || 0) * 10) + ':' + Math.round((Number(point.y) || 0) * 10);
+}
+
+function countQueuedRouteFleets(state, owner, sourceKey, targetKey) {
+    var count = 0;
+    for (var i = 0; i < state.fleets.length; i++) {
+        var fleet = state.fleets[i];
+        if (!fleet || !fleet.active || fleet.holding || fleet.owner !== owner) continue;
+        if (fleet.routeSrcKey === sourceKey && fleet.routeTgtKey === targetKey) count++;
+    }
+    return count;
+}
+
+function createDispatchedFleet(state, params) {
+    params = params || {};
+
+    var owner = Number(params.owner);
+    var count = Math.max(0, Math.floor(Number(params.count) || 0));
+    var sourceNode = params.sourceNode || null;
+    var sourceFleet = params.sourceFleet || null;
+    var targetNode = params.targetNode || null;
+    var sourcePos = params.sourcePos || (sourceNode && sourceNode.pos) || null;
+    var targetPos = params.targetPos || (targetNode && targetNode.pos) || null;
+    if (!sourcePos || !targetPos || count <= 0) return false;
+
+    var hasWormholeLink = !!(sourceNode && targetNode && isLinkedWormhole(state.wormholes, sourceNode.id, targetNode.id));
+    var cp = bezCP(sourcePos, targetPos, hasWormholeLink ? 0.05 : SIM_CONSTANTS.BEZ_CURV);
+    var sourceKey = sourceNode ? 'n:' + sourceNode.id : 'f:' + (sourceFleet ? sourceFleet.id : Math.round(sourcePos.x) + ':' + Math.round(sourcePos.y));
+    var targetKey = targetNode ? 'n:' + targetNode.id : 'p:' + makeRoutePointKey(targetPos);
+    var routeQueue = countQueuedRouteFleets(state, owner, sourceKey, targetKey);
+    var launchDelay = Math.min(0.28, routeQueue * 0.03);
+    var arcLen = bezLen(sourcePos, cp, targetPos);
+    var sourceRadius = sourceNode && Number.isFinite(Number(sourceNode.radius))
+        ? Number(sourceNode.radius)
+        : Math.max(6, Math.min(18, Math.sqrt(count) * 1.6));
+    var launchT = clamp((sourceRadius + 2) / Math.max(arcLen, 1), 0, sourceNode ? 0.12 : 0.08);
+    var launchPoint = bezPt(sourcePos, cp, targetPos, launchT);
+
+    var routeSpeedMult = 1;
+    if (sourceNode) {
+        var srcType = nodeTypeOf(sourceNode);
+        routeSpeedMult = srcType.speed * (hasWormholeLink ? SIM_CONSTANTS.WORMHOLE_SPEED_MULT : 1);
+        if (isNodeAssimilated(sourceNode) && isStrategicPulseActiveForNode(sourceNode.id, state.strategicPulse)) {
+            routeSpeedMult *= SIM_CONSTANTS.STRATEGIC_PULSE_SPEED;
+        }
+    }
+
+    state.fleetSerial = Math.max(0, Math.floor(Number(state.fleetSerial) || 0)) + 1;
+    var spawnProfile = buildFleetSpawnProfile({
+        seed: state.seed,
+        srcId: sourceNode ? sourceNode.id : -Math.max(1, Math.floor(Number(sourceFleet && sourceFleet.id) || 1)),
+        tgtId: targetNode ? targetNode.id : Math.round(targetPos.x * 7 + targetPos.y * 13),
+        serial: state.fleetSerial,
+        routeQueue: routeQueue,
+        count: count,
+        routeSpeedMult: routeSpeedMult,
+    });
+    var launchDir = tangentDir(sourcePos, cp, targetPos, launchT, Math.max(0.012, spawnProfile.lookAhead));
+
+    state.fleets.push({
+        id: state.fleetSerial,
+        active: true,
+        owner: owner,
+        count: count,
+        srcId: sourceNode ? sourceNode.id : -1,
+        tgtId: targetNode ? targetNode.id : -1,
+        fromX: sourcePos.x,
+        fromY: sourcePos.y,
+        toX: targetPos.x,
+        toY: targetPos.y,
+        holding: false,
+        routeSrcKey: sourceKey,
+        routeTgtKey: targetKey,
+        t: -launchDelay,
+        speed: SIM_CONSTANTS.FLEET_SPEED,
+        arcLen: arcLen,
+        cpx: cp.x,
+        cpy: cp.y,
+        x: launchPoint.x,
+        y: launchPoint.y,
+        trail: [],
+        offsetL: spawnProfile.offsetL,
+        spdVar: spawnProfile.spdVar,
+        routeSpeedMult: routeSpeedMult,
+        trailScale: spawnProfile.trailScale,
+        headingX: launchDir.x,
+        headingY: launchDir.y,
+        bank: 0,
+        throttle: 0.34 * spawnProfile.throttleBias,
+        turnRate: spawnProfile.turnRate,
+        throttleBias: spawnProfile.throttleBias,
+        lookAhead: spawnProfile.lookAhead,
+        hitFlash: 0,
+        hitJitter: 0,
+        hitDirX: 0,
+        hitDirY: 0,
+        dmgAcc: 0,
+        launchT: launchT,
+    });
+
+    return hasWormholeLink;
+}
+
 export function isLinkedWormhole(wormholes, srcId, tgtId) {
     var links = Array.isArray(wormholes) ? wormholes : [];
     for (var i = 0; i < links.length; i++) {
@@ -69,21 +206,22 @@ export function isLinkedWormhole(wormholes, srcId, tgtId) {
 
 export function dispatchUnits(state, owner, srcIds, tgtId, pct) {
     state = state || {};
-    srcIds = Array.isArray(srcIds) ? srcIds : [];
-    pct = clamp(typeof pct === 'number' ? pct : 0.5, 0.05, 1);
-
-    var targetNode = state.nodes && state.nodes[tgtId];
-    if (!targetNode) return false;
+    var order = normalizeDispatchOrder(srcIds, tgtId, pct);
+    var sourceIds = Array.isArray(order.sources) ? order.sources : [];
+    var fleetIds = Array.isArray(order.fleetIds) ? order.fleetIds : [];
+    var targetNode = state.nodes && order.tgtId !== null ? state.nodes[order.tgtId] : null;
+    var targetPoint = targetNode ? targetNode.pos : order.targetPoint;
+    if (!targetNode && !targetPoint) return false;
 
     var didSend = false;
     var blockedByBarrier = false;
     var barrierCfg = state.mapFeature && state.mapFeature.type === 'barrier' ? state.mapFeature : null;
     var friendlyRoom = null;
-    if (targetNode.owner === owner) {
+    if (targetNode && targetNode.owner === owner) {
         var incomingFriendlyUnits = 0;
         for (var fi0 = 0; fi0 < state.fleets.length; fi0++) {
             var incomingFleet = state.fleets[fi0];
-            if (!incomingFleet || !incomingFleet.active || incomingFleet.owner !== owner || incomingFleet.tgtId !== tgtId) continue;
+            if (!incomingFleet || !incomingFleet.active || incomingFleet.owner !== owner || incomingFleet.tgtId !== order.tgtId) continue;
             incomingFriendlyUnits += Math.max(0, Math.floor(Number(incomingFleet.count) || 0));
         }
         friendlyRoom = computeFriendlyReinforcementRoom({
@@ -93,16 +231,22 @@ export function dispatchUnits(state, owner, srcIds, tgtId, pct) {
         });
     }
 
-    for (var si = 0; si < srcIds.length; si++) {
-        var sourceNode = state.nodes[srcIds[si]];
+    for (var si = 0; si < sourceIds.length; si++) {
+        var sourceNode = state.nodes[sourceIds[si]];
         if (!sourceNode || sourceNode.owner !== owner) continue;
-        if (!isDispatchAllowed({ src: sourceNode, tgt: targetNode, barrier: barrierCfg, owner: owner, nodes: state.nodes })) {
+        if (!isDispatchAllowed({
+            src: sourceNode,
+            tgt: targetNode || { pos: targetPoint },
+            barrier: barrierCfg,
+            owner: owner,
+            nodes: state.nodes,
+        })) {
             blockedByBarrier = true;
             continue;
         }
 
         var srcType = nodeTypeOf(sourceNode);
-        var send = computeSendCount({ srcUnits: sourceNode.units, pct: pct, flowMult: srcType.flow });
+        var send = computeSendCount({ srcUnits: sourceNode.units, pct: order.pct, flowMult: srcType.flow });
         var count = send.sendCount;
         if (friendlyRoom !== null) count = Math.min(count, friendlyRoom);
         if (count <= 0) continue;
@@ -112,71 +256,67 @@ export function dispatchUnits(state, owner, srcIds, tgtId, pct) {
         didSend = true;
         if (friendlyRoom !== null) friendlyRoom -= count;
 
-        var hasWormholeLink = isLinkedWormhole(state.wormholes, sourceNode.id, tgtId);
-        var cp = bezCP(sourceNode.pos, targetNode.pos, hasWormholeLink ? 0.05 : SIM_CONSTANTS.BEZ_CURV);
-        var routeQueue = 0;
-        for (var fi = 0; fi < state.fleets.length; fi++) {
-            var queuedFleet = state.fleets[fi];
-            if (!queuedFleet || !queuedFleet.active) continue;
-            if (queuedFleet.owner === owner && queuedFleet.srcId === sourceNode.id && queuedFleet.tgtId === tgtId) routeQueue++;
-        }
-        var launchDelay = Math.min(0.28, routeQueue * 0.03);
-        var arcLen = bezLen(sourceNode.pos, cp, targetNode.pos);
-        var launchT = clamp((sourceNode.radius + 2) / Math.max(arcLen, 1), 0, 0.12);
-        var launchPoint = bezPt(sourceNode.pos, cp, targetNode.pos, launchT);
-        var routeSpeedMult = srcType.speed * (hasWormholeLink ? SIM_CONSTANTS.WORMHOLE_SPEED_MULT : 1);
-        if (isNodeAssimilated(sourceNode) && isStrategicPulseActiveForNode(sourceNode.id, state.strategicPulse)) {
-            routeSpeedMult *= SIM_CONSTANTS.STRATEGIC_PULSE_SPEED;
-        }
-
-        state.fleetSerial = Math.max(0, Math.floor(Number(state.fleetSerial) || 0)) + 1;
-        var spawnProfile = buildFleetSpawnProfile({
-            seed: state.seed,
-            srcId: sourceNode.id,
-            tgtId: tgtId,
-            serial: state.fleetSerial,
-            routeQueue: routeQueue,
-            count: count,
-            routeSpeedMult: routeSpeedMult,
-        });
-        var launchDir = tangentDir(sourceNode.pos, cp, targetNode.pos, launchT, Math.max(0.012, spawnProfile.lookAhead));
-        state.fleets.push({
-            id: state.fleetSerial,
-            active: true,
+        var usedWormhole = createDispatchedFleet(state, {
             owner: owner,
             count: count,
-            srcId: sourceNode.id,
-            tgtId: tgtId,
-            t: -launchDelay,
-            speed: SIM_CONSTANTS.FLEET_SPEED,
-            arcLen: arcLen,
-            cpx: cp.x,
-            cpy: cp.y,
-            x: launchPoint.x,
-            y: launchPoint.y,
-            trail: [],
-            offsetL: spawnProfile.offsetL,
-            spdVar: spawnProfile.spdVar,
-            routeSpeedMult: routeSpeedMult,
-            trailScale: spawnProfile.trailScale,
-            headingX: launchDir.x,
-            headingY: launchDir.y,
-            bank: 0,
-            throttle: 0.34 * spawnProfile.throttleBias,
-            turnRate: spawnProfile.turnRate,
-            throttleBias: spawnProfile.throttleBias,
-            lookAhead: spawnProfile.lookAhead,
-            hitFlash: 0,
-            hitJitter: 0,
-            hitDirX: 0,
-            hitDirY: 0,
-            dmgAcc: 0,
-            launchT: launchT,
+            sourceNode: sourceNode,
+            targetNode: targetNode,
+            sourcePos: sourceNode.pos,
+            targetPos: targetPoint,
         });
 
-        if (owner === state.humanIndex && hasWormholeLink && state.stats) {
+        if (owner === state.humanIndex && usedWormhole && state.stats) {
             state.stats.wormholeDispatches = (Number(state.stats.wormholeDispatches) || 0) + 1;
         }
+    }
+
+    for (var fi2 = 0; fi2 < fleetIds.length; fi2++) {
+        var sourceFleet = null;
+        for (var sf = 0; sf < state.fleets.length; sf++) {
+            var parked = state.fleets[sf];
+            if (!parked || !parked.active || !parked.holding || parked.owner !== owner) continue;
+            if ((Number(parked.id) || 0) === fleetIds[fi2]) {
+                sourceFleet = parked;
+                break;
+            }
+        }
+        if (!sourceFleet) continue;
+
+        var fleetSourcePos = { x: Number(sourceFleet.x) || 0, y: Number(sourceFleet.y) || 0 };
+        if (!isDispatchAllowed({
+            src: { pos: fleetSourcePos },
+            tgt: targetNode || { pos: targetPoint },
+            barrier: barrierCfg,
+            owner: owner,
+            nodes: state.nodes,
+        })) {
+            blockedByBarrier = true;
+            continue;
+        }
+
+        var fleetCount = computeFleetSendCount(sourceFleet.count, order.pct);
+        if (friendlyRoom !== null) fleetCount = Math.min(fleetCount, friendlyRoom);
+        if (fleetCount <= 0) continue;
+
+        sourceFleet.count = Math.max(0, Math.floor(Number(sourceFleet.count) || 0) - fleetCount);
+        if (sourceFleet.count <= 0) {
+            sourceFleet.count = 0;
+            sourceFleet.active = false;
+            sourceFleet.holding = false;
+            sourceFleet.trail = [];
+        }
+
+        didSend = true;
+        if (friendlyRoom !== null) friendlyRoom -= fleetCount;
+
+        createDispatchedFleet(state, {
+            owner: owner,
+            count: fleetCount,
+            sourceFleet: sourceFleet,
+            targetNode: targetNode,
+            sourcePos: fleetSourcePos,
+            targetPos: targetPoint,
+        });
     }
 
     if (didSend && owner === state.humanIndex && state.stats) {

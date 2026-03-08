@@ -3,7 +3,7 @@ export function applyPlayerCommandWithOps(playerIndex, type, data, ops) {
     ops = ops || {};
 
     if (type === 'send' && typeof ops.send === 'function') {
-        return ops.send(playerIndex, data.sources || [], data.tgtId !== undefined ? data.tgtId : data.targetId, data.pct !== undefined ? data.pct : data.percent);
+        return ops.send(playerIndex, data);
     }
     if (type === 'flow' && typeof ops.flow === 'function') {
         return ops.flow(playerIndex, data.srcId !== undefined ? data.srcId : data.sourceId, data.tgtId !== undefined ? data.tgtId : data.targetId);

@@ -102,20 +102,26 @@ var DIFFICULTY_PRESETS = {
         humanStartBoost: 1.2, aiStartBoost: 0.88,
         humanProdMult: 1.08, aiProdMult: 0.94,
         featureChance: 0.35, maxAttackTargets: 1,
+        aiReserveScale: 1.0, aiCommitMax: 0.72, aiCriticalCommitMax: 0.8, aiOpportunityRatio: 0.62,
+        aiExtraSources: 0, aiTargetHumanBias: 4, aiTargetCapitalBias: 12, aiFlowPeriod: 13, aiUpgradePeriod: 19,
     },
     normal: {
-        aiAggBase: 1.0, aiBuffer: 5, aiInterval: 30, flowInterval: 15,
+        aiAggBase: 1.08, aiBuffer: 4, aiInterval: 26, flowInterval: 15,
         aiUsesFog: false, adaptiveAI: true,
         humanStartBoost: 1.0, aiStartBoost: 1.0,
         humanProdMult: 1.0, aiProdMult: 1.0,
         featureChance: 0.62, maxAttackTargets: 2,
+        aiReserveScale: 0.9, aiCommitMax: 0.82, aiCriticalCommitMax: 0.9, aiOpportunityRatio: 0.52,
+        aiExtraSources: 1, aiTargetHumanBias: 12, aiTargetCapitalBias: 28, aiFlowPeriod: 9, aiUpgradePeriod: 15,
     },
     hard: {
-        aiAggBase: 1.22, aiBuffer: 4, aiInterval: 22, flowInterval: 12,
+        aiAggBase: 1.38, aiBuffer: 3, aiInterval: 18, flowInterval: 12,
         aiUsesFog: true, adaptiveAI: true,
         humanStartBoost: 0.92, aiStartBoost: 1.1,
         humanProdMult: 0.98, aiProdMult: 1.07,
-        featureChance: 0.78, maxAttackTargets: 2,
+        featureChance: 0.78, maxAttackTargets: 3,
+        aiReserveScale: 0.78, aiCommitMax: 0.92, aiCriticalCommitMax: 1.0, aiOpportunityRatio: 0.45,
+        aiExtraSources: 2, aiTargetHumanBias: 24, aiTargetCapitalBias: 56, aiFlowPeriod: 6, aiUpgradePeriod: 11,
     },
 };
 
@@ -189,10 +195,77 @@ function bezLen(p0, cp, p2) {
     } return l || 1;
 }
 
+function normalizePointTarget(point) {
+    point = point && typeof point === 'object' ? point : null;
+    if (!point) return null;
+    var x = Number(point.x), y = Number(point.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x: x, y: y };
+}
+
+function normalizeDispatchOrder(srcIdsOrData, tgtId, pct) {
+    var raw = srcIdsOrData && typeof srcIdsOrData === 'object' && !Array.isArray(srcIdsOrData)
+        ? srcIdsOrData
+        : { sources: srcIdsOrData, tgtId: tgtId, pct: pct };
+    var targetId = raw.tgtId !== undefined ? raw.tgtId : raw.targetId;
+    var normalizedTargetId = Number.isFinite(Number(targetId)) ? Math.floor(Number(targetId)) : null;
+    return {
+        sources: Array.isArray(raw.sources) ? raw.sources.slice() : [],
+        fleetIds: Array.isArray(raw.fleetIds) ? raw.fleetIds.slice() : [],
+        tgtId: normalizedTargetId,
+        targetPoint: normalizePointTarget(raw.targetPoint !== undefined ? raw.targetPoint : raw.point),
+        pct: clamp(typeof raw.pct === 'number' ? raw.pct : Number(raw.percent !== undefined ? raw.percent : raw.pct), 0.05, 1),
+    };
+}
+
+function computeFleetSendCount(fleetCount, pct) {
+    var available = Math.max(0, Math.floor(Number(fleetCount) || 0));
+    if (available <= 0) return 0;
+    if (pct >= 0.999) return available;
+    return Math.min(available, Math.max(1, Math.floor(available * pct)));
+}
+
+function makeRoutePointKey(point) {
+    point = point || { x: 0, y: 0 };
+    return Math.round((Number(point.x) || 0) * 10) + ':' + Math.round((Number(point.y) || 0) * 10);
+}
+
+function countQueuedRouteFleets(owner, sourceKey, targetKey) {
+    var count = 0;
+    for (var i = 0; i < G.fleets.length; i++) {
+        var fleet = G.fleets[i];
+        if (!fleet || !fleet.active || fleet.holding || fleet.owner !== owner) continue;
+        if (fleet.routeSrcKey === sourceKey && fleet.routeTgtKey === targetKey) count++;
+    }
+    return count;
+}
+
+function fleetRouteStart(fleet) {
+    if (Number.isFinite(fleet.fromX) && Number.isFinite(fleet.fromY)) return { x: Number(fleet.fromX), y: Number(fleet.fromY) };
+    var sourceNode = G.nodes[fleet.srcId];
+    if (sourceNode && sourceNode.pos) return sourceNode.pos;
+    if (Number.isFinite(fleet.x) && Number.isFinite(fleet.y)) return { x: Number(fleet.x), y: Number(fleet.y) };
+    return null;
+}
+
+function fleetRouteTarget(fleet) {
+    if (Number.isFinite(fleet.toX) && Number.isFinite(fleet.toY)) return { x: Number(fleet.toX), y: Number(fleet.toY) };
+    var targetNode = G.nodes[fleet.tgtId];
+    if (targetNode && targetNode.pos) return targetNode.pos;
+    if (Number.isFinite(fleet.x) && Number.isFinite(fleet.y)) return { x: Number(fleet.x), y: Number(fleet.y) };
+    return null;
+}
+
+function fleetSelectionRadius(fleet) {
+    var count = Math.max(1, Math.floor(Number(fleet && fleet.count) || 0));
+    return clamp(7 + Math.sqrt(count) * 1.3, 9, 20);
+}
+
 // Ã¢â€â‚¬Ã¢â€â‚¬ FLEET POOL (with trail + lateral offset for swarm) Ã¢â€â‚¬Ã¢â€â‚¬
 function mkFleet() {
     return {
         id: 0, active: false, owner: -1, count: 0, srcId: -1, tgtId: -1, t: 0, speed: 0, arcLen: 1, cpx: 0, cpy: 0, x: 0, y: 0,
+        fromX: 0, fromY: 0, toX: 0, toY: 0, holding: false, routeSrcKey: '', routeTgtKey: '',
         trail: [], offsetL: 0, spdVar: 1, routeSpeedMult: 1, trailScale: 1,
         headingX: 1, headingY: 0, bank: 0, throttle: 0.3, turnRate: 6, throttleBias: 1, lookAhead: 0.022,
         dmgAcc: 0, launchT: 0
@@ -857,18 +930,108 @@ function genMap(nc) {
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ DISPATCH Ã¢â€â‚¬Ã¢â€â‚¬
+function createDispatchedFleetLocal(owner, params) {
+    params = params || {};
+    var count = Math.max(0, Math.floor(Number(params.count) || 0));
+    var sourceNode = params.sourceNode || null;
+    var sourceFleet = params.sourceFleet || null;
+    var targetNode = params.targetNode || null;
+    var sourcePos = params.sourcePos || (sourceNode && sourceNode.pos) || null;
+    var targetPos = params.targetPos || (targetNode && targetNode.pos) || null;
+    if (!sourcePos || !targetPos || count <= 0) return false;
+
+    var hasWormholeLink = !!(sourceNode && targetNode && isLinkedWormhole(sourceNode.id, targetNode.id));
+    var curv = hasWormholeLink ? 0.05 : BEZ_CURV;
+    var cp = bezCP(sourcePos, targetPos, curv);
+    var sourceKey = sourceNode ? 'n:' + sourceNode.id : 'f:' + (sourceFleet ? sourceFleet.id : Math.round(sourcePos.x) + ':' + Math.round(sourcePos.y));
+    var targetKey = targetNode ? 'n:' + targetNode.id : 'p:' + makeRoutePointKey(targetPos);
+    var routeQueue = countQueuedRouteFleets(owner, sourceKey, targetKey);
+    var launchDelay = Math.min(0.28, routeQueue * 0.03);
+
+    G.fleetSerial = Math.max(0, Math.floor(Number(G.fleetSerial) || 0)) + 1;
+    var routeSpeedMult = 1;
+    if (sourceNode) {
+        var srcType = nodeTypeOf(sourceNode);
+        routeSpeedMult = srcType.speed * (hasWormholeLink ? WORMHOLE_SPEED_MULT : 1);
+        if (isNodeAssimilated(sourceNode) && strategicPulseAppliesToNode(sourceNode.id)) {
+            routeSpeedMult *= STRATEGIC_PULSE_SPEED;
+        }
+    }
+    var spawnProfile = buildFleetSpawnProfile({
+        seed: G.seed,
+        srcId: sourceNode ? sourceNode.id : -Math.max(1, Math.floor(Number(sourceFleet && sourceFleet.id) || 1)),
+        tgtId: targetNode ? targetNode.id : Math.round(targetPos.x * 7 + targetPos.y * 13),
+        serial: G.fleetSerial,
+        routeQueue: routeQueue,
+        count: count,
+        routeSpeedMult: routeSpeedMult,
+    });
+    var arcLen = bezLen(sourcePos, cp, targetPos);
+    var sourceRadius = sourceNode && Number.isFinite(Number(sourceNode.radius))
+        ? Number(sourceNode.radius)
+        : Math.max(6, Math.min(18, Math.sqrt(count) * 1.6));
+    var launchT = clamp((sourceRadius + 2) / Math.max(arcLen, 1), 0, sourceNode ? 0.12 : 0.08);
+    var launchPt = bezPt(sourcePos, cp, targetPos, launchT);
+    var launchDirPt = bezPt(sourcePos, cp, targetPos, Math.min(1, launchT + Math.max(0.012, spawnProfile.lookAhead)));
+    var launchDx = launchDirPt.x - launchPt.x, launchDy = launchDirPt.y - launchPt.y;
+    var launchLen = Math.sqrt(launchDx * launchDx + launchDy * launchDy) || 1;
+    var f = acquireFleet();
+    f.id = G.fleetSerial;
+    f.active = true;
+    f.owner = owner;
+    f.count = count;
+    f.srcId = sourceNode ? sourceNode.id : -1;
+    f.tgtId = targetNode ? targetNode.id : -1;
+    f.fromX = sourcePos.x;
+    f.fromY = sourcePos.y;
+    f.toX = targetPos.x;
+    f.toY = targetPos.y;
+    f.holding = false;
+    f.routeSrcKey = sourceKey;
+    f.routeTgtKey = targetKey;
+    f.t = -launchDelay;
+    f.speed = FLEET_SPEED;
+    f.routeSpeedMult = routeSpeedMult;
+    f.offsetL = spawnProfile.offsetL;
+    f.spdVar = spawnProfile.spdVar;
+    f.trailScale = spawnProfile.trailScale;
+    f.turnRate = spawnProfile.turnRate;
+    f.throttleBias = spawnProfile.throttleBias;
+    f.lookAhead = spawnProfile.lookAhead;
+    f.cpx = cp.x;
+    f.cpy = cp.y;
+    f.arcLen = arcLen;
+    f.launchT = launchT;
+    f.x = launchPt.x;
+    f.y = launchPt.y;
+    f.headingX = launchDx / launchLen;
+    f.headingY = launchDy / launchLen;
+    f.bank = 0;
+    f.throttle = 0.34 * f.throttleBias;
+    f.hitFlash = 0;
+    f.hitJitter = 0;
+    f.hitDirX = 0;
+    f.hitDirY = 0;
+    f.trail = [];
+    f.dmgAcc = 0;
+    G.fleets.push(f);
+    return hasWormholeLink;
+}
+
 function dispatch(owner, srcIds, tgtId, pct) {
-    pct = clamp(typeof pct === 'number' ? pct : 0.5, 0.05, 1);
-    var tgt = G.nodes[tgtId]; if (!tgt) return;
+    var order = normalizeDispatchOrder(srcIds, tgtId, pct);
+    var tgt = order.tgtId !== null ? G.nodes[order.tgtId] : null;
+    var targetPoint = tgt ? tgt.pos : order.targetPoint;
+    if (!tgt && !targetPoint) return;
     var didSend = false;
     var blockedByBarrier = false;
     var barrierCfg = G.mapFeature && G.mapFeature.type === 'barrier' ? G.mapFeature : null;
     var friendlyRoom = null;
-    if (tgt.owner === owner) {
+    if (tgt && tgt.owner === owner) {
         var incomingFriendlyUnits = 0;
         for (var fi0 = 0; fi0 < G.fleets.length; fi0++) {
             var incomingFleet = G.fleets[fi0];
-            if (!incomingFleet.active || incomingFleet.owner !== owner || incomingFleet.tgtId !== tgtId) continue;
+            if (!incomingFleet.active || incomingFleet.owner !== owner || incomingFleet.tgtId !== order.tgtId) continue;
             incomingFriendlyUnits += Math.max(0, Math.floor(incomingFleet.count) || 0);
         }
         friendlyRoom = computeFriendlyReinforcementRoom({
@@ -877,14 +1040,14 @@ function dispatch(owner, srcIds, tgtId, pct) {
             incomingUnits: incomingFriendlyUnits,
         });
     }
-    for (var si = 0; si < srcIds.length; si++) {
-        var src = G.nodes[srcIds[si]]; if (!src || src.owner !== owner) continue;
-        if (!isDispatchAllowed({ src: src, tgt: tgt, barrier: barrierCfg, owner: owner, nodes: G.nodes })) {
+    for (var si = 0; si < order.sources.length; si++) {
+        var src = G.nodes[order.sources[si]]; if (!src || src.owner !== owner) continue;
+        if (!isDispatchAllowed({ src: src, tgt: tgt || { pos: targetPoint }, barrier: barrierCfg, owner: owner, nodes: G.nodes })) {
             blockedByBarrier = true;
             continue;
         }
         var srcType = nodeTypeOf(src);
-        var send = computeSendCount({ srcUnits: src.units, pct: pct, flowMult: srcType.flow });
+        var send = computeSendCount({ srcUnits: src.units, pct: order.pct, flowMult: srcType.flow });
         var cnt = send.sendCount;
         if (friendlyRoom !== null) {
             cnt = Math.min(cnt, friendlyRoom);
@@ -894,58 +1057,50 @@ function dispatch(owner, srcIds, tgtId, pct) {
         else src.units -= cnt;
         didSend = true;
         if (friendlyRoom !== null) friendlyRoom -= cnt;
-        var hasWormholeLink = isLinkedWormhole(src.id, tgtId);
-        var curv = hasWormholeLink ? 0.05 : BEZ_CURV;
-        var cp = bezCP(src.pos, tgt.pos, curv);
-        var routeQueue = 0;
-        for (var fi = 0; fi < G.fleets.length; fi++) {
-            var qf = G.fleets[fi];
-            if (!qf.active) continue;
-            if (qf.owner === owner && qf.srcId === src.id && qf.tgtId === tgtId) routeQueue++;
-        }
-        var launchDelay = Math.min(0.28, routeQueue * 0.03);
-        G.fleetSerial = Math.max(0, Math.floor(Number(G.fleetSerial) || 0)) + 1;
-        var f = acquireFleet(); f.id = G.fleetSerial; f.active = true; f.owner = owner; f.count = cnt; f.srcId = srcIds[si]; f.tgtId = tgtId;
-        f.t = -launchDelay;
-        f.speed = FLEET_SPEED;
-        f.routeSpeedMult = srcType.speed * (hasWormholeLink ? WORMHOLE_SPEED_MULT : 1);
-        if (isNodeAssimilated(src) && strategicPulseAppliesToNode(src.id)) {
-            f.routeSpeedMult *= STRATEGIC_PULSE_SPEED;
-        }
-        var spawnProfile = buildFleetSpawnProfile({
-            seed: G.seed,
-            srcId: src.id,
-            tgtId: tgtId,
-            serial: f.id,
-            routeQueue: routeQueue,
+        var usedWormhole = createDispatchedFleetLocal(owner, {
             count: cnt,
-            routeSpeedMult: f.routeSpeedMult,
+            sourceNode: src,
+            targetNode: tgt,
+            sourcePos: src.pos,
+            targetPos: targetPoint,
         });
-        f.offsetL = spawnProfile.offsetL;
-        f.spdVar = spawnProfile.spdVar;
-        f.trailScale = spawnProfile.trailScale;
-        f.turnRate = spawnProfile.turnRate;
-        f.throttleBias = spawnProfile.throttleBias;
-        f.lookAhead = spawnProfile.lookAhead;
-        f.cpx = cp.x; f.cpy = cp.y; f.arcLen = bezLen(src.pos, cp, tgt.pos);
-        f.launchT = clamp((src.radius + 2) / Math.max(f.arcLen, 1), 0, 0.12);
-        var launchPt = bezPt(src.pos, cp, tgt.pos, f.launchT);
-        var launchDirPt = bezPt(src.pos, cp, tgt.pos, Math.min(1, f.launchT + Math.max(0.012, f.lookAhead)));
-        var launchDx = launchDirPt.x - launchPt.x, launchDy = launchDirPt.y - launchPt.y;
-        var launchLen = Math.sqrt(launchDx * launchDx + launchDy * launchDy) || 1;
-        f.x = launchPt.x; f.y = launchPt.y;
-        f.headingX = launchDx / launchLen;
-        f.headingY = launchDy / launchLen;
-        f.bank = 0;
-        f.throttle = 0.34 * f.throttleBias;
-        f.hitFlash = 0;
-        f.hitJitter = 0;
-        f.hitDirX = 0;
-        f.hitDirY = 0;
-        f.trail = [];
-        f.dmgAcc = 0;
-        G.fleets.push(f);
-        if (owner === G.human && hasWormholeLink) G.stats.wormholeDispatches++;
+        if (owner === G.human && usedWormhole) G.stats.wormholeDispatches++;
+    }
+    for (var fi = 0; fi < order.fleetIds.length; fi++) {
+        var sourceFleet = null;
+        for (var sfi = 0; sfi < G.fleets.length; sfi++) {
+            var candidate = G.fleets[sfi];
+            if (!candidate || !candidate.active || !candidate.holding || candidate.owner !== owner) continue;
+            if ((Number(candidate.id) || 0) === order.fleetIds[fi]) {
+                sourceFleet = candidate;
+                break;
+            }
+        }
+        if (!sourceFleet) continue;
+        var sourceFleetPos = { x: Number(sourceFleet.x) || 0, y: Number(sourceFleet.y) || 0 };
+        if (!isDispatchAllowed({ src: { pos: sourceFleetPos }, tgt: tgt || { pos: targetPoint }, barrier: barrierCfg, owner: owner, nodes: G.nodes })) {
+            blockedByBarrier = true;
+            continue;
+        }
+        var fleetCount = computeFleetSendCount(sourceFleet.count, order.pct);
+        if (friendlyRoom !== null) fleetCount = Math.min(fleetCount, friendlyRoom);
+        if (fleetCount <= 0) continue;
+        sourceFleet.count = Math.max(0, Math.floor(Number(sourceFleet.count) || 0) - fleetCount);
+        if (sourceFleet.count <= 0) {
+            sourceFleet.count = 0;
+            sourceFleet.active = false;
+            sourceFleet.holding = false;
+            sourceFleet.trail = [];
+        }
+        didSend = true;
+        if (friendlyRoom !== null) friendlyRoom -= fleetCount;
+        createDispatchedFleetLocal(owner, {
+            count: fleetCount,
+            sourceFleet: sourceFleet,
+            targetNode: tgt,
+            sourcePos: sourceFleetPos,
+            targetPos: targetPoint,
+        });
     }
     if (didSend && owner === G.human) {
         G.stats.fleetsSent++;
@@ -1095,7 +1250,8 @@ function aiDecide(pi) {
     if (!own.length) return cmds;
 
     var profile = G.aiProfiles[pi] || AI_ARCHETYPES[1];
-    var useFog = !!G.diffCfg.aiUsesFog;
+    var diffCfg = G.diffCfg || DIFFICULTY_PRESETS.normal;
+    var useFog = !!diffCfg.aiUsesFog;
     var power = computePowerByPlayer();
     var humanPower = power[G.human] || 1;
     var myPower = power[pi] || 1;
@@ -1103,9 +1259,29 @@ function aiDecide(pi) {
     var assist = G.tune.aiAssist ? clamp(delta / 420, -0.12, DDA_MAX_BOOST) : 0;
     var aggr = G.tune.aiAgg * profile.aggr * (1 + assist * 0.8);
     var reserve = Math.max(2, Math.floor(G.tune.aiBuf * profile.reserve * (1 - assist * 0.5)));
-    var maxSources = profile.name === 'Rusher' ? 4 : 3;
+    var extraSources = Math.max(0, Math.floor(Number(diffCfg.aiExtraSources) || 0));
+    var maxSources = (profile.name === 'Rusher' ? 4 : 3) + extraSources;
     var barrierCfg = G.mapFeature && G.mapFeature.type === 'barrier' ? G.mapFeature : null;
     var ownsGate = false;
+    var humanOwners = {};
+    var humanCapitalIds = {};
+    var humanCapitalNodes = [];
+    var aiReserveScale = Number(diffCfg.aiReserveScale);
+    var aiCommitMax = Number(diffCfg.aiCommitMax);
+    var aiCriticalCommitMax = Number(diffCfg.aiCriticalCommitMax);
+    var aiOpportunityRatio = Number(diffCfg.aiOpportunityRatio);
+    var aiTargetHumanBias = Number(diffCfg.aiTargetHumanBias);
+    var aiTargetCapitalBias = Number(diffCfg.aiTargetCapitalBias);
+    var aiFlowPeriod = Math.max(1, Math.floor(Number(diffCfg.aiFlowPeriod) || 13));
+    var aiUpgradePeriod = Math.max(1, Math.floor(Number(diffCfg.aiUpgradePeriod) || 19));
+
+    if (!isFinite(aiReserveScale) || aiReserveScale <= 0) aiReserveScale = 1;
+    if (!isFinite(aiCommitMax) || aiCommitMax <= 0) aiCommitMax = 0.75;
+    if (!isFinite(aiCriticalCommitMax) || aiCriticalCommitMax < aiCommitMax) aiCriticalCommitMax = Math.min(1, aiCommitMax + 0.08);
+    if (!isFinite(aiOpportunityRatio) || aiOpportunityRatio <= 0) aiOpportunityRatio = 0.55;
+    if (!isFinite(aiTargetHumanBias)) aiTargetHumanBias = 0;
+    if (!isFinite(aiTargetCapitalBias)) aiTargetCapitalBias = 0;
+
     if (barrierCfg && Array.isArray(barrierCfg.gateIds)) {
         for (var gi = 0; gi < barrierCfg.gateIds.length; gi++) {
             var gateNode = G.nodes[barrierCfg.gateIds[gi]];
@@ -1114,6 +1290,16 @@ function aiDecide(pi) {
             if (!isNodeAssimilated(gateNode)) continue;
             ownsGate = true;
             break;
+        }
+    }
+    for (var hi = 0; hi < G.players.length; hi++) {
+        var maybeHuman = G.players[hi];
+        if (!maybeHuman || maybeHuman.isAI) continue;
+        humanOwners[hi] = true;
+        var capitalId = G.playerCapital && G.playerCapital[hi] !== undefined ? Number(G.playerCapital[hi]) : -1;
+        if (capitalId >= 0 && G.nodes[capitalId]) {
+            humanCapitalIds[capitalId] = true;
+            humanCapitalNodes.push(G.nodes[capitalId]);
         }
     }
     var myUnits = (G.unitByPlayer && Number(G.unitByPlayer[pi])) || computePlayerUnitCount({ nodes: G.nodes, fleets: G.fleets, owner: pi });
@@ -1125,6 +1311,7 @@ function aiDecide(pi) {
     });
     var capPressure = myCap > 0 ? myUnits / myCap : 0;
     if (capPressure > 0.85) reserve = Math.max(1, Math.floor(reserve * 0.72));
+    reserve = Math.max(1, Math.floor(reserve * aiReserveScale));
     function canDispatchAI(srcNode, tgtNode) {
         return isDispatchAllowed({ src: srcNode, tgt: tgtNode, barrier: barrierCfg, owner: pi, nodes: G.nodes });
     }
@@ -1139,36 +1326,65 @@ function aiDecide(pi) {
 
         var bd = Infinity;
         var reachable = false;
+        var localSupport = 0;
         for (var oi = 0; oi < own.length; oi++) {
             if (!canDispatchAI(own[oi], n)) continue;
             var d = dist(own[oi].pos, n.pos);
+            localSupport += Math.max(0, (Number(own[oi].units) || 0) - reserve);
             reachable = true;
             if (d < bd) bd = d;
         }
         if (!reachable) continue;
+
+        var humanOwnedTarget = !!humanOwners[n.owner];
+        var humanCapitalTarget = !!humanCapitalIds[n.id];
+        var humanCapitalDistance = Infinity;
+        if (humanOwnedTarget && humanCapitalNodes.length) {
+            for (var hc = 0; hc < humanCapitalNodes.length; hc++) {
+                var capitalDistance = dist(n.pos, humanCapitalNodes[hc].pos);
+                if (capitalDistance < humanCapitalDistance) humanCapitalDistance = capitalDistance;
+            }
+        }
 
         var score = 0;
         score += Math.max(0, 520 - bd) * 0.45;
         score += Math.max(0, 55 - tu * tDef) * 2.1;
         score += n.radius * 0.75;
         if (n.owner === -1) score += 34;
+        if (n.owner === -1 && myPower > humanPower * 1.08) score -= 12;
         if (n.kind === 'forge') score += 20;
         if (n.kind === 'relay') score += 12;
         if (n.kind === 'turret') score -= 18;
         if (n.gate && n.owner !== pi) score += ownsGate ? 10 : 64;
         if (strategicPulseAppliesToNode(n.id)) score += STRATEGIC_PULSE_AI_BONUS;
         if (n.level > 1) score += (n.level - 1) * 11;
+        if (humanOwnedTarget) score += aiTargetHumanBias;
+        if (humanCapitalTarget) score += aiTargetCapitalBias;
+        if (humanOwnedTarget && humanCapitalDistance < Infinity) score += Math.max(0, 280 - humanCapitalDistance) * 0.08;
         if (capPressure > 0.9) score += Math.max(0, 44 - tu * tDef) * 0.6;
+        if (n.kind === 'turret') {
+            var turretPressureNeed = tu * tDef + 23 + (n.level || 1) * 3;
+            if (localSupport < turretPressureNeed * 0.95) score -= 140;
+            else if (localSupport < turretPressureNeed * 1.15) score -= 44;
+        }
         score *= aggr;
 
-        targets.push({ id: n.id, score: score, units: tu, effDef: tDef });
+        targets.push({
+            id: n.id,
+            score: score,
+            units: tu,
+            effDef: tDef,
+            humanOwned: humanOwnedTarget,
+            humanCapital: humanCapitalTarget
+        });
     }
 
     targets.sort(function (a, b) { return b.score - a.score; });
     var attackCount = myPower < humanPower ? 2 : 1;
-    if (profile.name === 'Rusher') attackCount = Math.min(2, targets.length);
+    if (profile.name === 'Rusher') attackCount = Math.max(attackCount, 2);
+    if (myPower >= humanPower * 0.9 && targets.length > 2) attackCount += 1;
     if (capPressure > 0.9) attackCount += 1;
-    attackCount = Math.min(attackCount, targets.length, G.diffCfg.maxAttackTargets);
+    attackCount = Math.min(attackCount, targets.length, diffCfg.maxAttackTargets);
 
     for (var ti = 0; ti < attackCount; ti++) {
         var t = targets[ti], tn = G.nodes[t.id], srcs = [], total = 0;
@@ -1188,20 +1404,33 @@ function aiDecide(pi) {
             if (total >= needed) break;
         }
         if (srcs.length === 0) continue;
-        if (total < needed * 0.55 && tn.owner !== -1) continue;
-        var pctMax = capPressure > 0.9 ? 0.9 : 0.75;
-        var pct = clamp(needed / Math.max(total, 1), 0.3, pctMax);
+        var opportunityRatio = aiOpportunityRatio;
+        if (t.humanOwned) opportunityRatio = Math.max(0.4, opportunityRatio - 0.04);
+        if (t.humanCapital) opportunityRatio = Math.max(0.34, opportunityRatio - 0.08);
+        if (tn.kind === 'turret') opportunityRatio = Math.max(opportunityRatio, 0.95);
+        if (total < needed * opportunityRatio && tn.owner !== -1) continue;
+        var pctMax = capPressure > 0.9 ? Math.max(aiCommitMax, 0.92) : aiCommitMax;
+        if (t.humanOwned) pctMax = Math.max(pctMax, aiCriticalCommitMax - 0.04);
+        if (t.humanCapital) pctMax = Math.max(pctMax, aiCriticalCommitMax);
+        if (tn.kind === 'turret') pctMax = Math.max(pctMax, Math.min(1, aiCriticalCommitMax));
+        pctMax = Math.min(1, pctMax);
+        var pctMin = t.humanCapital ? 0.42 : (t.humanOwned ? 0.35 : 0.3);
+        if (tn.kind === 'turret') pctMin = Math.max(pctMin, 0.58);
+        var pct = clamp(needed / Math.max(total, 1), pctMin, pctMax);
+        if (t.humanCapital && myPower >= humanPower * 0.9) pct = Math.max(pct, pctMax * 0.92);
         if (capPressure > 0.95) pct = Math.max(pct, 0.72);
 
-        var flowGate = ((G.tick + tn.id * 3 + pi * 7) % 13) === 0;
-        var shouldFlow = tn.owner !== -1 && tn.units > 12 && profile.flow > 0.75 && flowGate &&
+        var flowGate = ((G.tick + tn.id * 3 + pi * 7) % aiFlowPeriod) === 0;
+        var shouldFlow = profile.flow > 0.75 &&
             !G.flows.some(function (f) { return f.owner === pi && f.tgtId === tn.id && f.active; }) &&
-            canDispatchAI(G.nodes[srcs[0]], tn);
+            canDispatchAI(G.nodes[srcs[0]], tn) &&
+            tn.kind !== 'turret' &&
+            (t.humanCapital || (flowGate && ((t.humanOwned && tn.units > 8) || (tn.owner !== -1 && tn.units > 12))));
         if (shouldFlow) cmds.push({ type: 'flow', srcId: srcs[0], tgtId: tn.id });
         cmds.push({ type: 'send', sources: srcs, tgtId: tn.id, pct: pct });
     }
 
-    var upgradeGate = ((G.tick + pi * 11) % 19) === 0;
+    var upgradeGate = ((G.tick + pi * 11) % aiUpgradePeriod) === 0;
     if (upgradeGate && profile.upg > 0.4) {
         var upNode = null, upScore = -1;
         for (var oi = 0; oi < own.length; oi++) {
@@ -1274,12 +1503,15 @@ function applyRep(evt) {
     switch (type) {
         case 'select': {
             var ids = d.ids || d.nodeIds || [];
-            if (!d.append) for (var si = 0; si < G.nodes.length; si++) G.nodes[si].selected = false;
-            for (var sj = 0; sj < ids.length; sj++) if (G.nodes[ids[sj]]) G.nodes[ids[sj]].selected = true;
+            var fleetIds = d.fleetIds || [];
+            if (!d.append) clearSelection(true);
+            for (var si = 0; si < ids.length; si++) if (G.nodes[ids[si]]) inp.sel.add(ids[si]);
+            for (var sj = 0; sj < fleetIds.length; sj++) if (findHoldingFleetById(fleetIds[sj])) inp.selFleets.add(fleetIds[sj]);
+            syncNodeSelectionFlags();
             break;
         }
         case 'deselect':
-            for (var i = 0; i < G.nodes.length; i++) G.nodes[i].selected = false;
+            clearSelection(true);
             break;
         case 'send':
             applyPlayerCommand(G.human, 'send', d);
@@ -1910,7 +2142,8 @@ function drawRocketShape(ctx, x, y, dirX, dirY, col, flicker, alpha, scale, bank
 
 function drawFleetRocket(ctx, f, col, tick) {
     var count = Math.max(1, Number(f.count) || 1);
-    var srcNode = G.nodes[f.srcId], tgtNode = G.nodes[f.tgtId];
+    var routeStart = fleetRouteStart(f), routeTarget = fleetRouteTarget(f);
+    if (!routeStart || !routeTarget) return;
     var cp = { x: f.cpx, y: f.cpy };
     var launchT = clamp(typeof f.launchT === 'number' ? f.launchT : 0, 0, 0.2);
     var trail = f.trail || [];
@@ -1962,12 +2195,11 @@ function drawFleetRocket(ctx, f, col, tick) {
         dirX = f.x - from.x;
         dirY = f.y - from.y;
     } else {
-        var src = G.nodes[f.srcId], tgt = G.nodes[f.tgtId];
-        if (src && tgt) { dirX = tgt.pos.x - src.pos.x; dirY = tgt.pos.y - src.pos.y; }
+        dirX = routeTarget.x - routeStart.x;
+        dirY = routeTarget.y - routeStart.y;
     }
     var dLen = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
     dirX /= dLen; dirY /= dLen;
-    var nX = -dirY, nY = dirX;
 
     var phase = tick * 0.28 + f.srcId * 0.9 + f.tgtId * 0.6 + (f.id || 0) * 0.17 + f.offsetL * 0.08;
     var flicker = 0.5 + 0.5 * Math.sin(phase);
@@ -1980,7 +2212,7 @@ function drawFleetRocket(ctx, f, col, tick) {
     drawRocketShape(ctx, renderX, renderY, dirX, dirY, shipCol, flicker, 1, 1, leadBank, throttle + hitFlash * 0.18);
 
     var supportCount = Math.max(0, Math.floor(count) - 1);
-    if (supportCount > 0 && srcNode && tgtNode) {
+    if (supportCount > 0) {
         var spacingT = getFleetUnitSpacingT(f);
         var visibleSupportCount = Math.min(supportCount, Math.max(1, Math.min(24, Math.round(Math.sqrt(count) * 4.2))));
         var swarmLaneCount = Math.max(2, Math.min(6, Math.round(Math.sqrt(visibleSupportCount * 0.9))));
@@ -2001,8 +2233,8 @@ function drawFleetRocket(ctx, f, col, tick) {
             if (tUnit <= 0) continue;
             var curveT = launchT + (1 - launchT) * clamp(tUnit, 0, 0.999);
 
-            var pt = bezPt(srcNode.pos, cp, tgtNode.pos, curveT);
-            var pt2 = bezPt(srcNode.pos, cp, tgtNode.pos, Math.min(1, curveT + 0.01));
+            var pt = bezPt(routeStart, cp, routeTarget, curveT);
+            var pt2 = bezPt(routeStart, cp, routeTarget, Math.min(1, curveT + 0.01));
             var udx = pt2.x - pt.x, udy = pt2.y - pt.y;
             var ulen = Math.sqrt(udx * udx + udy * udy) || 1;
             udx /= ulen; udy /= ulen;
@@ -2022,6 +2254,67 @@ function drawFleetRocket(ctx, f, col, tick) {
             drawRocketShape(ctx, sx, sy, udx, udy, shipCol, localFlicker, alpha, supportScale, supportBank, throttle * 0.94 + hitFlash * 0.12);
         }
     }
+}
+
+function drawHoldingFleet(ctx, fleet, col, tick, selected) {
+    var x = Number(fleet.x) || 0;
+    var y = Number(fleet.y) || 0;
+    var r = fleetSelectionRadius(fleet);
+    var pulse = 0.72 + 0.28 * Math.sin(tick * 0.08 + (fleet.id || 0) * 0.31);
+    var dir = Number.isFinite(fleet.headingX) && Number.isFinite(fleet.headingY)
+        ? { x: fleet.headingX, y: fleet.headingY }
+        : { x: 1, y: 0 };
+    var dirLen = Math.sqrt(dir.x * dir.x + dir.y * dir.y) || 1;
+    dir.x /= dirLen;
+    dir.y /= dirLen;
+    var nX = -dir.y, nY = dir.x;
+    var count = Math.max(1, Math.floor(Number(fleet.count) || 0));
+    var shipCount = Math.max(3, Math.min(9, Math.round(Math.sqrt(count) * 1.5)));
+    var formationRadius = Math.max(6, r * 0.78);
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.ellipse(x, y, formationRadius + 6, formationRadius * 0.72 + 4, Math.atan2(dir.y, dir.x), 0, Math.PI * 2);
+    ctx.fillStyle = hexToRgba(col, 0.06 + pulse * 0.05);
+    ctx.fill();
+
+    for (var i = 0; i < shipCount; i++) {
+        var ratio = shipCount <= 1 ? 0 : i / (shipCount - 1);
+        var lateral = (ratio - 0.5) * formationRadius * 1.35;
+        var depth = (Math.abs(ratio - 0.5) * -3.4) + Math.sin(tick * 0.02 + i * 1.7 + (fleet.id || 0)) * 1.1;
+        var shipX = x + nX * lateral - dir.x * depth;
+        var shipY = y + nY * lateral - dir.y * depth;
+        var shipScale = i === Math.floor(shipCount / 2) ? 0.8 : 0.66;
+        var shipAlpha = i === Math.floor(shipCount / 2) ? 0.96 : 0.72;
+        drawRocketShape(ctx, shipX, shipY, dir.x, dir.y, col, 0.5 + 0.5 * Math.sin(tick * 0.06 + i * 0.8 + fleet.id), shipAlpha, shipScale, 0, 0.6);
+    }
+
+    if (selected) {
+        var bracketR = formationRadius + 6;
+        var bracketA = Math.atan2(dir.y, dir.x);
+        var bracketPts = [
+            { x: Math.cos(bracketA) * bracketR - Math.sin(bracketA) * bracketR * 0.72, y: Math.sin(bracketA) * bracketR + Math.cos(bracketA) * bracketR * 0.72 },
+            { x: Math.cos(bracketA) * bracketR + Math.sin(bracketA) * bracketR * 0.72, y: Math.sin(bracketA) * bracketR - Math.cos(bracketA) * bracketR * 0.72 },
+            { x: -Math.cos(bracketA) * bracketR + Math.sin(bracketA) * bracketR * 0.72, y: -Math.sin(bracketA) * bracketR - Math.cos(bracketA) * bracketR * 0.72 },
+            { x: -Math.cos(bracketA) * bracketR - Math.sin(bracketA) * bracketR * 0.72, y: -Math.sin(bracketA) * bracketR + Math.cos(bracketA) * bracketR * 0.72 },
+        ];
+        ctx.strokeStyle = hexToRgba(col, 0.95);
+        ctx.lineWidth = 1.6;
+        for (var bi = 0; bi < bracketPts.length; bi++) {
+            var bp = bracketPts[bi];
+            ctx.beginPath();
+            ctx.moveTo(x + bp.x * 0.7, y + bp.y * 0.7);
+            ctx.lineTo(x + bp.x, y + bp.y);
+            ctx.stroke();
+        }
+    }
+
+    ctx.font = 'bold 10px Outfit,sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,0.96)';
+    ctx.fillText(String(count), x, y + formationRadius + 9);
+    ctx.restore();
 }
 
 function desiredOrbitSquadCount(node) {
@@ -2218,6 +2511,7 @@ function drawOrbitalSquadron(ctx, node, squad, col, tick, frontPass) {
 }
 
 function render(ctx, cv, tick) {
+    pruneSelectedFleetIds();
     ctx.fillStyle = COLORS_BG; ctx.fillRect(0, 0, cv.width, cv.height);
     ctx.save(); ctx.translate(cv.width / 2, cv.height / 2); ctx.scale(G.cam.zoom, G.cam.zoom); ctx.translate(-G.cam.x, -G.cam.y);
 
@@ -2284,10 +2578,15 @@ function render(ctx, cv, tick) {
     // Ã¢â€â‚¬Ã¢â€â‚¬ FLEETS WITH TRAILS Ã¢â€â‚¬Ã¢â€â‚¬
     var fhw = hw + 30, fhh = hh + 30;
     for (var i = 0; i < G.fleets.length; i++) {
-        var f = G.fleets[i]; if (!f.active || f.t <= 0) continue;
+        var f = G.fleets[i]; if (!f.active) continue;
         if (G.tune.fogEnabled && f.owner !== G.human && !fleetVis(f, G.human, G.nodes)) continue;
         if (Math.abs(f.x - G.cam.x) > fhw || Math.abs(f.y - G.cam.y) > fhh) continue;
         var col = G.players[f.owner] ? G.players[f.owner].color : COL_NEUTRAL;
+        if (f.holding) {
+            drawHoldingFleet(ctx, f, col, tick, inp.selFleets.has(f.id));
+            continue;
+        }
+        if (f.t <= 0) continue;
         drawFleetRocket(ctx, f, col, tick);
     }
     for (var bi = 0; bi < G.turretBeams.length; bi++) {
@@ -2654,10 +2953,10 @@ function drawMapFeature(ctx, tick) {
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ INPUT Ã¢â€â‚¬Ã¢â€â‚¬
 var inp = {
-    sel: new Set(), marqActive: false, marqStart: { x: 0, y: 0 }, marqEnd: { x: 0, y: 0 }, dragActive: false, dragStart: { x: 0, y: 0 }, dragEnd: { x: 0, y: 0 }, dragSrcs: [],
-    dragPending: false, dragDownNodeId: -1, dragDownScreen: { x: 0, y: 0 }, dragThreshold: 6,
+    sel: new Set(), selFleets: new Set(), marqActive: false, marqStart: { x: 0, y: 0 }, marqEnd: { x: 0, y: 0 }, dragActive: false, dragStart: { x: 0, y: 0 }, dragEnd: { x: 0, y: 0 }, dragNodeIds: [], dragFleetIds: [],
+    dragPending: false, dragDownNodeId: -1, dragDownFleetId: -1, dragDownScreen: { x: 0, y: 0 }, dragThreshold: 6,
     panActive: false, panLast: { x: 0, y: 0 }, mw: { x: 0, y: 0 }, ms: { x: 0, y: 0 }, sendPct: 50, shift: false,
-    pinchActive: false, pinchStartDist: 0, pinchStartZoom: 1, pinchWorldCenter: { x: 0, y: 0 }
+    pinchActive: false, pinchStartDist: 0, pinchStartZoom: 1, pinchWorldCenter: { x: 0, y: 0 }, touchPointOrderPending: false, mousePointOrderPending: false
 };
 function s2w(sx, sy) { return { x: (sx - cv.width / 2) / G.cam.zoom + G.cam.x, y: (sy - cv.height / 2) / G.cam.zoom + G.cam.y }; }
 function touchScreenPos(touch) {
@@ -2675,8 +2974,7 @@ function beginTouchPinch(a, b) {
     inp.pinchStartDist = Math.max(1, screenDistance(a, b));
     inp.pinchStartZoom = G.cam.zoom;
     inp.pinchWorldCenter = s2w(center.x, center.y);
-    inp.dragActive = false;
-    inp.dragPending = false;
+    resetDragState();
     inp.marqActive = false;
 }
 function updateTouchPinch(a, b) {
@@ -2687,45 +2985,157 @@ function updateTouchPinch(a, b) {
     G.cam.y = inp.pinchWorldCenter.y - (center.y - cv.height / 2) / G.cam.zoom;
 }
 function hitNode(wp) { for (var i = 0; i < G.nodes.length; i++) { var n = G.nodes[i]; if (dist(wp, n.pos) <= n.radius + 5) return n; } return null; }
+function findHoldingFleetById(id) {
+    for (var i = 0; i < G.fleets.length; i++) {
+        var fleet = G.fleets[i];
+        if (!fleet || !fleet.active || !fleet.holding) continue;
+        if ((Number(fleet.id) || 0) === id) return fleet;
+    }
+    return null;
+}
+function pruneSelectedFleetIds() {
+    var stale = [];
+    inp.selFleets.forEach(function (id) {
+        var fleet = findHoldingFleetById(id);
+        if (!fleet || fleet.owner !== G.human) stale.push(id);
+    });
+    for (var i = 0; i < stale.length; i++) inp.selFleets.delete(stale[i]);
+}
+function syncNodeSelectionFlags() {
+    for (var i = 0; i < G.nodes.length; i++) G.nodes[i].selected = inp.sel.has(G.nodes[i].id);
+}
+function recordSelectionEvent(append) {
+    recEvt('select', { ids: Array.from(inp.sel), fleetIds: Array.from(inp.selFleets), append: !!append });
+}
+function clearSelection(skipReplayEvent) {
+    inp.sel.clear();
+    inp.selFleets.clear();
+    syncNodeSelectionFlags();
+    if (!skipReplayEvent) recEvt('deselect', {});
+}
+function selectEntityIds(nodeIds, fleetIds, append) {
+    pruneSelectedFleetIds();
+    if (!append) {
+        inp.sel.clear();
+        inp.selFleets.clear();
+    }
+    for (var i = 0; i < nodeIds.length; i++) {
+        var node = G.nodes[nodeIds[i]];
+        if (!node || node.owner !== G.human) continue;
+        inp.sel.add(node.id);
+    }
+    for (var fi = 0; fi < fleetIds.length; fi++) {
+        var fleet = findHoldingFleetById(fleetIds[fi]);
+        if (!fleet || fleet.owner !== G.human) continue;
+        inp.selFleets.add(fleet.id);
+    }
+    syncNodeSelectionFlags();
+    recordSelectionEvent(append);
+}
+function selectNodeIds(ids, append) {
+    selectEntityIds(ids, [], append);
+}
+function selectFleetIds(ids, append) {
+    selectEntityIds([], ids, append);
+}
+function hitHoldingFleet(wp) {
+    var best = null, bestDist = Infinity;
+    for (var i = G.fleets.length - 1; i >= 0; i--) {
+        var fleet = G.fleets[i];
+        if (!fleet || !fleet.active || !fleet.holding || fleet.owner !== G.human) continue;
+        var radius = fleetSelectionRadius(fleet) + 6;
+        var dx = (Number(fleet.x) || 0) - wp.x;
+        var dy = (Number(fleet.y) || 0) - wp.y;
+        var d = Math.sqrt(dx * dx + dy * dy);
+        if (d > radius || d >= bestDist) continue;
+        best = fleet;
+        bestDist = d;
+    }
+    return best;
+}
 function nodesInRect(s, e, pi) {
     var x0 = Math.min(s.x, e.x), x1 = Math.max(s.x, e.x), y0 = Math.min(s.y, e.y), y1 = Math.max(s.y, e.y), r = [];
     for (var i = 0; i < G.nodes.length; i++) { var n = G.nodes[i]; if (n.owner === pi && n.pos.x >= x0 && n.pos.x <= x1 && n.pos.y >= y0 && n.pos.y <= y1) r.push(n.id); } return r;
 }
-function selectedSendSources(tgtId) {
-    var srcs = [];
+function holdingFleetIdsInRect(s, e, pi) {
+    var x0 = Math.min(s.x, e.x), x1 = Math.max(s.x, e.x), y0 = Math.min(s.y, e.y), y1 = Math.max(s.y, e.y), ids = [];
+    for (var i = 0; i < G.fleets.length; i++) {
+        var fleet = G.fleets[i];
+        if (!fleet || !fleet.active || !fleet.holding || fleet.owner !== pi) continue;
+        var fx = Number(fleet.x) || 0;
+        var fy = Number(fleet.y) || 0;
+        if (fx >= x0 && fx <= x1 && fy >= y0 && fy <= y1) ids.push(fleet.id);
+    }
+    return ids;
+}
+function selectedSendOrder(tgtId) {
+    pruneSelectedFleetIds();
+    var srcs = [], fleetIds = [];
     inp.sel.forEach(function (sid) {
         var sn = G.nodes[sid];
         if (!sn || sn.owner !== G.human || sid === tgtId) return;
         srcs.push(sid);
     });
-    return srcs;
+    inp.selFleets.forEach(function (id) {
+        var fleet = findHoldingFleetById(id);
+        if (!fleet || fleet.owner !== G.human) return;
+        fleetIds.push(fleet.id);
+    });
+    return { sources: srcs, fleetIds: fleetIds };
 }
 function sendFromSelectionTo(tgtId) {
-    var srcs = selectedSendSources(tgtId);
-    if (!srcs.length) return false;
-    var sendData = { sources: srcs, tgtId: tgtId, pct: inp.sendPct / 100 };
+    var selected = selectedSendOrder(tgtId);
+    if (!selected.sources.length && !selected.fleetIds.length) return false;
+    var sendData = { sources: selected.sources, fleetIds: selected.fleetIds, tgtId: tgtId, pct: inp.sendPct / 100 };
     if (!issueOnlineCommand('send', sendData)) {
         applyPlayerCommand(G.human, 'send', sendData);
         recEvt('send', sendData);
     }
     return true;
 }
-function sendFromSourcesTo(srcs, tgtId) {
-    var valid = [];
+function sendFromSourcesTo(srcs, fleetIds, tgtId) {
+    var valid = [], validFleetIds = [];
     for (var i = 0; i < srcs.length; i++) {
         var sid = srcs[i];
         var sn = G.nodes[sid];
         if (sn && sn.owner === G.human && sid !== tgtId) valid.push(sid);
     }
-    if (!valid.length) return false;
-    var sendData = { sources: valid, tgtId: tgtId, pct: inp.sendPct / 100 };
+    for (var fi = 0; fi < fleetIds.length; fi++) {
+        var fleet = findHoldingFleetById(fleetIds[fi]);
+        if (!fleet || fleet.owner !== G.human) continue;
+        validFleetIds.push(fleet.id);
+    }
+    if (!valid.length && !validFleetIds.length) return false;
+    var sendData = { sources: valid, fleetIds: validFleetIds, tgtId: tgtId, pct: inp.sendPct / 100 };
     if (!issueOnlineCommand('send', sendData)) {
         applyPlayerCommand(G.human, 'send', sendData);
         recEvt('send', sendData);
     }
     return true;
 }
-function centroidForSources(srcIds) {
+function sendFromSourcesToPoint(srcs, fleetIds, point) {
+    var targetPoint = normalizePointTarget(point);
+    if (!targetPoint) return false;
+    var valid = [], validFleetIds = [];
+    for (var i = 0; i < srcs.length; i++) {
+        var sid = srcs[i];
+        var sn = G.nodes[sid];
+        if (sn && sn.owner === G.human) valid.push(sid);
+    }
+    for (var fi = 0; fi < fleetIds.length; fi++) {
+        var fleet = findHoldingFleetById(fleetIds[fi]);
+        if (!fleet || fleet.owner !== G.human) continue;
+        validFleetIds.push(fleet.id);
+    }
+    if (!valid.length && !validFleetIds.length) return false;
+    var sendData = { sources: valid, fleetIds: validFleetIds, targetPoint: targetPoint, pct: inp.sendPct / 100 };
+    if (!issueOnlineCommand('send', sendData)) {
+        applyPlayerCommand(G.human, 'send', sendData);
+        recEvt('send', sendData);
+    }
+    return true;
+}
+function centroidForSources(srcIds, fleetIds) {
     var cx = 0, cy = 0, cc = 0;
     for (var i = 0; i < srcIds.length; i++) {
         var sn = G.nodes[srcIds[i]];
@@ -2734,18 +3144,36 @@ function centroidForSources(srcIds) {
         cy += sn.pos.y;
         cc++;
     }
+    for (var fi = 0; fi < fleetIds.length; fi++) {
+        var fleet = findHoldingFleetById(fleetIds[fi]);
+        if (!fleet || fleet.owner !== G.human) continue;
+        cx += Number(fleet.x) || 0;
+        cy += Number(fleet.y) || 0;
+        cc++;
+    }
     if (!cc) return null;
     return { x: cx / cc, y: cy / cc };
 }
-function beginDragSend(srcIds, worldPos) {
-    var center = centroidForSources(srcIds);
+function beginDragSend(srcIds, fleetIds, worldPos) {
+    var center = centroidForSources(srcIds, fleetIds);
     if (!center) return false;
     inp.dragActive = true;
     inp.dragPending = false;
-    inp.dragSrcs = srcIds.slice();
+    inp.dragNodeIds = srcIds.slice();
+    inp.dragFleetIds = fleetIds.slice();
     inp.dragStart = center;
     inp.dragEnd = worldPos;
     return true;
+}
+function resetDragState() {
+    inp.dragActive = false;
+    inp.dragPending = false;
+    inp.dragDownNodeId = -1;
+    inp.dragDownFleetId = -1;
+    inp.dragNodeIds = [];
+    inp.dragFleetIds = [];
+    inp.touchPointOrderPending = false;
+    inp.mousePointOrderPending = false;
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ DOM Ã¢â€â‚¬Ã¢â€â‚¬
@@ -3335,6 +3763,13 @@ function captureSyncSnapshot() {
                 count: fleet.count,
                 srcId: fleet.srcId,
                 tgtId: fleet.tgtId,
+                fromX: fleet.fromX,
+                fromY: fleet.fromY,
+                toX: fleet.toX,
+                toY: fleet.toY,
+                holding: !!fleet.holding,
+                routeSrcKey: fleet.routeSrcKey || '',
+                routeTgtKey: fleet.routeTgtKey || '',
                 t: fleet.t,
                 speed: fleet.speed,
                 arcLen: fleet.arcLen,
@@ -3555,6 +3990,8 @@ function applySyncSnapshot(snapshot) {
     G.rng = new RNG(1);
     G.rng.s = Math.floor(Number(snapshot.rngState) || 1) || 1;
     net.lastAppliedSeq = typeof snapshot.lastAppliedSeq === 'number' ? snapshot.lastAppliedSeq : -1;
+    clearSelection(true);
+    resetDragState();
     powerRenderKey = '';
     return true;
 }
@@ -4034,9 +4471,8 @@ function ensureSocket() {
         if (G.daily.active) syncDailyChallengeState(payload.challenge);
         else { G.daily.bestTick = 0; G.daily.completed = false; }
         currentCustomMapConfig = onlineCustomMap;
-        inp.sel.clear();
+        clearSelection(true);
         clearChatMessages();
-        for (var i = 0; i < G.nodes.length; i++) G.nodes[i].selected = false;
         spIdx = 0;
         spdBtn.textContent = '1x';
         tuneFogCb.checked = G.tune.fogEnabled;
@@ -4460,8 +4896,8 @@ function refreshCampaignUI() {
     if (scenarioStartBtn) scenarioStartBtn.textContent = 'Bolum ' + selected.id + ' Baslat';
 }
 function resetSelectionAndSpeed() {
-    inp.sel.clear();
-    for (var i = 0; i < G.nodes.length; i++) G.nodes[i].selected = false;
+    clearSelection(true);
+    resetDragState();
     spIdx = 0;
     if (spdBtn) spdBtn.textContent = '1x';
 }
@@ -4922,60 +5358,120 @@ cv.addEventListener('mousedown', function (e) {
         }
         e.preventDefault(); return;
     }
-    var cn = hitNode(w); inp.shift = e.shiftKey;
+    var cn = hitNode(w), hf = null; if (!cn) hf = hitHoldingFleet(w); inp.shift = e.shiftKey;
     inp.dragPending = false;
     inp.dragDownNodeId = -1;
-    if (cn && cn.owner === G.human && inp.sel.size > 0 && !inp.sel.has(cn.id) && !e.shiftKey) {
+    inp.dragDownFleetId = -1;
+    if (cn && cn.owner === G.human && (inp.sel.size > 0 || inp.selFleets.size > 0) && !inp.sel.has(cn.id) && !e.shiftKey) {
         if (sendFromSelectionTo(cn.id)) return;
     }
 
     if (cn && cn.owner === G.human) {
-        var dragSources = [];
-        if (inp.sel.has(cn.id) && inp.sel.size > 0) {
-            inp.sel.forEach(function (sid) {
-                var sn = G.nodes[sid];
-                if (sn && sn.owner === G.human) dragSources.push(sid);
-            });
-        } else {
-            G.nodes.forEach(function (n) { n.selected = false; });
-            inp.sel.clear();
-            cn.selected = true;
+        var dragSelection = null;
+        if (inp.sel.has(cn.id) && (inp.sel.size > 0 || inp.selFleets.size > 0)) {
+            dragSelection = selectedSendOrder();
+        } else if (e.shiftKey) {
             inp.sel.add(cn.id);
-            dragSources = [cn.id];
+            syncNodeSelectionFlags();
+            recordSelectionEvent(true);
+            dragSelection = selectedSendOrder();
             if (typeof AudioFX !== 'undefined') AudioFX.select();
-            recEvt('select', { ids: Array.from(inp.sel), append: false });
+        } else {
+            selectNodeIds([cn.id], false);
+            dragSelection = { sources: [cn.id], fleetIds: [] };
+            if (typeof AudioFX !== 'undefined') AudioFX.select();
         }
-        if (dragSources.length > 0) {
+        if ((dragSelection.sources.length + dragSelection.fleetIds.length) > 0) {
             inp.dragPending = true;
             inp.dragDownNodeId = cn.id;
             inp.dragDownScreen = { x: e.offsetX, y: e.offsetY };
-            inp.dragSrcs = dragSources;
-            var startPt = centroidForSources(dragSources);
+            inp.dragNodeIds = dragSelection.sources.slice();
+            inp.dragFleetIds = dragSelection.fleetIds.slice();
+            var startPt = centroidForSources(dragSelection.sources, dragSelection.fleetIds);
             inp.dragStart = startPt || { x: cn.pos.x, y: cn.pos.y };
             inp.dragEnd = w;
         }
         return;
     }
 
-    if (cn && inp.sel.size > 0) {
+    if (hf) {
+        pruneSelectedFleetIds();
+        var fleetDragSelection = null;
+        if (inp.selFleets.has(hf.id) && (inp.sel.size > 0 || inp.selFleets.size > 0)) {
+            fleetDragSelection = selectedSendOrder();
+        } else if (e.shiftKey) {
+            inp.selFleets.add(hf.id);
+            syncNodeSelectionFlags();
+            recordSelectionEvent(true);
+            fleetDragSelection = selectedSendOrder();
+            if (typeof AudioFX !== 'undefined') AudioFX.select();
+        } else {
+            selectFleetIds([hf.id], false);
+            fleetDragSelection = { sources: [], fleetIds: [hf.id] };
+            if (typeof AudioFX !== 'undefined') AudioFX.select();
+        }
+        if ((fleetDragSelection.sources.length + fleetDragSelection.fleetIds.length) > 0) {
+            inp.dragPending = true;
+            inp.dragDownFleetId = hf.id;
+            inp.dragDownScreen = { x: e.offsetX, y: e.offsetY };
+            inp.dragNodeIds = fleetDragSelection.sources.slice();
+            inp.dragFleetIds = fleetDragSelection.fleetIds.slice();
+            var fleetStartPt = centroidForSources(fleetDragSelection.sources, fleetDragSelection.fleetIds);
+            inp.dragStart = fleetStartPt || { x: hf.x, y: hf.y };
+            inp.dragEnd = w;
+        }
+        return;
+    }
+
+    if (cn && (inp.sel.size > 0 || inp.selFleets.size > 0)) {
         sendFromSelectionTo(cn.id);
         return;
     }
 
-    if (!cn) {
-        if (!e.shiftKey) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); recEvt('deselect', {}); }
-        inp.marqActive = true; inp.marqStart = { x: e.offsetX, y: e.offsetY }; inp.marqEnd = { x: e.offsetX, y: e.offsetY };
+    if (!e.shiftKey && (inp.sel.size > 0 || inp.selFleets.size > 0)) {
+        var mousePointSelection = selectedSendOrder();
+        if (mousePointSelection.sources.length > 0 || mousePointSelection.fleetIds.length > 0) {
+            inp.dragPending = true;
+            inp.dragDownNodeId = mousePointSelection.sources.length > 0 ? mousePointSelection.sources[0] : -1;
+            inp.dragDownFleetId = mousePointSelection.fleetIds.length > 0 ? mousePointSelection.fleetIds[0] : -1;
+            inp.dragDownScreen = { x: e.offsetX, y: e.offsetY };
+            inp.dragNodeIds = mousePointSelection.sources.slice();
+            inp.dragFleetIds = mousePointSelection.fleetIds.slice();
+            inp.dragStart = centroidForSources(mousePointSelection.sources, mousePointSelection.fleetIds) || w;
+            inp.dragEnd = w;
+            inp.mousePointOrderPending = true;
+            return;
+        }
     }
+    if (!e.shiftKey) clearSelection(false);
+    inp.marqActive = true; inp.marqStart = { x: e.offsetX, y: e.offsetY }; inp.marqEnd = { x: e.offsetX, y: e.offsetY };
 });
 cv.addEventListener('mousemove', function (e) {
     var w = s2w(e.offsetX, e.offsetY); inp.mw = w; inp.ms = { x: e.offsetX, y: e.offsetY };
     if (inp.panActive) { var dx = (e.offsetX - inp.panLast.x) / G.cam.zoom, dy = (e.offsetY - inp.panLast.y) / G.cam.zoom; G.cam.x -= dx; G.cam.y -= dy; inp.panLast = { x: e.offsetX, y: e.offsetY }; return; }
-    if (inp.dragPending && !inp.dragActive) {
+    if (inp.mousePointOrderPending && !inp.dragActive) {
         var mdx = e.offsetX - inp.dragDownScreen.x;
         var mdy = e.offsetY - inp.dragDownScreen.y;
         var movedPx = Math.sqrt(mdx * mdx + mdy * mdy);
-        if (shouldStartDragSend({ downOnOwnedNode: inp.dragDownNodeId >= 0, movedPx: movedPx, thresholdPx: inp.dragThreshold })) {
-            beginDragSend(inp.dragSrcs, w);
+        if (movedPx >= inp.dragThreshold) {
+            inp.mousePointOrderPending = false;
+            inp.dragPending = false;
+            inp.dragDownNodeId = -1;
+            inp.dragDownFleetId = -1;
+            inp.dragNodeIds = [];
+            inp.dragFleetIds = [];
+            if (!inp.shift) clearSelection(false);
+            inp.marqActive = true;
+            inp.marqStart = { x: inp.dragDownScreen.x, y: inp.dragDownScreen.y };
+            inp.marqEnd = { x: e.offsetX, y: e.offsetY };
+            return;
+        }
+    } else if (inp.dragPending && !inp.dragActive) {
+        var mdx2 = e.offsetX - inp.dragDownScreen.x;
+        var mdy2 = e.offsetY - inp.dragDownScreen.y;
+        var movedPx2 = Math.sqrt(mdx2 * mdx2 + mdy2 * mdy2);
+        if (shouldStartDragSend({ downOnOwnedNode: inp.dragDownNodeId >= 0 || inp.dragDownFleetId >= 0, movedPx: movedPx2, thresholdPx: inp.dragThreshold })) {
+            beginDragSend(inp.dragNodeIds, inp.dragFleetIds, w);
         }
     }
     if (inp.dragActive) { inp.dragEnd = w; return; }
@@ -4985,14 +5481,22 @@ cv.addEventListener('mouseup', function (e) {
     if (e.button === 1) { inp.panActive = false; return; }
     if (inp.dragActive) {
         var w = s2w(e.offsetX, e.offsetY), tn = hitNode(w);
-        if (tn && inp.dragSrcs.length > 0) sendFromSourcesTo(inp.dragSrcs, tn.id);
-        inp.dragActive = false; inp.dragPending = false; inp.dragDownNodeId = -1; inp.dragSrcs = []; return;
+        if (tn) sendFromSourcesTo(inp.dragNodeIds, inp.dragFleetIds, tn.id);
+        else sendFromSourcesToPoint(inp.dragNodeIds, inp.dragFleetIds, w);
+        resetDragState(); return;
+    }
+    if (inp.mousePointOrderPending) {
+        sendFromSourcesToPoint(inp.dragNodeIds, inp.dragFleetIds, s2w(e.offsetX, e.offsetY));
+        resetDragState();
+        return;
     }
     inp.dragPending = false;
     inp.dragDownNodeId = -1;
+    inp.dragDownFleetId = -1;
     if (inp.marqActive) {
-        var sw = s2w(inp.marqStart.x, inp.marqStart.y), ew = s2w(inp.marqEnd.x, inp.marqEnd.y), ids = nodesInRect(sw, ew, G.human);
-        if (ids.length > 0) { if (!inp.shift) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); } ids.forEach(function (id) { G.nodes[id].selected = true; inp.sel.add(id); }); recEvt('select', { ids: Array.from(inp.sel), append: inp.shift }); } inp.marqActive = false;
+        var sw = s2w(inp.marqStart.x, inp.marqStart.y), ew = s2w(inp.marqEnd.x, inp.marqEnd.y), ids = nodesInRect(sw, ew, G.human), fleetIds = holdingFleetIdsInRect(sw, ew, G.human);
+        if (ids.length > 0 || fleetIds.length > 0) selectEntityIds(ids, fleetIds, inp.shift);
+        inp.marqActive = false;
     }
 });
 cv.addEventListener('wheel', function (e) {
@@ -5012,36 +5516,55 @@ cv.addEventListener('touchstart', function (e) {
         inp.pinchActive = false;
         inp.dragPending = false;
         inp.dragDownNodeId = -1;
-        var w = s2w(pos.x, pos.y); var cn = hitNode(w);
-        if (cn && cn.owner === G.human && inp.sel.size > 0 && !inp.sel.has(cn.id)) {
+        inp.dragDownFleetId = -1;
+        var w = s2w(pos.x, pos.y); var cn = hitNode(w), hf = null; if (!cn) hf = hitHoldingFleet(w);
+        if (cn && cn.owner === G.human && (inp.sel.size > 0 || inp.selFleets.size > 0) && !inp.sel.has(cn.id)) {
             if (sendFromSelectionTo(cn.id)) { e.preventDefault(); return; }
         }
         if (cn && cn.owner === G.human) {
-            var touchSources = [];
-            if (inp.sel.has(cn.id) && inp.sel.size > 0) {
-                inp.sel.forEach(function (sid) {
-                    var sn = G.nodes[sid];
-                    if (sn && sn.owner === G.human) touchSources.push(sid);
-                });
+            var touchSelection = null;
+            if (inp.sel.has(cn.id) && (inp.sel.size > 0 || inp.selFleets.size > 0)) {
+                touchSelection = selectedSendOrder();
             } else {
-                G.nodes.forEach(function (n) { n.selected = false; });
-                inp.sel.clear();
-                cn.selected = true;
-                inp.sel.add(cn.id);
-                touchSources = [cn.id];
+                selectNodeIds([cn.id], false);
+                touchSelection = { sources: [cn.id], fleetIds: [] };
                 if (typeof AudioFX !== 'undefined') AudioFX.select();
-                recEvt('select', { ids: Array.from(inp.sel), append: false });
             }
             inp.dragPending = true;
             inp.dragDownNodeId = cn.id;
             inp.dragDownScreen = { x: pos.x, y: pos.y };
-            inp.dragSrcs = touchSources;
-            var touchStartPt = centroidForSources(touchSources);
+            inp.dragNodeIds = touchSelection.sources.slice();
+            inp.dragFleetIds = touchSelection.fleetIds.slice();
+            var touchStartPt = centroidForSources(touchSelection.sources, touchSelection.fleetIds);
             inp.dragStart = touchStartPt || { x: cn.pos.x, y: cn.pos.y };
             inp.dragEnd = w;
-        } else if (cn && inp.sel.size > 0) {
+        } else if (hf) {
+            selectFleetIds([hf.id], false);
+            inp.dragPending = true;
+            inp.dragDownFleetId = hf.id;
+            inp.dragDownScreen = { x: pos.x, y: pos.y };
+            inp.dragNodeIds = [];
+            inp.dragFleetIds = [hf.id];
+            inp.dragStart = { x: hf.x, y: hf.y };
+            inp.dragEnd = w;
+            if (typeof AudioFX !== 'undefined') AudioFX.select();
+        } else if (cn && (inp.sel.size > 0 || inp.selFleets.size > 0)) {
             sendFromSelectionTo(cn.id);
+        } else if (inp.sel.size > 0 || inp.selFleets.size > 0) {
+            var pointSelection = selectedSendOrder();
+            if (pointSelection.sources.length > 0 || pointSelection.fleetIds.length > 0) {
+                inp.dragPending = true;
+                inp.dragDownNodeId = pointSelection.sources.length > 0 ? pointSelection.sources[0] : -1;
+                inp.dragDownFleetId = pointSelection.fleetIds.length > 0 ? pointSelection.fleetIds[0] : -1;
+                inp.dragDownScreen = { x: pos.x, y: pos.y };
+                inp.dragNodeIds = pointSelection.sources.slice();
+                inp.dragFleetIds = pointSelection.fleetIds.slice();
+                inp.dragStart = centroidForSources(pointSelection.sources, pointSelection.fleetIds) || w;
+                inp.dragEnd = w;
+                inp.touchPointOrderPending = true;
+            }
         } else {
+            clearSelection(false);
             inp.marqActive = true; inp.marqStart = pos; inp.marqEnd = pos;
         }
         e.preventDefault();
@@ -5063,8 +5586,8 @@ cv.addEventListener('touchmove', function (e) {
             var mdx = pos.x - inp.dragDownScreen.x;
             var mdy = pos.y - inp.dragDownScreen.y;
             var movedPx = Math.sqrt(mdx * mdx + mdy * mdy);
-            if (shouldStartDragSend({ downOnOwnedNode: inp.dragDownNodeId >= 0, movedPx: movedPx, thresholdPx: inp.dragThreshold })) {
-                beginDragSend(inp.dragSrcs, w);
+            if (shouldStartDragSend({ downOnOwnedNode: inp.dragDownNodeId >= 0 || inp.dragDownFleetId >= 0, movedPx: movedPx, thresholdPx: inp.dragThreshold })) {
+                beginDragSend(inp.dragNodeIds, inp.dragFleetIds, w);
             }
         }
         if (inp.dragActive) inp.dragEnd = w;
@@ -5085,18 +5608,20 @@ cv.addEventListener('touchend', function (e) {
         var w = s2w(pos.x, pos.y);
         if (inp.dragActive) {
             var tn = hitNode(w);
-            if (tn && inp.dragSrcs.length > 0) sendFromSourcesTo(inp.dragSrcs, tn.id);
-            inp.dragActive = false;
-            inp.dragPending = false;
-            inp.dragDownNodeId = -1;
-            inp.dragSrcs = [];
+            if (tn) sendFromSourcesTo(inp.dragNodeIds, inp.dragFleetIds, tn.id);
+            else sendFromSourcesToPoint(inp.dragNodeIds, inp.dragFleetIds, w);
+            resetDragState();
+        } else if (inp.touchPointOrderPending) {
+            sendFromSourcesToPoint(inp.dragNodeIds, inp.dragFleetIds, w);
+            resetDragState();
         } else if (inp.marqActive) {
-            var sw = s2w(inp.marqStart.x, inp.marqStart.y), ew = s2w(pos.x, pos.y), ids = nodesInRect(sw, ew, G.human);
-            if (ids.length > 0) { G.nodes.forEach(function (n) { n.selected = false; }); inp.sel.clear(); ids.forEach(function (id) { G.nodes[id].selected = true; inp.sel.add(id); }); }
+            var sw = s2w(inp.marqStart.x, inp.marqStart.y), ew = s2w(pos.x, pos.y), ids = nodesInRect(sw, ew, G.human), fleetIds = holdingFleetIdsInRect(sw, ew, G.human);
+            if (ids.length > 0 || fleetIds.length > 0) selectEntityIds(ids, fleetIds, false);
             inp.marqActive = false;
         } else {
             inp.dragPending = false;
             inp.dragDownNodeId = -1;
+            inp.dragDownFleetId = -1;
         }
     }
 }, { passive: false });
@@ -5114,7 +5639,12 @@ window.addEventListener('keydown', function (e) {
             return;
         }
         if (inGameMenuOpen) return;
-        if (e.key === 'a') { G.nodes.forEach(function (n) { if (n.owner === G.human) { n.selected = true; inp.sel.add(n.id); } }); }
+        if (e.key === 'a') {
+            clearSelection(true);
+            G.nodes.forEach(function (n) { if (n.owner === G.human) inp.sel.add(n.id); });
+            syncNodeSelectionFlags();
+            recordSelectionEvent(false);
+        }
         if (e.key === 'u' || e.key === 'U') {
             var targetIds = Array.from(inp.sel);
             if (targetIds.length > 0) {

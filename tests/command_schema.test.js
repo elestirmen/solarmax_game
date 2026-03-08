@@ -6,7 +6,14 @@ import { sanitizeCommandData, sanitizeCommandPayload } from '../assets/sim/comma
 test('sanitizeCommandData normalizes send payloads', function () {
     assert.deepEqual(
         sanitizeCommandData('send', { sources: [1, '2', 2], tgtId: '4', pct: 2 }),
-        { sources: [1, 2], tgtId: 4, pct: 1 }
+        { sources: [1, 2], fleetIds: [], tgtId: 4, pct: 1 }
+    );
+});
+
+test('sanitizeCommandData accepts parked fleet sends to point targets', function () {
+    assert.deepEqual(
+        sanitizeCommandData('send', { fleetIds: ['7', 7, 8], targetPoint: { x: '140.25', y: 88.5 }, pct: 0.4 }),
+        { sources: [], fleetIds: [7, 8], targetPoint: { x: 140.25, y: 88.5 }, pct: 0.4 }
     );
 });
 

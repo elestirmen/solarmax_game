@@ -313,8 +313,8 @@ export function computeAuthoritativeSnapshotHash(state) {
 
 export function applyCommandToAuthoritativeState(state, playerIndex, type, data) {
     return applyPlayerCommandWithOps(playerIndex, type, data, {
-        send: function (owner, sources, tgtId, pct) {
-            return dispatchUnits(state, owner, sources, tgtId, pct);
+        send: function (owner, sendData) {
+            return dispatchUnits(state, owner, sendData);
         },
         flow: function (owner, srcId, tgtId) {
             return addFlowLink(state, owner, srcId, tgtId);

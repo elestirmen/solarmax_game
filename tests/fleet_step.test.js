@@ -142,6 +142,48 @@ test('stepFleetMovement updates heading, bank, and throttle toward the route tan
     assert.equal(fleets[0].throttle > 0.3, true);
 });
 
+test('stepFleetMovement converts empty-space arrivals into holding fleets', function () {
+    var fleets = [{
+        active: true,
+        owner: 0,
+        count: 14,
+        srcId: 0,
+        tgtId: -1,
+        fromX: 0,
+        fromY: 0,
+        toX: 90,
+        toY: 40,
+        t: 1.02,
+        speed: 80,
+        spdVar: 1,
+        arcLen: 100,
+        routeSpeedMult: 1,
+        cpx: 45,
+        cpy: 20,
+        x: 88,
+        y: 39,
+        trail: [{ x: 80, y: 35 }],
+        offsetL: 0,
+        launchT: 0,
+    }];
+
+    stepFleetMovement({
+        fleets: fleets,
+        nodes: [{ pos: { x: 0, y: 0 } }],
+        dt: 1 / 30,
+        tune: { fspeed: 80 },
+        mapFeature: { type: 'none' },
+        callbacks: { clamp: clamp, bezPt: bezPt },
+        constants: { baseFleetSpeed: 80, gravitySpeedMult: 0.75, trailLen: 12 },
+    });
+
+    assert.equal(fleets[0].holding, true);
+    assert.equal(fleets[0].t, 0);
+    assert.equal(fleets[0].x, 90);
+    assert.equal(fleets[0].y, 40);
+    assert.equal(fleets[0].trail.length, 0);
+});
+
 test('resolveCombatOutcome captures node, resets assimilation, and reports effects', function () {
     var targetNode = {
         id: 4,
@@ -286,4 +328,50 @@ test('resolveFleetArrivals keeps grouped fleet units in transit until their visu
     assert.equal(fleets[0].t < 1, true);
     assert.equal(fleets[0].x < 100, true);
     assert.equal(result.statsDelta.nodesCaptured, 1);
+});
+
+test('resolveFleetArrivals leaves holding fleets untouched', function () {
+    var fleets = [
+        {
+            active: true,
+            holding: true,
+            owner: 0,
+            count: 11,
+            srcId: -1,
+            tgtId: -1,
+            x: 60,
+            y: 24,
+            fromX: 60,
+            fromY: 24,
+            toX: 60,
+            toY: 24,
+            trail: [],
+        },
+    ];
+    var nodes = [
+        { id: 0, owner: 0, units: 20, maxUnits: 20, level: 1, pos: { x: 0, y: 0 } },
+    ];
+
+    var result = resolveFleetArrivals({
+        fleets: fleets,
+        nodes: nodes,
+        flows: [],
+        players: [{ color: '#4a8eff' }],
+        tune: { def: 1 },
+        humanIndex: 0,
+        callbacks: {
+            nodeTypeOf: function () { return { def: 1 }; },
+            nodeLevelDefMult: function () { return 1; },
+            nodeCapacity: function (node) { return node.maxUnits; },
+        },
+        constants: {
+            turretCaptureResist: 1.35,
+            defenseBonus: 1.25,
+            assimLockTicks: 180,
+        },
+    });
+
+    assert.equal(result.fleets.length, 1);
+    assert.equal(result.fleets[0].holding, true);
+    assert.equal(result.fleets[0].count, 11);
 });

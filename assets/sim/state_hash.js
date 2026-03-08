@@ -46,10 +46,17 @@ export function computeSyncHash(state) {
         hash = mixHash(hash, (Number(fleet.owner) || 0) + 2);
         hash = mixHash(hash, Number(fleet.srcId) || 0);
         hash = mixHash(hash, Number(fleet.tgtId) || 0);
+        hash = mixHash(hash, fleet.holding ? 1 : 0);
         hash = mixHash(hash, scaledInt(fleet.count, 100));
         hash = mixHash(hash, scaledInt(fleet.t, 10000));
         hash = mixHash(hash, scaledInt(fleet.x, 10));
         hash = mixHash(hash, scaledInt(fleet.y, 10));
+        hash = mixHash(hash, scaledInt(fleet.fromX, 10));
+        hash = mixHash(hash, scaledInt(fleet.fromY, 10));
+        hash = mixHash(hash, scaledInt(fleet.toX, 10));
+        hash = mixHash(hash, scaledInt(fleet.toY, 10));
+        hash = mixHash(hash, scaledInt(fleet.cpx, 10));
+        hash = mixHash(hash, scaledInt(fleet.cpy, 10));
     }
 
     for (var pi = 0; pi < players.length; pi++) {
