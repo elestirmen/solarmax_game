@@ -104,7 +104,7 @@ test('ai avoids low-odds turret pokes when a softer target is available', functi
     var nodes = [
         node(0, -1, 45, 0, 7, 'core'),
         node(1, 1, 120, 0, 34, 'core'),
-        node(2, 0, 78, 0, 10, 'turret'),
+        node(2, 0, 282, 0, 10, 'turret'),
         node(3, 1, 145, 26, 18, 'core'),
     ];
     var commands = decideAiCommands(buildState('hard', nodes, { 0: 80, 1: 86 }), 1);
@@ -160,7 +160,7 @@ test('ai keeps reserve on a newly captured frontline node instead of using it as
     assert.deepEqual(firstSend.data.sources, [0]);
 });
 
-test('ai stages a push with a parked fleet point when a defended target is not ready yet', function () {
+test('ai stages a turret siege on a safe friendly planet before committing', function () {
     var nodes = [
         node(0, 1, 0, 0, 74, 'core'),
         node(1, 1, 124, 0, 34, 'core'),
@@ -169,11 +169,11 @@ test('ai stages a push with a parked fleet point when a defended target is not r
     ];
     var commands = decideAiCommands(buildState('hard', nodes, { 0: 170, 1: 122 }), 1);
     var stageSend = commands.find(function (command) {
-        return command.type === 'send' && command.data && command.data.targetPoint;
+        return command.type === 'send' && command.data && command.data.tgtId === 0;
     });
 
     assert.ok(stageSend);
-    assert.deepEqual(stageSend.data.sources, [0]);
+    assert.deepEqual(stageSend.data.sources, [1]);
 });
 
 test('ai can relaunch a staged holding fleet into the main attack', function () {
@@ -220,4 +220,107 @@ test('ai does not direct-attack a turret when only the raw available count barel
     });
 
     assert.equal(turretDirectSends.length, 0);
+});
+
+test('ai requires at least a 72-unit siege wave before sending fleets into turret range', function () {
+    var nodes = [
+        node(0, 0, 0, 0, 10, 'turret'),
+        node(1, 1, 110, 0, 20, 'core'),
+        node(2, 1, 150, 24, 20, 'core'),
+        node(3, 1, 196, -18, 18, 'core'),
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 76, 1: 88 }), 1);
+    var turretDirectSends = commands.filter(function (command) {
+        return command.type === 'send' && command.data && command.data.tgtId === 0;
+    });
+
+    assert.equal(turretDirectSends.length, 0);
+});
+
+test('ai launches a turret siege only after the staging planet exceeds the threshold', function () {
+    var nodes = [
+        node(0, 1, 0, 0, 86, 'core'),
+        node(1, 1, 124, 0, 18, 'core'),
+        node(2, 0, 268, 0, 16, 'turret'),
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 90, 1: 122 }), 1);
+    var turretSend = commands.find(function (command) {
+        return command.type === 'send' && command.data && command.data.tgtId === 2;
+    });
+
+    assert.ok(turretSend);
+    assert.deepEqual(turretSend.data.sources, [0]);
+    assert.equal(turretSend.data.pct, 1);
+});
+
+test('ai does not drip-feed a planet that sits inside hostile turret coverage', function () {
+    var nodes = [
+        node(0, 0, 0, 0, 12, 'turret'),
+        node(1, 0, 148, 0, 16, 'core'),
+        node(2, 1, 284, 0, 20, 'core'),
+        node(3, 1, 324, 24, 20, 'core'),
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 84, 1: 88 }), 1);
+    var protectedNodeSends = commands.filter(function (command) {
+        return command.type === 'send' && command.data && command.data.tgtId === 1;
+    });
+    var protectedNodeFlows = commands.filter(function (command) {
+        return command.type === 'flow' && command.data && command.data.tgtId === 1;
+    });
+
+    assert.equal(protectedNodeSends.length, 0);
+    assert.equal(protectedNodeFlows.length, 0);
+});
+
+test('ai coordinates multi-source burst against turret when multiple safe nodes can reach it', function () {
+    var nodes = [
+        node(0, 0, 0, 0, 18, 'turret'),
+        node(1, 1, -260, 0, 52, 'core'),
+        node(2, 1, -290, 40, 44, 'core'),
+        node(3, 1, -320, -20, 36, 'core'),
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 80, 1: 156 }), 1);
+    var turretSend = commands.find(function (command) {
+        return command.type === 'send' && command.data && command.data.tgtId === 0;
+    });
+
+    assert.ok(turretSend, 'should launch coordinated burst against turret');
+    assert.ok(turretSend.data.sources.length >= 2, 'should use multiple sources for burst');
+    assert.ok(turretSend.data.sources.indexOf(1) >= 0, 'strongest safe node should participate');
+});
+
+test('ai prefers safe staging routes that avoid turret range', function () {
+    var nodes = [
+        node(0, 1, 60, 0, 10, 'core'),
+        node(1, 1, -80, 0, 50, 'core'),
+        node(2, 1, 170, 120, 50, 'core'),
+        node(3, 0, 300, 0, 60, 'turret'),
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 92, 1: 132 }), 1);
+    var stageSend = commands.find(function (command) {
+        return command.type === 'send' && command.data && command.data.tgtId === 1;
+    });
+
+    if (stageSend && stageSend.data.sources.length >= 2) {
+        var safeIdx = stageSend.data.sources.indexOf(0);
+        var unsafeIdx = stageSend.data.sources.indexOf(2);
+        if (safeIdx >= 0 && unsafeIdx >= 0) {
+            assert.ok(safeIdx < unsafeIdx, 'safe-route source should be ordered before unsafe-route source');
+        }
+    }
+});
+
+test('ai treats a target behind a turret as protected when the attack route crosses turret range', function () {
+    var nodes = [
+        node(0, 0, 0, 0, 12, 'turret'),
+        node(1, 0, 252, 0, 16, 'core'),
+        node(2, 1, -304, 0, 22, 'core'),
+        node(3, 1, -348, 30, 22, 'core'),
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 84, 1: 92 }), 1);
+    var screenedTargetSends = commands.filter(function (command) {
+        return command.type === 'send' && command.data && command.data.tgtId === 1;
+    });
+
+    assert.equal(screenedTargetSends.length, 0);
 });

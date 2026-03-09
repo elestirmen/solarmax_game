@@ -14,6 +14,33 @@ function dist(a, b) {
     return Math.sqrt(dx * dx + dy * dy);
 }
 
+function pointToSegmentDistSq(point, a, b) {
+    var px = Number(point && point.x) || 0;
+    var py = Number(point && point.y) || 0;
+    var ax = Number(a && a.x) || 0;
+    var ay = Number(a && a.y) || 0;
+    var bx = Number(b && b.x) || 0;
+    var by = Number(b && b.y) || 0;
+    var abx = bx - ax;
+    var aby = by - ay;
+    var apx = px - ax;
+    var apy = py - ay;
+    var abLenSq = abx * abx + aby * aby;
+    if (abLenSq <= 0.0001) {
+        var dx = px - ax;
+        var dy = py - ay;
+        return dx * dx + dy * dy;
+    }
+    var t = (apx * abx + apy * aby) / abLenSq;
+    if (t < 0) t = 0;
+    else if (t > 1) t = 1;
+    var closestX = ax + abx * t;
+    var closestY = ay + aby * t;
+    var cdx = px - closestX;
+    var cdy = py - closestY;
+    return cdx * cdx + cdy * cdy;
+}
+
 function strategicPulseAppliesToNode(state, nodeId) {
     return !!(state.strategicPulse && state.strategicPulse.active && state.strategicPulse.nodeId === nodeId);
 }
@@ -120,9 +147,12 @@ export function decideAiCommands(state, playerIndex) {
     if (capPressure > 0.85) reserve = Math.max(1, Math.floor(reserve * 0.72));
     reserve = Math.max(1, Math.floor(reserve * aiReserveScale));
     var maxSupportAssets = maxSources + 1;
+    var turretSiegeMinBurst = 72;
     var plannedNodeCommit = {};
     var plannedFleetCommit = {};
     var territoryCache = {};
+    var turretThreatCache = {};
+    var hostileTurrets = [];
 
     function canDispatchAI(srcNode, tgtNode) {
         return isDispatchAllowed({ src: srcNode, tgt: tgtNode, barrier: barrierCfg, owner: playerIndex, nodes: state.nodes });
@@ -240,19 +270,133 @@ export function decideAiCommands(state, playerIndex) {
         return result;
     }
 
-    function chooseStagePoint(anchorNode, targetPoint) {
+    function isHostileTurretThreat(node) {
+        if (!node || node.kind !== 'turret' || !node.pos || node.owner === playerIndex) return false;
+        var garrison = Math.max(0, Number(node.units) || 0);
+        if (node.owner === -1) return garrison >= SIM_CONSTANTS.TURRET_MIN_GARRISON && isNodeAssimilated(node);
+        return garrison >= 1;
+    }
+
+    for (var ht = 0; ht < state.nodes.length; ht++) {
+        if (isHostileTurretThreat(state.nodes[ht])) hostileTurrets.push(state.nodes[ht]);
+    }
+
+    function turretThreatForPoint(point) {
+        if (!point) {
+            return {
+                covered: false,
+                count: 0,
+                primaryId: null,
+                primaryPos: null,
+                minSafeDistance: SIM_CONSTANTS.TURRET_RANGE + 24,
+            };
+        }
+        var x = Number(point.x) || 0;
+        var y = Number(point.y) || 0;
+        var key = Math.round(x * 4) + ':' + Math.round(y * 4);
+        if (!turretThreatCache[key]) {
+            var threat = {
+                covered: false,
+                count: 0,
+                primaryId: null,
+                primaryPos: null,
+                minSafeDistance: SIM_CONSTANTS.TURRET_RANGE + 24,
+            };
+            var bestDist = Infinity;
+            for (var ti = 0; ti < state.nodes.length; ti++) {
+                var node = state.nodes[ti];
+                if (!isHostileTurretThreat(node)) continue;
+                var distance = dist(node.pos, { x: x, y: y });
+                if (distance > SIM_CONSTANTS.TURRET_RANGE) continue;
+                threat.covered = true;
+                threat.count++;
+                if (distance < bestDist) {
+                    bestDist = distance;
+                    threat.primaryId = node.id;
+                    threat.primaryPos = { x: Number(node.pos.x) || 0, y: Number(node.pos.y) || 0 };
+                }
+            }
+            turretThreatCache[key] = threat;
+        }
+        return turretThreatCache[key];
+    }
+
+    function turretThreatForRoute(startPoint, endPoint) {
+        if (!startPoint || !endPoint) {
+            return {
+                crossed: false,
+                count: 0,
+                primaryId: null,
+                primaryPos: null,
+            };
+        }
+        var bestDistSq = Infinity;
+        var threat = {
+            crossed: false,
+            count: 0,
+            primaryId: null,
+            primaryPos: null,
+        };
+        for (var i = 0; i < hostileTurrets.length; i++) {
+            var turret = hostileTurrets[i];
+            var rangeSq = SIM_CONSTANTS.TURRET_RANGE * SIM_CONSTANTS.TURRET_RANGE;
+            var routeDistSq = pointToSegmentDistSq(turret.pos, startPoint, endPoint);
+            if (routeDistSq > rangeSq) continue;
+            threat.crossed = true;
+            threat.count++;
+            if (routeDistSq < bestDistSq) {
+                bestDistSq = routeDistSq;
+                threat.primaryId = turret.id;
+                threat.primaryPos = { x: Number(turret.pos.x) || 0, y: Number(turret.pos.y) || 0 };
+            }
+        }
+        return threat;
+    }
+
+    function chooseStagePoint(anchorNode, targetPoint, minDistanceFromTarget) {
         if (!anchorNode || !anchorNode.pos || !targetPoint) return null;
-        var dx = (Number(targetPoint.x) || 0) - (Number(anchorNode.pos.x) || 0);
-        var dy = (Number(targetPoint.y) || 0) - (Number(anchorNode.pos.y) || 0);
+        var anchorX = Number(anchorNode.pos.x) || 0;
+        var anchorY = Number(anchorNode.pos.y) || 0;
+        var targetX = Number(targetPoint.x) || 0;
+        var targetY = Number(targetPoint.y) || 0;
+        var dx = targetX - anchorX;
+        var dy = targetY - anchorY;
         var len = Math.sqrt(dx * dx + dy * dy) || 1;
         var dirX = dx / len;
         var dirY = dy / len;
+        var minDist = Number(minDistanceFromTarget);
+        if (Number.isFinite(minDist) && minDist > 0) {
+            var awayX = anchorX - targetX;
+            var awayY = anchorY - targetY;
+            var awayLen = Math.sqrt(awayX * awayX + awayY * awayY) || 1;
+            var awayDirX = awayX / awayLen;
+            var awayDirY = awayY / awayLen;
+            var distanceOptions = [
+                minDist + 36,
+                minDist + 18,
+                Math.max(minDist + 8, awayLen),
+                awayLen + 18,
+                awayLen + 42,
+            ];
+            for (var di = 0; di < distanceOptions.length; di++) {
+                var outerPoint = {
+                    x: targetX + awayDirX * distanceOptions[di],
+                    y: targetY + awayDirY * distanceOptions[di],
+                };
+                if (turretThreatForPoint(outerPoint).covered) continue;
+                if (territoryStateForPoint(outerPoint).friendlySafe) return outerPoint;
+            }
+        }
         var offsets = [42, 28, 16, 0, -12, -24, -38];
         for (var oi = 0; oi < offsets.length; oi++) {
             var point = {
-                x: Number(anchorNode.pos.x) + dirX * offsets[oi],
-                y: Number(anchorNode.pos.y) + dirY * offsets[oi],
+                x: anchorX + dirX * offsets[oi],
+                y: anchorY + dirY * offsets[oi],
             };
+            if (Number.isFinite(minDist) && minDist > 0) {
+                if (dist(point, { x: targetX, y: targetY }) < minDist) continue;
+                if (turretThreatForPoint(point).covered) continue;
+            }
             if (territoryStateForPoint(point).friendlySafe) return point;
         }
         return null;
@@ -299,6 +443,84 @@ export function decideAiCommands(state, playerIndex) {
         return burst;
     }
 
+    function chooseSiegeAnchor(targetNode, target) {
+        if (!targetNode) return null;
+        var preferred = [];
+        var fallback = [];
+        for (var i = 0; i < own.length; i++) {
+            var node = own[i];
+            if (!node || !isNodeAssimilated(node)) continue;
+            if (!canDispatchAI(node, targetNode)) continue;
+            if (turretThreatForPoint(node.pos).covered) continue;
+            if (territoryStateForPoint(node.pos).friendlySafe) preferred.push(node);
+            else fallback.push(node);
+        }
+        function byDistance(a, b) {
+            return dist(a.pos, targetNode.pos) - dist(b.pos, targetNode.pos);
+        }
+        preferred.sort(byDistance);
+        fallback.sort(byDistance);
+        return preferred[0] || fallback[0] || null;
+    }
+
+    function bestRouteTurretThreat(targetNode) {
+        var anchor = chooseSiegeAnchor(targetNode);
+        if (!anchor) {
+            return {
+                crossed: false,
+                count: 0,
+                primaryId: null,
+                primaryPos: null,
+                anchorId: null,
+            };
+        }
+        var threat = turretThreatForRoute(anchor.pos, targetNode.pos);
+        threat.anchorId = anchor.id;
+        return threat;
+    }
+
+    function attemptSiegeNodeStage(target, targetNode, anchorNode, launchThreshold) {
+        if (!targetNode || !anchorNode) return false;
+        var anchorAvailable = availableNodeUnits(anchorNode);
+        var anchorIncoming = Math.max(0, Number(incomingByTarget[anchorNode.id]) || 0);
+        var stageNeed = Math.max(0, launchThreshold - anchorAvailable - anchorIncoming);
+        if (stageNeed <= 4) return false;
+
+        var stageSources = [];
+        var stageTotal = 0;
+        var stageCandidates = own.filter(function (node) {
+            if (!node || node.id === anchorNode.id) return false;
+            if (availableNodeUnits(node) <= 6) return false;
+            return canDispatchAI(node, anchorNode);
+        }).sort(function (a, b) {
+            var aRouteUnsafe = turretThreatForRoute(a.pos, anchorNode.pos).crossed ? 1 : 0;
+            var bRouteUnsafe = turretThreatForRoute(b.pos, anchorNode.pos).crossed ? 1 : 0;
+            if (aRouteUnsafe !== bRouteUnsafe) return aRouteUnsafe - bRouteUnsafe;
+            var aCovered = turretThreatForPoint(a.pos).covered ? 1 : 0;
+            var bCovered = turretThreatForPoint(b.pos).covered ? 1 : 0;
+            if (aCovered !== bCovered) return aCovered - bCovered;
+            var aAvail = availableNodeUnits(a);
+            var bAvail = availableNodeUnits(b);
+            if (aAvail !== bAvail) return bAvail - aAvail;
+            return dist(a.pos, anchorNode.pos) - dist(b.pos, anchorNode.pos);
+        });
+
+        for (var si = 0; si < stageCandidates.length && stageSources.length < maxSources; si++) {
+            var sourceNode = stageCandidates[si];
+            var available = availableNodeUnits(sourceNode);
+            if (available <= 0) continue;
+            stageSources.push(sourceNode.id);
+            stageTotal += available;
+            if (stageTotal >= stageNeed) break;
+        }
+        if (!stageSources.length) return false;
+
+        var stagePct = clamp(stageNeed / Math.max(stageTotal, 1), 0.35, 0.78);
+        commands.push({ type: 'send', data: { sources: stageSources, tgtId: anchorNode.id, pct: stagePct } });
+        markCommittedAssets(stageSources, [], stagePct);
+        return true;
+    }
+
     function attemptStagePush(target, targetNode, needed) {
         if (stagingUsed || !targetNode || targetNode.owner === -1) return false;
         if (!(target.humanOwned || target.humanCapital || targetNode.kind === 'turret' || targetNode.gate || target.territory.hostile)) return false;
@@ -309,7 +531,19 @@ export function decideAiCommands(state, playerIndex) {
             return dist(a.pos, targetNode.pos) - dist(b.pos, targetNode.pos);
         });
         var anchor = anchorCandidates[0] || null;
-        var stagePoint = chooseStagePoint(anchor, targetNode.pos);
+        var dangerPoint = targetNode.pos;
+        var minDangerDistance = 0;
+        if (targetNode.kind === 'turret') {
+            minDangerDistance = SIM_CONSTANTS.TURRET_RANGE + 24;
+        } else if (target.turretThreat && target.turretThreat.covered) {
+            dangerPoint = target.turretThreat.primaryPos || targetNode.pos;
+            minDangerDistance = Number(target.turretThreat.minSafeDistance) || (SIM_CONSTANTS.TURRET_RANGE + 24);
+        }
+        var stagePoint = chooseStagePoint(
+            anchor,
+            dangerPoint,
+            minDangerDistance
+        );
         if (!stagePoint) return false;
 
         var stageNeed = Math.max(12, Math.min(needed * 0.45, Math.max(16, needed)));
@@ -384,6 +618,8 @@ export function decideAiCommands(state, playerIndex) {
         }
 
         var territoryState = territoryStateForPoint(node.pos);
+        var turretThreat = turretThreatForPoint(node.pos);
+        var routeThreat = bestRouteTurretThreat(node);
         var localPressure = computeLocalPressure(node.pos);
         var localEnemyPressure = localPressure.enemy;
         var localFriendlyPressure = localPressure.friendly;
@@ -412,10 +648,14 @@ export function decideAiCommands(state, playerIndex) {
         if (!isNodeAssimilated(node) && node.owner !== -1) score += territoryState.hostile ? 9 : 18;
         if (pressureGap > 0) score -= Math.min(48, pressureGap * 0.35);
         else score += Math.min(18, (Math.max(localSupport, localFriendlyPressure) - localEnemyPressure) * 0.12);
+        if ((turretThreat.covered || routeThreat.crossed) && node.kind !== 'turret') score -= humanCapitalTarget ? 28 : 84;
         if (node.kind === 'turret') {
             var turretPressureNeed = targetUnits * targetDefense + 23 + (Number(node.level) || 1) * 3;
-            if (localSupport < turretPressureNeed * 0.95) score -= 140;
-            else if (localSupport < turretPressureNeed * 1.15) score -= 44;
+            var turretSupportRatio = localSupport / Math.max(1, turretPressureNeed);
+            if (turretSupportRatio < 0.4) score -= 140;
+            else if (turretSupportRatio < 0.65) score -= 90;
+            else if (turretSupportRatio < 0.85) score -= 50;
+            else if (turretSupportRatio < 1.0) score -= 22;
             if (incomingFriendly > 0) score -= Math.min(42, incomingFriendly * 0.55);
         }
         score *= aggr;
@@ -427,6 +667,8 @@ export function decideAiCommands(state, playerIndex) {
             humanOwned: humanOwnedTarget,
             humanCapital: humanCapitalTarget,
             territory: territoryState,
+            turretThreat: turretThreat,
+            routeThreat: routeThreat,
             localEnemyPressure: localEnemyPressure,
             localFriendlyPressure: Math.max(localSupport, localFriendlyPressure),
             incomingFriendly: incomingFriendly,
@@ -448,6 +690,9 @@ export function decideAiCommands(state, playerIndex) {
         var total = 0;
         var needed = target.units * target.effDef + 5 + (Number(targetNode.level) || 1) * 3;
         var incomingFriendly = Math.max(0, Number(target.incomingFriendly) || 0);
+        var protectedByTurret = targetNode.kind === 'turret' ||
+            !!(target.turretThreat && target.turretThreat.covered) ||
+            !!(target.routeThreat && target.routeThreat.crossed);
         if (targetNode.kind === 'turret') needed += 18;
         if (targetNode.gate && targetNode.owner !== playerIndex && barrierCfg && !ownsGate) needed = Math.max(6, needed * 0.82);
         if (capPressure > 0.9) needed *= 0.93;
@@ -457,7 +702,69 @@ export function decideAiCommands(state, playerIndex) {
         if (target.territory.hostile && targetNode.owner !== -1) {
             needed += Math.max(0, target.localEnemyPressure - target.localFriendlyPressure) * 0.16;
         }
-        if (targetNode.kind === 'turret' && incomingFriendly >= needed * 0.84) continue;
+        if (protectedByTurret && targetNode.kind !== 'turret') needed += 12;
+        if (protectedByTurret) {
+            var siegeCandidatesForBurst = [];
+            var siegeFleetCandidatesForBurst = [];
+            for (var sci = 0; sci < own.length; sci++) {
+                var siegeCandidate = own[sci];
+                if (!siegeCandidate || !isNodeAssimilated(siegeCandidate)) continue;
+                if (!canDispatchAI(siegeCandidate, targetNode)) continue;
+                if (turretThreatForPoint(siegeCandidate.pos).covered) continue;
+                var siegeNodeAvail = availableNodeUnits(siegeCandidate);
+                if (siegeNodeAvail <= 4) continue;
+                siegeCandidatesForBurst.push({
+                    node: siegeCandidate,
+                    available: siegeNodeAvail,
+                    distance: dist(siegeCandidate.pos, targetNode.pos),
+                });
+            }
+            siegeCandidatesForBurst.sort(function (a, b) {
+                if (Math.abs(a.available - b.available) > 10) return b.available - a.available;
+                return a.distance - b.distance;
+            });
+            for (var sbf = 0; sbf < holdingAssets.length; sbf++) {
+                var siegeHoldingAsset = holdingAssets[sbf];
+                var siegeFleetAvail = availableFleetUnits(siegeHoldingAsset.fleet);
+                if (siegeFleetAvail <= 0 || siegeHoldingAsset.territory.hostile) continue;
+                if (!canDispatchAI({ pos: siegeHoldingAsset.point }, targetNode)) continue;
+                if (turretThreatForPoint(siegeHoldingAsset.point).covered) continue;
+                siegeFleetCandidatesForBurst.push({
+                    fleet: siegeHoldingAsset.fleet,
+                    available: siegeFleetAvail,
+                });
+            }
+            siegeFleetCandidatesForBurst.sort(function (a, b) {
+                return b.available - a.available;
+            });
+
+            var siegeBurstSources = [];
+            var siegeBurstFleetIds = [];
+            var siegeBurstTotal = 0;
+            var burstLaunchThreshold = Math.max(turretSiegeMinBurst, needed * (targetNode.kind === 'turret' ? 0.85 : 0.8));
+            for (var sck = 0; sck < siegeCandidatesForBurst.length && siegeBurstSources.length < maxSupportAssets; sck++) {
+                siegeBurstSources.push(siegeCandidatesForBurst[sck].node.id);
+                siegeBurstTotal += siegeCandidatesForBurst[sck].available;
+            }
+            for (var sfj = 0; sfj < siegeFleetCandidatesForBurst.length && (siegeBurstSources.length + siegeBurstFleetIds.length) < maxSupportAssets; sfj++) {
+                siegeBurstFleetIds.push(siegeFleetCandidatesForBurst[sfj].fleet.id);
+                siegeBurstTotal += siegeFleetCandidatesForBurst[sfj].available;
+            }
+
+            if (incomingFriendly >= burstLaunchThreshold * 0.6) continue;
+            if (siegeBurstTotal >= burstLaunchThreshold && siegeBurstSources.length > 0) {
+                var siegeBurstPct = (siegeBurstSources.length + siegeBurstFleetIds.length) <= 1 ? 1 : clamp(burstLaunchThreshold * 1.15 / Math.max(siegeBurstTotal, 1), 0.75, 0.95);
+                commands.push({ type: 'send', data: { sources: siegeBurstSources, fleetIds: siegeBurstFleetIds, tgtId: targetNode.id, pct: siegeBurstPct } });
+                markCommittedAssets(siegeBurstSources, siegeBurstFleetIds, siegeBurstPct);
+                continue;
+            }
+
+            var siegeAnchor = siegeCandidatesForBurst[0] ? siegeCandidatesForBurst[0].node : chooseSiegeAnchor(targetNode, target);
+            if (!siegeAnchor) continue;
+            var stagingLaunchThreshold = Math.max(turretSiegeMinBurst, Math.min(targetNode.kind === 'turret' ? 80 : 72, needed * (targetNode.kind === 'turret' ? 1.02 : 0.96)));
+            attemptSiegeNodeStage(target, targetNode, siegeAnchor, stagingLaunchThreshold);
+            continue;
+        }
         var assetCandidates = [];
         for (var cj = 0; cj < own.length; cj++) {
             var ownNode = own[cj];
@@ -504,7 +811,7 @@ export function decideAiCommands(state, playerIndex) {
         var opportunityRatio = aiOpportunityRatio;
         if (target.humanOwned) opportunityRatio = Math.max(0.4, opportunityRatio - 0.04);
         if (target.humanCapital) opportunityRatio = Math.max(0.34, opportunityRatio - 0.08);
-        if (targetNode.kind === 'turret') opportunityRatio = Math.max(opportunityRatio, incomingFriendly > 0 ? 1.03 : 0.99);
+        if (protectedByTurret) opportunityRatio = Math.max(opportunityRatio, incomingFriendly > 0 ? 1.05 : 1.0);
         if (target.territory.hostile && targetNode.owner !== -1 && !target.humanCapital) opportunityRatio = Math.max(opportunityRatio, 0.58);
         if (target.localEnemyPressure > target.localFriendlyPressure * 1.08) {
             opportunityRatio = Math.min(0.98, opportunityRatio + 0.08);
@@ -529,10 +836,10 @@ export function decideAiCommands(state, playerIndex) {
         if (target.humanCapital && myPower >= humanPower * 0.9) pct = Math.max(pct, pctMax * 0.92);
         if (capPressure > 0.95) pct = Math.max(pct, 0.72);
         var predictedBurst = estimateBurstUnits(sources, fleetIds, pct);
-        if (targetNode.kind === 'turret') {
-            var burstFloor = Math.max(18, Math.min(40, needed * (incomingFriendly > 0 ? 0.38 : 0.48)));
-            if (predictedBurst < burstFloor || predictedBurst + incomingFriendly < needed * 1.02) {
-                attemptStagePush(target, targetNode, Math.max(needed - incomingFriendly - predictedBurst, needed * 0.35));
+        if (protectedByTurret) {
+            var burstFloor = Math.max(turretSiegeMinBurst, Math.min(72, needed * (targetNode.kind === 'turret' ? 1.02 : 0.96)));
+            if (predictedBurst < burstFloor || predictedBurst + incomingFriendly < burstFloor) {
+                attemptStagePush(target, targetNode, Math.max(burstFloor - incomingFriendly - predictedBurst, needed * 0.35));
                 continue;
             }
         }
@@ -543,7 +850,7 @@ export function decideAiCommands(state, playerIndex) {
             !state.flows.some(function (flow) { return flow.owner === playerIndex && flow.tgtId === targetNode.id && flow.active; }) &&
             flowSource &&
             canDispatchAI(flowSource, targetNode) &&
-            targetNode.kind !== 'turret' &&
+            !protectedByTurret &&
             (!target.territory.hostile || target.humanCapital || targetNode.gate) &&
             (target.humanCapital || (flowGate && ((target.humanOwned && targetNode.units > 8) || (targetNode.owner !== -1 && targetNode.units > 12))));
         if (shouldFlow) commands.push({ type: 'flow', data: { srcId: sources[0], tgtId: targetNode.id } });
