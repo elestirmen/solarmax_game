@@ -207,3 +207,17 @@ test('ai can relaunch a staged holding fleet into the main attack', function () 
     assert.ok(attackSend);
     assert.deepEqual(attackSend.data.fleetIds, [9]);
 });
+
+test('ai does not direct-attack a turret when only the raw available count barely looks sufficient', function () {
+    var nodes = [
+        node(0, 0, 0, 0, 12, 'turret'),
+        node(1, 1, 110, 0, 30, 'core'),
+        node(2, 1, 152, 28, 30, 'core'),
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 78, 1: 92 }), 1);
+    var turretDirectSends = commands.filter(function (command) {
+        return command.type === 'send' && command.data && command.data.tgtId === 0;
+    });
+
+    assert.equal(turretDirectSends.length, 0);
+});

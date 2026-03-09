@@ -270,6 +270,86 @@ export function decideAiCommands(state, playerIndex) {
             territory: territoryStateForPoint(fleetPoint),
         });
     }
+    var incomingByTarget = {};
+    for (var af = 0; af < state.fleets.length; af++) {
+        var activeFleet = state.fleets[af];
+        if (!activeFleet || !activeFleet.active || activeFleet.holding || activeFleet.owner !== playerIndex) continue;
+        var activeTargetId = Math.floor(Number(activeFleet.tgtId));
+        if (!Number.isFinite(activeTargetId) || activeTargetId < 0) continue;
+        incomingByTarget[activeTargetId] = (incomingByTarget[activeTargetId] || 0) + Math.max(0, Math.floor(Number(activeFleet.count) || 0));
+    }
+
+    var stagingUsed = false;
+
+    function estimateBurstUnits(sourceIds, fleetIds, pct) {
+        var burst = 0;
+        for (var i = 0; i < sourceIds.length; i++) {
+            var sourceNode = state.nodes[sourceIds[i]];
+            if (!sourceNode) continue;
+            burst += estimateSendCountFromNode(sourceNode, pct);
+        }
+        for (var j = 0; j < fleetIds.length; j++) {
+            for (var fk = 0; fk < holdingAssets.length; fk++) {
+                var holdingFleet = holdingAssets[fk] && holdingAssets[fk].fleet;
+                if (!holdingFleet || (Number(holdingFleet.id) || 0) !== fleetIds[j]) continue;
+                burst += estimateSendCountFromFleet(holdingFleet, pct);
+                break;
+            }
+        }
+        return burst;
+    }
+
+    function attemptStagePush(target, targetNode, needed) {
+        if (stagingUsed || !targetNode || targetNode.owner === -1) return false;
+        if (!(target.humanOwned || target.humanCapital || targetNode.kind === 'turret' || targetNode.gate || target.territory.hostile)) return false;
+
+        var anchorCandidates = own.filter(function (node) {
+            return isNodeAssimilated(node) && canDispatchAI(node, targetNode);
+        }).sort(function (a, b) {
+            return dist(a.pos, targetNode.pos) - dist(b.pos, targetNode.pos);
+        });
+        var anchor = anchorCandidates[0] || null;
+        var stagePoint = chooseStagePoint(anchor, targetNode.pos);
+        if (!stagePoint) return false;
+
+        var stageNeed = Math.max(12, Math.min(needed * 0.45, Math.max(16, needed)));
+        var stageSources = [];
+        var stageTotal = 0;
+        var existingStaging = 0;
+        for (var eh = 0; eh < holdingAssets.length; eh++) {
+            var staged = holdingAssets[eh];
+            if (dist(staged.point, stagePoint) > 56) continue;
+            existingStaging += availableFleetUnits(staged.fleet);
+        }
+        if (existingStaging >= stageNeed * 0.7) return false;
+
+        var stageCandidates = own.filter(function (node) {
+            if (!node || node.id === (anchor && anchor.id)) return false;
+            if (!territoryStateForPoint(node.pos).friendlySafe) return false;
+            if (!canDispatchAI(node, { pos: stagePoint })) return false;
+            return availableNodeUnits(node) > 6;
+        }).sort(function (a, b) {
+            var aAvail = availableNodeUnits(a);
+            var bAvail = availableNodeUnits(b);
+            if (aAvail !== bAvail) return bAvail - aAvail;
+            return dist(b.pos, targetNode.pos) - dist(a.pos, targetNode.pos);
+        });
+
+        for (var sc = 0; sc < stageCandidates.length && stageSources.length < maxSources; sc++) {
+            var stagedAvailable = availableNodeUnits(stageCandidates[sc]);
+            if (stagedAvailable <= 0) continue;
+            stageSources.push(stageCandidates[sc].id);
+            stageTotal += stagedAvailable;
+            if (stageTotal >= stageNeed) break;
+        }
+        if (!stageSources.length || stageTotal < 10) return false;
+
+        var stagePct = clamp(stageNeed / Math.max(stageTotal, 1), 0.28, target.humanCapital || targetNode.kind === 'turret' ? 0.58 : 0.52);
+        commands.push({ type: 'send', data: { sources: stageSources, targetPoint: stagePoint, pct: stagePct } });
+        markCommittedAssets(stageSources, [], stagePct);
+        stagingUsed = true;
+        return true;
+    }
 
     var targets = [];
     for (var ni = 0; ni < state.nodes.length; ni++) {
@@ -308,6 +388,7 @@ export function decideAiCommands(state, playerIndex) {
         var localEnemyPressure = localPressure.enemy;
         var localFriendlyPressure = localPressure.friendly;
         var pressureGap = Math.max(0, localEnemyPressure - Math.max(localSupport, localFriendlyPressure));
+        var incomingFriendly = incomingByTarget[node.id] || 0;
         var score = 0;
         score += Math.max(0, 520 - bestDistance) * 0.45;
         score += Math.max(0, 55 - targetUnits * targetDefense) * 2.1;
@@ -335,6 +416,7 @@ export function decideAiCommands(state, playerIndex) {
             var turretPressureNeed = targetUnits * targetDefense + 23 + (Number(node.level) || 1) * 3;
             if (localSupport < turretPressureNeed * 0.95) score -= 140;
             else if (localSupport < turretPressureNeed * 1.15) score -= 44;
+            if (incomingFriendly > 0) score -= Math.min(42, incomingFriendly * 0.55);
         }
         score *= aggr;
         targets.push({
@@ -347,6 +429,7 @@ export function decideAiCommands(state, playerIndex) {
             territory: territoryState,
             localEnemyPressure: localEnemyPressure,
             localFriendlyPressure: Math.max(localSupport, localFriendlyPressure),
+            incomingFriendly: incomingFriendly,
         });
     }
 
@@ -356,7 +439,6 @@ export function decideAiCommands(state, playerIndex) {
     if (myPower >= humanPower * 0.9 && targets.length > 2) attackCount += 1;
     if (capPressure > 0.9) attackCount += 1;
     attackCount = Math.min(attackCount, targets.length, diffCfg.maxAttackTargets);
-    var stagingUsed = false;
 
     for (var ti = 0; ti < attackCount; ti++) {
         var target = targets[ti];
@@ -365,6 +447,7 @@ export function decideAiCommands(state, playerIndex) {
         var fleetIds = [];
         var total = 0;
         var needed = target.units * target.effDef + 5 + (Number(targetNode.level) || 1) * 3;
+        var incomingFriendly = Math.max(0, Number(target.incomingFriendly) || 0);
         if (targetNode.kind === 'turret') needed += 18;
         if (targetNode.gate && targetNode.owner !== playerIndex && barrierCfg && !ownsGate) needed = Math.max(6, needed * 0.82);
         if (capPressure > 0.9) needed *= 0.93;
@@ -374,6 +457,7 @@ export function decideAiCommands(state, playerIndex) {
         if (target.territory.hostile && targetNode.owner !== -1) {
             needed += Math.max(0, target.localEnemyPressure - target.localFriendlyPressure) * 0.16;
         }
+        if (targetNode.kind === 'turret' && incomingFriendly >= needed * 0.84) continue;
         var assetCandidates = [];
         for (var cj = 0; cj < own.length; cj++) {
             var ownNode = own[cj];
@@ -420,7 +504,7 @@ export function decideAiCommands(state, playerIndex) {
         var opportunityRatio = aiOpportunityRatio;
         if (target.humanOwned) opportunityRatio = Math.max(0.4, opportunityRatio - 0.04);
         if (target.humanCapital) opportunityRatio = Math.max(0.34, opportunityRatio - 0.08);
-        if (targetNode.kind === 'turret') opportunityRatio = Math.max(opportunityRatio, 0.95);
+        if (targetNode.kind === 'turret') opportunityRatio = Math.max(opportunityRatio, incomingFriendly > 0 ? 1.03 : 0.99);
         if (target.territory.hostile && targetNode.owner !== -1 && !target.humanCapital) opportunityRatio = Math.max(opportunityRatio, 0.58);
         if (target.localEnemyPressure > target.localFriendlyPressure * 1.08) {
             opportunityRatio = Math.min(0.98, opportunityRatio + 0.08);
@@ -430,54 +514,7 @@ export function decideAiCommands(state, playerIndex) {
             opportunityRatio = Math.max(0.38, opportunityRatio - 0.02);
         }
         if (total < needed * opportunityRatio && targetNode.owner !== -1) {
-            if (!stagingUsed &&
-                targetNode.owner !== -1 &&
-                (target.humanOwned || target.humanCapital || targetNode.kind === 'turret' || targetNode.gate || target.territory.hostile)) {
-                var anchorCandidates = own.filter(function (node) {
-                    return isNodeAssimilated(node) && canDispatchAI(node, targetNode);
-                }).sort(function (a, b) {
-                    return dist(a.pos, targetNode.pos) - dist(b.pos, targetNode.pos);
-                });
-                var anchor = anchorCandidates[0] || null;
-                var stagePoint = chooseStagePoint(anchor, targetNode.pos);
-                if (stagePoint) {
-                    var stageNeed = Math.max(12, Math.min(needed * 0.45, Math.max(16, needed - total)));
-                    var stageSources = [];
-                    var stageTotal = 0;
-                    var existingStaging = 0;
-                    for (var eh = 0; eh < holdingAssets.length; eh++) {
-                        var staged = holdingAssets[eh];
-                        if (dist(staged.point, stagePoint) > 56) continue;
-                        existingStaging += availableFleetUnits(staged.fleet);
-                    }
-                    if (existingStaging < stageNeed * 0.7) {
-                        var stageCandidates = own.filter(function (node) {
-                            if (!node || node.id === (anchor && anchor.id)) return false;
-                            if (!territoryStateForPoint(node.pos).friendlySafe) return false;
-                            if (!canDispatchAI(node, { pos: stagePoint })) return false;
-                            return availableNodeUnits(node) > 6;
-                        }).sort(function (a, b) {
-                            var aAvail = availableNodeUnits(a);
-                            var bAvail = availableNodeUnits(b);
-                            if (aAvail !== bAvail) return bAvail - aAvail;
-                            return dist(b.pos, targetNode.pos) - dist(a.pos, targetNode.pos);
-                        });
-                        for (var sc = 0; sc < stageCandidates.length && stageSources.length < maxSources; sc++) {
-                            var stagedAvailable = availableNodeUnits(stageCandidates[sc]);
-                            if (stagedAvailable <= 0) continue;
-                            stageSources.push(stageCandidates[sc].id);
-                            stageTotal += stagedAvailable;
-                            if (stageTotal >= stageNeed) break;
-                        }
-                        if (stageSources.length && stageTotal >= 10) {
-                            var stagePct = clamp(stageNeed / Math.max(stageTotal, 1), 0.28, target.humanCapital || targetNode.kind === 'turret' ? 0.58 : 0.52);
-                            commands.push({ type: 'send', data: { sources: stageSources, targetPoint: stagePoint, pct: stagePct } });
-                            markCommittedAssets(stageSources, [], stagePct);
-                            stagingUsed = true;
-                        }
-                    }
-                }
-            }
+            attemptStagePush(target, targetNode, Math.max(needed - total, needed * 0.4));
             continue;
         }
 
@@ -491,6 +528,14 @@ export function decideAiCommands(state, playerIndex) {
         var pct = clamp(needed / Math.max(total, 1), pctMin, pctMax);
         if (target.humanCapital && myPower >= humanPower * 0.9) pct = Math.max(pct, pctMax * 0.92);
         if (capPressure > 0.95) pct = Math.max(pct, 0.72);
+        var predictedBurst = estimateBurstUnits(sources, fleetIds, pct);
+        if (targetNode.kind === 'turret') {
+            var burstFloor = Math.max(18, Math.min(40, needed * (incomingFriendly > 0 ? 0.38 : 0.48)));
+            if (predictedBurst < burstFloor || predictedBurst + incomingFriendly < needed * 1.02) {
+                attemptStagePush(target, targetNode, Math.max(needed - incomingFriendly - predictedBurst, needed * 0.35));
+                continue;
+            }
+        }
 
         var flowGate = ((state.tick + targetNode.id * 3 + playerIndex * 7) % aiFlowPeriod) === 0;
         var flowSource = sources.length ? state.nodes[sources[0]] : null;
