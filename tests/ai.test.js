@@ -35,8 +35,9 @@ function buildFog(nodes) {
     return { vis: vis, ls: ls };
 }
 
-function buildState(diff, nodes, powerByPlayer) {
+function buildState(diff, nodes, powerByPlayer, extra) {
     var diffCfg = difficultyConfig(diff);
+    extra = extra || {};
     return {
         diff: diff,
         diffCfg: diffCfg,
@@ -46,8 +47,8 @@ function buildState(diff, nodes, powerByPlayer) {
             { idx: 1, isAI: true, alive: true, color: '#e74c3c' },
         ],
         nodes: nodes,
-        fleets: [],
-        flows: [],
+        fleets: extra.fleets || [],
+        flows: extra.flows || [],
         fog: buildFog(nodes),
         aiProfiles: [],
         tune: {
@@ -125,4 +126,84 @@ test('ai does not create drip-feed flow links into turret targets', function () 
     });
 
     assert.equal(turretFlows.length, 0);
+});
+
+test('ai prioritizes a contested frontline target over a deeper enemy backline node', function () {
+    var nodes = [
+        node(0, 1, 0, 0, 56, 'core'),
+        node(1, 1, -70, 36, 28, 'core'),
+        node(2, 0, 116, 0, 16, 'core'),
+        node(3, 0, 308, 0, 8, 'core'),
+        node(4, 0, 360, 42, 18, 'core'),
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 108, 1: 124 }), 1);
+    var firstSend = commands.find(function (command) { return command.type === 'send' && command.data && command.data.tgtId !== undefined; });
+
+    assert.ok(firstSend);
+    assert.equal(firstSend.data.tgtId, 2);
+});
+
+test('ai keeps reserve on a newly captured frontline node instead of using it as a throwaway source', function () {
+    var frontier = node(1, 1, 110, 0, 26, 'core');
+    frontier.assimilationProgress = 0.3;
+    frontier.assimilationLock = 90;
+
+    var nodes = [
+        node(0, 1, 0, 0, 68, 'core'),
+        frontier,
+        node(2, 0, 210, 0, 18, 'core'),
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 62, 1: 104 }), 1);
+    var firstSend = commands.find(function (command) { return command.type === 'send' && command.data && command.data.tgtId === 2; });
+
+    assert.ok(firstSend);
+    assert.deepEqual(firstSend.data.sources, [0]);
+});
+
+test('ai stages a push with a parked fleet point when a defended target is not ready yet', function () {
+    var nodes = [
+        node(0, 1, 0, 0, 74, 'core'),
+        node(1, 1, 124, 0, 34, 'core'),
+        node(2, 0, 268, 0, 92, 'turret'),
+        node(3, 0, 320, 52, 54, 'core'),
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 170, 1: 122 }), 1);
+    var stageSend = commands.find(function (command) {
+        return command.type === 'send' && command.data && command.data.targetPoint;
+    });
+
+    assert.ok(stageSend);
+    assert.deepEqual(stageSend.data.sources, [0]);
+});
+
+test('ai can relaunch a staged holding fleet into the main attack', function () {
+    var nodes = [
+        node(0, 1, 0, 0, 32, 'core'),
+        node(1, 1, 122, 0, 42, 'core'),
+        node(2, 0, 216, 0, 28, 'core'),
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 70, 1: 98 }, {
+        fleets: [
+            {
+                id: 9,
+                active: true,
+                holding: true,
+                owner: 1,
+                count: 20,
+                x: 144,
+                y: 0,
+                fromX: 144,
+                fromY: 0,
+                toX: 144,
+                toY: 0,
+                trail: [],
+            },
+        ],
+    }), 1);
+    var attackSend = commands.find(function (command) {
+        return command.type === 'send' && command.data && command.data.tgtId === 2;
+    });
+
+    assert.ok(attackSend);
+    assert.deepEqual(attackSend.data.fleetIds, [9]);
 });

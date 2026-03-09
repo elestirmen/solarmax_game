@@ -37,48 +37,48 @@ export function isTerritoryNodeActive(node, callbacks) {
     return !!activeFn(node);
 }
 
-export function isPointInsideFriendlyTerritory(params) {
+export function getTerritoryOwnersAtPoint(params) {
     params = params || {};
 
-    var owner = Math.floor(Number(params.owner));
     var point = params.point && typeof params.point === 'object' ? params.point : null;
     var nodes = Array.isArray(params.nodes) ? params.nodes : [];
     var callbacks = params.callbacks || {};
     var constants = params.constants || {};
 
-    if (!Number.isFinite(owner) || owner < 0 || !point) return false;
-
     var x = Number(point.x);
     var y = Number(point.y);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+    if (!point || !Number.isFinite(x) || !Number.isFinite(y)) {
+        return { owners: {}, ownerCount: 0 };
+    }
     var owners = {};
     var ownerCount = 0;
 
     for (var i = 0; i < nodes.length; i++) {
         var node = nodes[i];
-        if (!node || node.owner !== owner || !isTerritoryNodeActive(node, callbacks)) continue;
-        var _radius = territoryRadiusForNode(node, constants);
-        var _dx = x - (Number(node.pos.x) || 0);
-        var _dy = y - (Number(node.pos.y) || 0);
-        if (_dx * _dx + _dy * _dy > _radius * _radius) continue;
+        if (!node || node.owner < 0 || !isTerritoryNodeActive(node, callbacks)) continue;
+        var radius = territoryRadiusForNode(node, constants);
+        var dx = x - (Number(node.pos.x) || 0);
+        var dy = y - (Number(node.pos.y) || 0);
+        if (dx * dx + dy * dy > radius * radius) continue;
         if (!owners[node.owner]) {
             owners[node.owner] = true;
             ownerCount++;
         }
     }
 
-    for (var j = 0; j < nodes.length; j++) {
-        var other = nodes[j];
-        if (!other || other.owner === owner || !isTerritoryNodeActive(other, callbacks)) continue;
-        var radius = territoryRadiusForNode(other, constants);
-        var dx = x - (Number(other.pos.x) || 0);
-        var dy = y - (Number(other.pos.y) || 0);
-        if (dx * dx + dy * dy > radius * radius) continue;
-        if (!owners[other.owner]) {
-            owners[other.owner] = true;
-            ownerCount++;
-        }
-    }
+    return {
+        owners: owners,
+        ownerCount: ownerCount,
+    };
+}
 
-    return ownerCount === 1 && owners[owner] === true;
+export function isPointInsideFriendlyTerritory(params) {
+    params = params || {};
+
+    var owner = Math.floor(Number(params.owner));
+    if (!Number.isFinite(owner) || owner < 0) return false;
+
+    var territoryPresence = getTerritoryOwnersAtPoint(params);
+
+    return territoryPresence.ownerCount === 1 && territoryPresence.owners[owner] === true;
 }
