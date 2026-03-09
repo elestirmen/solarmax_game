@@ -12,6 +12,7 @@ test('buildDailyChallenge is deterministic for the same day', function () {
     var a = buildDailyChallenge('2026-03-07');
     var b = buildDailyChallenge('2026-03-07');
     assert.deepEqual(a, b);
+    assert.ok(a.mapMutator);
 });
 
 test('buildDailyChallenge varies seed and title across days', function () {

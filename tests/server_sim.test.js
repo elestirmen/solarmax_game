@@ -204,3 +204,39 @@ test('simulateAuthoritativeTick keeps supplied holding fleets stable', function 
     assert.equal(state.fleets[0].count, 10);
     assert.equal(state.fleets[0].holdUnsuppliedTicks, 0);
 });
+
+test('simulateAuthoritativeTick lets blackout zones disable holding fleet territory protection', function () {
+    var snapshot = baseSnapshot();
+    snapshot.mapMutator = { type: 'blackout', x: 0, y: 120, r: 120 };
+    snapshot.fleets = [
+        {
+            id: 1,
+            active: true,
+            holding: true,
+            owner: 0,
+            count: 10,
+            holdUnsuppliedTicks: 0,
+            srcId: -1,
+            tgtId: -1,
+            fromX: 0,
+            fromY: 120,
+            toX: 0,
+            toY: 120,
+            cpx: 0,
+            cpy: 120,
+            x: 0,
+            y: 120,
+            trail: [],
+        },
+    ];
+    var state = buildAuthoritativeState(snapshot, {
+        manifest: { seed: 'sim-seed', difficulty: 'normal', rulesMode: 'advanced', fogEnabled: false },
+    });
+
+    for (var i = 0; i < SIM_CONSTANTS.HOLD_DECAY_GRACE_TICKS + SIM_CONSTANTS.HOLD_DECAY_INTERVAL_TICKS; i++) {
+        simulateAuthoritativeTick(state);
+    }
+
+    assert.equal(state.fleets[0].count, 9);
+    assert.equal(state.fleets[0].holdUnsuppliedTicks > SIM_CONSTANTS.HOLD_DECAY_GRACE_TICKS, true);
+});

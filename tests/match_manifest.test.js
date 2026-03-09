@@ -20,6 +20,7 @@ test('normalizeRoomConfig locks daily rooms to server generated content', functi
     assert.equal(config.mode, 'daily');
     assert.equal(config.challengeKey, '2026-03-07');
     assert.equal(config.seed, 'daily-2026-03-07');
+    assert.ok(config.mapMutator);
     assert.notEqual(config.nodeCount, 30);
 });
 
@@ -41,6 +42,7 @@ test('buildRoomMatchManifest returns standard manifest for standard rooms', func
             rulesMode: 'classic',
             aiCount: 2,
             mapFeature: 'barrier',
+            mapMutator: 'blackout',
         },
     }, { defaults: DEFAULT_MATCH_CONFIG, timeZone: 'Europe/Istanbul' });
 
@@ -48,6 +50,7 @@ test('buildRoomMatchManifest returns standard manifest for standard rooms', func
     assert.equal(manifest.seed, 'custom');
     assert.equal(manifest.aiCount, 2);
     assert.equal(manifest.mapFeature, 'barrier');
+    assert.equal(manifest.mapMutator, 'blackout');
 });
 
 test('buildRoomMatchManifest returns custom manifest with sanitized map metadata', function () {
@@ -69,6 +72,7 @@ test('buildRoomMatchManifest returns custom manifest with sanitized map metadata
                     { x: 760, y: 520, owner: 3, units: 18 },
                 ],
                 mapFeature: { type: 'gravity', nodeId: 2, x: 0, y: 0, r: 180 },
+                mapMutator: { type: 'ion_storm', x: 420, y: 340, r: 150, speedMult: 0.7 },
             },
         },
     }, { defaults: DEFAULT_MATCH_CONFIG, timeZone: 'Europe/Istanbul' });
@@ -78,4 +82,5 @@ test('buildRoomMatchManifest returns custom manifest with sanitized map metadata
     assert.equal(manifest.playerCount, 4);
     assert.equal(manifest.aiCount, 2);
     assert.equal(manifest.mapFeature.type, 'gravity');
+    assert.equal(manifest.mapMutator.type, 'ion_storm');
 });

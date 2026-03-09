@@ -730,6 +730,7 @@ function buildMatchStartedPayload(room, socketId) {
         fogEnabled: room.matchManifest.fogEnabled,
         rulesMode: room.matchManifest.rulesMode,
         mapFeature: room.matchManifest.mapFeature,
+        mapMutator: room.matchManifest.mapMutator,
         humanCount: humanSlots,
         aiCount: room.matchManifest.aiCount,
         customMap: room.matchManifest.mode === 'custom' ? room.matchManifest.customMap : null,

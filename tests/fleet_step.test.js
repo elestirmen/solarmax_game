@@ -206,6 +206,68 @@ test('stepFleetMovement boosts friendly fleets inside their territory', function
     assert.equal(fleets[0].t > fleets[1].t, true);
 });
 
+test('stepFleetMovement slows fleets inside an ion storm mutator', function () {
+    var fleets = [
+        {
+            active: true,
+            owner: 0,
+            srcId: -1,
+            tgtId: -1,
+            t: 0.2,
+            speed: 80,
+            spdVar: 1,
+            arcLen: 100,
+            routeSpeedMult: 1,
+            cpx: 50,
+            cpy: 0,
+            x: 40,
+            y: 0,
+            fromX: 0,
+            fromY: 0,
+            toX: 100,
+            toY: 0,
+            trail: [],
+            offsetL: 0,
+            launchT: 0,
+        },
+        {
+            active: true,
+            owner: 0,
+            srcId: -1,
+            tgtId: -1,
+            t: 0.2,
+            speed: 80,
+            spdVar: 1,
+            arcLen: 100,
+            routeSpeedMult: 1,
+            cpx: 250,
+            cpy: 0,
+            x: 240,
+            y: 0,
+            fromX: 200,
+            fromY: 0,
+            toX: 300,
+            toY: 0,
+            trail: [],
+            offsetL: 0,
+            launchT: 0,
+        },
+    ];
+
+    stepFleetMovement({
+        fleets: fleets,
+        nodes: [],
+        dt: 1 / 30,
+        tune: { fspeed: 80 },
+        mapFeature: { type: 'none' },
+        mapMutator: { type: 'ion_storm', x: 40, y: 0, r: 120, speedMult: 0.7 },
+        callbacks: { clamp: clamp, bezPt: bezPt },
+        constants: { baseFleetSpeed: 80, gravitySpeedMult: 0.75, trailLen: 12 },
+    });
+
+    assert.equal(fleets[0].t < fleets[1].t, true);
+});
+
 test('stepFleetMovement converts empty-space arrivals into holding fleets', function () {
     var fleets = [{
         active: true,

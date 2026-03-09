@@ -12,6 +12,7 @@ import { getStrategicPulseState } from './strategic_pulse.js';
 import { computeSyncHash } from './state_hash.js';
 import { decideAiCommands } from './ai.js';
 import { initFog, updateVis } from './fog.js';
+import { isTerritoryBonusBlockedAtPoint, resolveMapMutator } from './mutator.js';
 import {
     PLAYER_COLORS,
     SIM_CONSTANTS,
@@ -229,6 +230,11 @@ export function buildAuthoritativeState(snapshot, opts) {
         flows: Array.isArray(snapshot.flows) ? cloneValue(snapshot.flows) : [],
         wormholes: Array.isArray(snapshot.wormholes) ? cloneValue(snapshot.wormholes) : [],
         mapFeature: cloneValue(snapshot.mapFeature || { type: 'none' }),
+        mapMutator: resolveMapMutator({
+            seed: seed,
+            nodes: nodes,
+            mapMutator: snapshot.mapMutator !== undefined ? snapshot.mapMutator : manifest.mapMutator,
+        }),
         playerCapital: cloneValue(snapshot.playerCapital || {}),
         strategicNodes: Array.isArray(snapshot.strategicNodes) ? snapshot.strategicNodes.slice() : [],
         strategicPulse: cloneValue(snapshot.strategicPulse || {}),
@@ -285,6 +291,7 @@ export function captureAuthoritativeSnapshot(state) {
         stats: cloneValue(state.stats),
         wormholes: cloneValue(state.wormholes),
         mapFeature: cloneValue(state.mapFeature),
+        mapMutator: cloneValue(state.mapMutator),
         playerCapital: cloneValue(state.playerCapital),
         strategicNodes: Array.isArray(state.strategicNodes) ? state.strategicNodes.slice() : [],
         strategicPulse: cloneValue(state.strategicPulse),
@@ -309,6 +316,8 @@ export function computeAuthoritativeSnapshotHash(state) {
         nodes: state.nodes,
         fleets: state.fleets,
         players: state.players,
+        mapFeature: state.mapFeature,
+        mapMutator: state.mapMutator,
     });
 }
 
@@ -444,6 +453,7 @@ export function simulateAuthoritativeTick(state) {
         dt: SIM_CONSTANTS.TICK_DT,
         tune: state.tune,
         mapFeature: state.mapFeature,
+        mapMutator: state.mapMutator,
         callbacks: {
             clamp: clamp,
             bezPt: function (p0, cp, p2, t) {
@@ -454,6 +464,12 @@ export function simulateAuthoritativeTick(state) {
                 };
             },
             isNodeTerritoryActive: isNodeAssimilated,
+            isTerritoryBonusBlockedAtPoint: function (opts) {
+                return isTerritoryBonusBlockedAtPoint({
+                    point: opts && opts.point,
+                    mapMutator: state.mapMutator,
+                });
+            },
         },
         constants: {
             baseFleetSpeed: SIM_CONSTANTS.FLEET_SPEED,
@@ -523,6 +539,12 @@ export function simulateAuthoritativeTick(state) {
         nodes: state.nodes,
         callbacks: {
             isNodeTerritoryActive: isNodeAssimilated,
+            isTerritoryBonusBlockedAtPoint: function (opts) {
+                return isTerritoryBonusBlockedAtPoint({
+                    point: opts && opts.point,
+                    mapMutator: state.mapMutator,
+                });
+            },
         },
         constants: {
             holdDecayGraceTicks: SIM_CONSTANTS.HOLD_DECAY_GRACE_TICKS,

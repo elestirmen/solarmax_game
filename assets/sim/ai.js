@@ -1,6 +1,7 @@
 import { computePlayerUnitCount, computeGlobalCap } from './cap.js';
 import { computeSendCount } from './dispatch_math.js';
 import { isDispatchAllowed } from './barrier.js';
+import { isTerritoryBonusBlockedAtPoint } from './mutator.js';
 import { getTerritoryOwnersAtPoint } from './territory.js';
 import { AI_ARCHETYPES, SIM_CONSTANTS, difficultyConfig, isNodeAssimilated, nodeLevelDefMult, nodeTypeOf, upgradeCost } from './shared_config.js';
 
@@ -177,13 +178,22 @@ export function decideAiCommands(state, playerIndex) {
             var presence = getTerritoryOwnersAtPoint({
                 point: { x: x, y: y },
                 nodes: state.nodes,
-                callbacks: { isNodeTerritoryActive: isNodeAssimilated },
+                callbacks: {
+                    isNodeTerritoryActive: isNodeAssimilated,
+                    isTerritoryBonusBlockedAtPoint: function (opts) {
+                        return isTerritoryBonusBlockedAtPoint({
+                            point: opts && opts.point,
+                            mapMutator: state.mapMutator,
+                        });
+                    },
+                },
             });
             territoryCache[key] = {
                 owners: presence.owners,
                 ownerCount: presence.ownerCount,
+                bonusBlocked: presence.bonusBlocked === true,
                 friendly: !!presence.owners[playerIndex],
-                friendlySafe: presence.ownerCount === 1 && presence.owners[playerIndex] === true,
+                friendlySafe: presence.ownerCount === 1 && presence.owners[playerIndex] === true && presence.bonusBlocked !== true,
                 contested: presence.ownerCount > 1,
                 hostile: presence.ownerCount > 0 && !presence.owners[playerIndex],
                 neutral: presence.ownerCount === 0,
@@ -645,6 +655,8 @@ export function decideAiCommands(state, playerIndex) {
         else if (territoryState.contested) score += 22;
         else if (territoryState.hostile) score -= 16;
         else score += 6;
+        if (territoryState.bonusBlocked && node.owner !== playerIndex) score += 12;
+        else if (territoryState.bonusBlocked) score -= 8;
         if (!isNodeAssimilated(node) && node.owner !== -1) score += territoryState.hostile ? 9 : 18;
         if (pressureGap > 0) score -= Math.min(48, pressureGap * 0.35);
         else score += Math.min(18, (Math.max(localSupport, localFriendlyPressure) - localEnemyPressure) * 0.12);
@@ -698,6 +710,7 @@ export function decideAiCommands(state, playerIndex) {
         if (capPressure > 0.9) needed *= 0.93;
         if (target.territory.friendlySafe) needed *= 0.88;
         else if (target.territory.contested) needed *= 0.96;
+        else if (target.territory.bonusBlocked && targetNode.owner !== playerIndex) needed *= 0.92;
         if (!isNodeAssimilated(targetNode) && targetNode.owner !== -1) needed *= target.territory.hostile ? 0.96 : 0.9;
         if (target.territory.hostile && targetNode.owner !== -1) {
             needed += Math.max(0, target.localEnemyPressure - target.localFriendlyPressure) * 0.16;

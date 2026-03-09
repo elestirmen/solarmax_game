@@ -51,4 +51,5 @@ test('buildInitialMatchSnapshot assigns a capital to every player and preserves 
         [false, false, true]
     );
     assert.equal(snapshot.mapFeature.type, 'wormhole');
+    assert.ok(snapshot.mapMutator);
 });

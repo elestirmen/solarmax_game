@@ -10,6 +10,17 @@ function scaledInt(value, scale) {
     return Math.floor(n * scale);
 }
 
+function typeCode(value) {
+    value = String(value || '').toLowerCase();
+    if (value === 'wormhole') return 11;
+    if (value === 'gravity') return 13;
+    if (value === 'barrier') return 17;
+    if (value === 'ion_storm') return 19;
+    if (value === 'blackout') return 23;
+    if (value === 'auto') return 29;
+    return 7;
+}
+
 export function computeSyncHash(state) {
     state = state || {};
     var nodes = Array.isArray(state.nodes) ? state.nodes : [];
@@ -22,6 +33,19 @@ export function computeSyncHash(state) {
     hash = mixHash(hash, tick);
     hash = mixHash(hash, players.length);
     hash = mixHash(hash, nodes.length);
+    hash = mixHash(hash, typeCode(state.mapFeature && state.mapFeature.type));
+    hash = mixHash(hash, scaledInt(state.mapFeature && state.mapFeature.x, 10));
+    hash = mixHash(hash, scaledInt(state.mapFeature && state.mapFeature.y, 10));
+    hash = mixHash(hash, scaledInt(state.mapFeature && state.mapFeature.r, 10));
+    hash = mixHash(hash, Number(state.mapFeature && state.mapFeature.nodeId) || 0);
+    var gateIds = Array.isArray(state.mapFeature && state.mapFeature.gateIds) ? state.mapFeature.gateIds : [];
+    hash = mixHash(hash, gateIds.length);
+    for (var gi = 0; gi < gateIds.length; gi++) hash = mixHash(hash, Number(gateIds[gi]) || 0);
+    hash = mixHash(hash, typeCode(state.mapMutator && state.mapMutator.type));
+    hash = mixHash(hash, scaledInt(state.mapMutator && state.mapMutator.x, 10));
+    hash = mixHash(hash, scaledInt(state.mapMutator && state.mapMutator.y, 10));
+    hash = mixHash(hash, scaledInt(state.mapMutator && state.mapMutator.r, 10));
+    hash = mixHash(hash, scaledInt(state.mapMutator && state.mapMutator.speedMult, 1000));
 
     for (var ni = 0; ni < nodes.length; ni++) {
         var node = nodes[ni] || {};

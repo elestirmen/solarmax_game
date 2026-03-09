@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isPointInsideFriendlyTerritory, territoryRadiusForNode } from '../assets/sim/territory.js';
+import { getTerritoryOwnersAtPoint, isPointInsideFriendlyTerritory, territoryRadiusForNode } from '../assets/sim/territory.js';
 
 test('territoryRadiusForNode scales with node size and level', function () {
     var levelOne = territoryRadiusForNode({ owner: 0, radius: 20, level: 1, kind: 'core', pos: { x: 0, y: 0 } });
@@ -61,5 +61,30 @@ test('isPointInsideFriendlyTerritory treats overlapping enemy borders as contest
         owner: 1,
         point: { x: 55, y: 0 },
         nodes: nodes,
+    }), false);
+});
+
+test('getTerritoryOwnersAtPoint marks blackout zones as bonus-blocked without erasing ownership', function () {
+    var nodes = [
+        { owner: 0, radius: 24, level: 1, kind: 'core', pos: { x: 0, y: 0 } },
+    ];
+    var presence = getTerritoryOwnersAtPoint({
+        point: { x: 50, y: 0 },
+        nodes: nodes,
+        callbacks: {
+            isTerritoryBonusBlockedAtPoint: function () { return true; },
+        },
+    });
+
+    assert.equal(presence.owners[0], true);
+    assert.equal(presence.ownerCount, 1);
+    assert.equal(presence.bonusBlocked, true);
+    assert.equal(isPointInsideFriendlyTerritory({
+        owner: 0,
+        point: { x: 50, y: 0 },
+        nodes: nodes,
+        callbacks: {
+            isTerritoryBonusBlockedAtPoint: function () { return true; },
+        },
     }), false);
 });

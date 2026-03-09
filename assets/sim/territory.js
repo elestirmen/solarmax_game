@@ -44,6 +44,9 @@ export function getTerritoryOwnersAtPoint(params) {
     var nodes = Array.isArray(params.nodes) ? params.nodes : [];
     var callbacks = params.callbacks || {};
     var constants = params.constants || {};
+    var blockedFn = typeof callbacks.isTerritoryBonusBlockedAtPoint === 'function'
+        ? callbacks.isTerritoryBonusBlockedAtPoint
+        : null;
 
     var x = Number(point.x);
     var y = Number(point.y);
@@ -69,6 +72,11 @@ export function getTerritoryOwnersAtPoint(params) {
     return {
         owners: owners,
         ownerCount: ownerCount,
+        bonusBlocked: blockedFn ? !!blockedFn({
+            point: { x: x, y: y },
+            owners: owners,
+            ownerCount: ownerCount,
+        }) : false,
     };
 }
 
@@ -80,5 +88,7 @@ export function isPointInsideFriendlyTerritory(params) {
 
     var territoryPresence = getTerritoryOwnersAtPoint(params);
 
-    return territoryPresence.ownerCount === 1 && territoryPresence.owners[owner] === true;
+    return territoryPresence.ownerCount === 1 &&
+        territoryPresence.owners[owner] === true &&
+        territoryPresence.bonusBlocked !== true;
 }

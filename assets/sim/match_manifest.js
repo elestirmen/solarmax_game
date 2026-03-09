@@ -11,6 +11,7 @@ export var DEFAULT_MATCH_CONFIG = {
     rulesMode: 'advanced',
     aiCount: 0,
     mapFeature: 'none',
+    mapMutator: 'auto',
 };
 
 function pickDefaults(options) {
@@ -83,6 +84,7 @@ export function buildStandardMatchManifest(config, options) {
         rulesMode: normalizeRulesMode(config.rulesMode, options),
         aiCount: Math.max(0, toFiniteInt(config.aiCount) || 0),
         mapFeature: config.mapFeature || defaults.mapFeature || 'none',
+        mapMutator: config.mapMutator || defaults.mapMutator || 'none',
         objectives: [],
         hint: '',
     };
@@ -105,6 +107,7 @@ export function buildDailyMatchManifest(dateKey, options) {
         rulesMode: normalizeRulesMode(challenge.rulesMode, options),
         aiCount: Math.max(0, toFiniteInt(challenge.aiCount) || 0),
         mapFeature: challenge.mapFeature || defaults.mapFeature || 'none',
+        mapMutator: challenge.mapMutator || defaults.mapMutator || 'none',
         objectives: Array.isArray(challenge.objectives) ? challenge.objectives : [],
         hint: challenge.hint || '',
         challenge: challenge,
@@ -131,6 +134,7 @@ export function buildCustomMatchManifest(config, options) {
         rulesMode: customMap.rulesMode,
         aiCount: Math.max(0, customMap.playerCount - humanCount),
         mapFeature: customMap.mapFeature || { type: 'none' },
+        mapMutator: customMap.mapMutator || { type: 'none' },
         objectives: [],
         hint: '',
         customMapName: customMap.name,
@@ -175,6 +179,7 @@ export function normalizeRoomConfig(payload, options) {
             rulesMode: manifest.rulesMode,
             aiCount: manifest.aiCount,
             mapFeature: manifest.mapFeature,
+            mapMutator: manifest.mapMutator,
         };
     }
     if (mode === 'custom') {
@@ -190,6 +195,7 @@ export function normalizeRoomConfig(payload, options) {
             rulesMode: customManifest.rulesMode,
             aiCount: customManifest.aiCount,
             mapFeature: customManifest.mapFeature,
+            mapMutator: customManifest.mapMutator,
             playerCount: customManifest.playerCount,
             tuneOverrides: customManifest.tuneOverrides,
         };
@@ -204,5 +210,6 @@ export function normalizeRoomConfig(payload, options) {
         rulesMode: normalizeRulesMode(payload.rulesMode, options),
         aiCount: Math.max(0, toFiniteInt(payload.aiCount) || 0),
         mapFeature: payload.mapFeature || defaults.mapFeature || 'none',
+        mapMutator: payload.mapMutator || defaults.mapMutator || 'none',
     };
 }

@@ -22,9 +22,10 @@ import { applyPlayerCommandWithOps } from './assets/sim/command_apply.js';
 import { sanitizeCommandData } from './assets/sim/command_schema.js';
 import { resolveFleetArrivals, stepFleetMovement } from './assets/sim/fleet_step.js';
 import { stepHoldingFleetDecay } from './assets/sim/holding_decay.js';
-import { territoryRadiusForNode } from './assets/sim/territory.js';
+import { getTerritoryOwnersAtPoint, territoryRadiusForNode } from './assets/sim/territory.js';
 import { stepFlowLinks } from './assets/sim/flow_step.js';
 import { decideAiCommands } from './assets/sim/ai.js';
+import { isPointInsideMapMutator, isTerritoryBonusBlockedAtPoint as isTerritoryBonusBlockedByMutator, mapMutatorHint, mapMutatorName, resolveMapMutator } from './assets/sim/mutator.js';
 import { CAMPAIGN_LEVELS } from './assets/campaign/levels.js';
 import { buildDailyChallenge, dailyChallengeKey } from './assets/campaign/daily_challenge.js';
 import { describeCampaignObjectives, evaluateCampaignObjectives } from './assets/campaign/objectives.js';
@@ -359,7 +360,7 @@ var G = {
     tune: { prod: 1, fspeed: FLEET_SPEED, def: DEF_FACTOR, flowInt: 15, aiAgg: AI_AGG, aiBuf: AI_BUF, aiInt: AI_INTERVAL, fogEnabled: false, aiAssist: true },
     rec: { events: [], seed: 0, nc: 0, diff: 'normal' },
     rep: null, aiTicks: [], flowId: 0, fleetSerial: 0,
-    aiProfiles: [], mapFeature: { type: 'none' }, wormholes: [],
+    aiProfiles: [], mapFeature: { type: 'none' }, mapMutator: { type: 'none' }, wormholes: [],
     stats: { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0 },
     particles: [], turretBeams: [], fieldBeams: [], shockwaves: [], mapMode: 'random',
     playerCapital: {}, strategicNodes: [],
@@ -386,6 +387,47 @@ function ensureTerritoryLayerCanvas(width, height) {
     if (territoryLayerCanvas.width !== width) territoryLayerCanvas.width = width;
     if (territoryLayerCanvas.height !== height) territoryLayerCanvas.height = height;
     return territoryLayerCtx;
+}
+
+function territoryConfig() {
+    return {
+        territoryRadiusBase: TERRITORY_RADIUS_BASE,
+        territoryRadiusNodeRadiusMult: TERRITORY_RADIUS_NODE_RADIUS_MULT,
+        territoryRadiusLevelBonus: TERRITORY_RADIUS_LEVEL_BONUS,
+    };
+}
+
+function territoryBonusBlockedAtPoint(point) {
+    return isTerritoryBonusBlockedByMutator({
+        point: point,
+        mapMutator: G.mapMutator,
+    });
+}
+
+function territoryPresenceAtPoint(point) {
+    return getTerritoryOwnersAtPoint({
+        point: point,
+        nodes: G.nodes,
+        callbacks: {
+            isNodeTerritoryActive: isNodeAssimilated,
+            isTerritoryBonusBlockedAtPoint: function (opts) {
+                return territoryBonusBlockedAtPoint(opts && opts.point);
+            },
+        },
+        constants: territoryConfig(),
+    });
+}
+
+function holdingFleetState(fleet) {
+    if (!fleet || !fleet.holding) return { supplied: false, contested: false, bonusBlocked: false, friendly: false };
+    var point = { x: Number(fleet.x) || 0, y: Number(fleet.y) || 0 };
+    var presence = territoryPresenceAtPoint(point);
+    return {
+        supplied: presence.ownerCount === 1 && presence.owners[fleet.owner] === true && presence.bonusBlocked !== true,
+        contested: presence.ownerCount > 1,
+        bonusBlocked: presence.bonusBlocked === true,
+        friendly: !!presence.owners[fleet.owner],
+    };
 }
 
 var ACHIEVEMENTS = [
@@ -744,11 +786,24 @@ function applyMapFeature(cfg) {
     }
 }
 
+function applyMapMutator(cfg) {
+    G.mapMutator = resolveMapMutator({
+        seed: G.seed,
+        nodes: G.nodes,
+        mapMutator: cfg,
+    });
+}
+
 function applyCustomMapDefinition(customMap) {
     customMap = normalizeCustomMapConfig(customMap || {});
     G.nodes = [];
     G.wormholes = [];
     G.mapFeature = customMap.mapFeature || { type: 'none' };
+    G.mapMutator = resolveMapMutator({
+        seed: customMap.seed || G.seed,
+        nodes: customMap.nodes,
+        mapMutator: customMap.mapMutator,
+    });
     G.mapMode = 'custom';
 
     for (var i = 0; i < customMap.nodes.length; i++) {
@@ -826,6 +881,7 @@ function initGame(seedStr, nc, diff, opts) {
     var menuFog = typeof opts.fogEnabled === 'boolean' ? opts.fogEnabled : null;
     var rulesMode = normalizeRulesetMode(opts.rulesMode || 'advanced');
     var mapFeatureCfg = null;
+    var mapMutatorCfg = opts.mapMutator !== undefined ? opts.mapMutator : 'auto';
     var customMapCfg = opts.customMap ? normalizeCustomMapConfig(opts.customMap) : null;
     if (typeof opts.mapFeature === 'string') mapFeatureCfg = { type: opts.mapFeature };
     else if (opts.mapFeature && typeof opts.mapFeature === 'object') mapFeatureCfg = opts.mapFeature;
@@ -882,6 +938,7 @@ function initGame(seedStr, nc, diff, opts) {
     for (var i = 0; i < pool.length; i++) { pool[i].active = false; pool[i].trail = []; }
     G.fleets = [];
     G.flows = [];
+    G.mapMutator = { type: 'none' };
     var aiDefault = diff === 'easy' ? 1 : diff === 'normal' ? 2 : 3;
     var humanCount = Math.max(1, Math.floor(Number(opts.humanCount || 1)));
     var aic = opts.aiCount !== undefined ? Math.max(0, Math.floor(Number(opts.aiCount))) : aiDefault;
@@ -904,6 +961,7 @@ function initGame(seedStr, nc, diff, opts) {
         G.mapMode = 'random';
         genMap(nc);
         applyMapFeature(mapFeatureCfg || {});
+        applyMapMutator(mapMutatorCfg);
     }
     applyRulesetNodeKinds();
     G.fog = initFog(G.players.length, G.nodes.length);
@@ -914,12 +972,21 @@ function initGame(seedStr, nc, diff, opts) {
     G.strategicPulse.announcedCycle = -1;
     var pn = preferredCameraNodeForPlayer(G.human);
     if (pn) { G.cam.x = pn.pos.x; G.cam.y = pn.pos.y; } G.cam.zoom = 1;
-    if (!keepReplay) G.rec = { events: [], seed: G.seed, nc: nc, diff: diff, rulesMode: G.rulesMode };
+    if (!keepReplay) G.rec = {
+        events: [],
+        seed: G.seed,
+        nc: nc,
+        diff: diff,
+        rulesMode: G.rulesMode,
+        mapFeature: JSON.parse(JSON.stringify(G.mapFeature || { type: 'none' })),
+        mapMutator: JSON.parse(JSON.stringify(G.mapMutator || { type: 'none' })),
+    };
     if (!keepReplay) G.rep = null;
     G.state = keepReplay ? 'replay' : 'playing';
     G.campaign.reminderShown = {};
     G.daily.reminderShown = {};
     if (!keepReplay && G.mapFeature.type === 'barrier') showHintToast(barrierGatePromptText());
+    if (!keepReplay && G.mapMutator && G.mapMutator.type !== 'none') showHintToast(mapMutatorHint(G.mapMutator));
 }
 function genMap(nc) {
     G.nodes = []; var att = 0, placed = 0, minDist = NODE_MINDIST;
@@ -1543,10 +1610,14 @@ function gameTick(runtimeOpts) {
         dt: TICK_DT,
         tune: G.tune,
         mapFeature: G.mapFeature,
+        mapMutator: G.mapMutator,
         callbacks: {
             clamp: clamp,
             bezPt: bezPt,
             isNodeTerritoryActive: isNodeAssimilated,
+            isTerritoryBonusBlockedAtPoint: function (opts) {
+                return territoryBonusBlockedAtPoint(opts && opts.point);
+            },
         },
         constants: {
             baseFleetSpeed: FLEET_SPEED,
@@ -1614,6 +1685,9 @@ function gameTick(runtimeOpts) {
         nodes: G.nodes,
         callbacks: {
             isNodeTerritoryActive: isNodeAssimilated,
+            isTerritoryBonusBlockedAtPoint: function (opts) {
+                return territoryBonusBlockedAtPoint(opts && opts.point);
+            },
         },
         constants: {
             holdDecayGraceTicks: HOLD_DECAY_GRACE_TICKS,
@@ -2272,6 +2346,7 @@ function drawHoldingFleet(ctx, fleet, col, tick, selected) {
     var y = Number(fleet.y) || 0;
     var r = fleetSelectionRadius(fleet);
     var pulse = 0.72 + 0.28 * Math.sin(tick * 0.08 + (fleet.id || 0) * 0.31);
+    var status = holdingFleetState(fleet);
     var dir = Number.isFinite(fleet.headingX) && Number.isFinite(fleet.headingY)
         ? { x: fleet.headingX, y: fleet.headingY }
         : { x: 1, y: 0 };
@@ -2288,6 +2363,24 @@ function drawHoldingFleet(ctx, fleet, col, tick, selected) {
     ctx.ellipse(x, y, formationRadius + 6, formationRadius * 0.72 + 4, Math.atan2(dir.y, dir.x), 0, Math.PI * 2);
     ctx.fillStyle = hexToRgba(col, 0.06 + pulse * 0.05);
     ctx.fill();
+
+    if (status.contested || status.bonusBlocked || !status.supplied) {
+        ctx.beginPath();
+        ctx.ellipse(x, y, formationRadius + 10, formationRadius * 0.9 + 6, Math.atan2(dir.y, dir.x), 0, Math.PI * 2);
+        ctx.setLineDash(status.contested ? [5, 4] : [2, 5]);
+        ctx.strokeStyle = status.contested
+            ? 'rgba(255,232,180,0.8)'
+            : (status.bonusBlocked ? 'rgba(255,210,150,0.72)' : 'rgba(255,145,145,0.82)');
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+    } else if (status.supplied) {
+        ctx.beginPath();
+        ctx.ellipse(x, y, formationRadius + 8, formationRadius * 0.84 + 5, Math.atan2(dir.y, dir.x), 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(160,255,210,0.42)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    }
 
     for (var i = 0; i < shipCount; i++) {
         var ratio = shipCount <= 1 ? 0 : i / (shipCount - 1);
@@ -2325,6 +2418,13 @@ function drawHoldingFleet(ctx, fleet, col, tick, selected) {
     ctx.textBaseline = 'middle';
     ctx.fillStyle = 'rgba(255,255,255,0.96)';
     ctx.fillText(String(count), x, y + formationRadius + 9);
+    if (status.contested || status.bonusBlocked || !status.supplied) {
+        ctx.font = 'bold 9px Outfit,sans-serif';
+        ctx.fillStyle = status.contested
+            ? 'rgba(255,236,196,0.92)'
+            : (status.bonusBlocked ? 'rgba(255,220,170,0.9)' : 'rgba(255,170,170,0.92)');
+        ctx.fillText(status.contested ? 'CEPHE' : (status.bonusBlocked ? 'KARARTMA' : 'DESTEKSIZ'), x, y - formationRadius - 10);
+    }
     ctx.restore();
 }
 
@@ -2571,13 +2671,72 @@ function drawTerritoryBridgeSet(ctx, territories, color, alpha, expand) {
     }
 }
 
+function drawContestedFronts(ctx, territorySets, tick) {
+    var fronts = [];
+    for (var i = 0; i < territorySets.length; i++) {
+        for (var j = i + 1; j < territorySets.length; j++) {
+            var aSet = territorySets[i];
+            var bSet = territorySets[j];
+            for (var ai = 0; ai < aSet.territories.length; ai++) {
+                var a = aSet.territories[ai];
+                for (var bi = 0; bi < bSet.territories.length; bi++) {
+                    var b = bSet.territories[bi];
+                    var dx = b.x - a.x;
+                    var dy = b.y - a.y;
+                    var d = Math.sqrt(dx * dx + dy * dy) || 0.0001;
+                    var overlap = (a.radius + b.radius) - d;
+                    if (overlap <= 10) continue;
+                    var dirX = dx / d;
+                    var dirY = dy / d;
+                    var centerBias = clamp(a.radius / Math.max(a.radius + b.radius, 1), 0.3, 0.7);
+                    var midX = a.x + dx * centerBias;
+                    var midY = a.y + dy * centerBias;
+                    fronts.push({
+                        x: midX,
+                        y: midY,
+                        radius: clamp(10 + overlap * 0.48, 12, 56),
+                        ax: a.x + dirX * Math.min(a.radius * 0.4, d * 0.35),
+                        ay: a.y + dirY * Math.min(a.radius * 0.4, d * 0.35),
+                        bx: b.x - dirX * Math.min(b.radius * 0.4, d * 0.35),
+                        by: b.y - dirY * Math.min(b.radius * 0.4, d * 0.35),
+                    });
+                }
+            }
+        }
+    }
+    if (!fronts.length) return;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.setLineDash([6, 5]);
+    for (var fi = 0; fi < fronts.length; fi++) {
+        var front = fronts[fi];
+        var pulse = 0.52 + 0.48 * Math.sin(tick * 0.05 + fi * 0.9);
+        ctx.beginPath();
+        ctx.moveTo(front.ax, front.ay);
+        ctx.lineTo(front.bx, front.by);
+        ctx.strokeStyle = 'rgba(255,228,168,' + (0.12 + pulse * 0.08) + ')';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(front.x, front.y, front.radius, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,232,180,' + (0.03 + pulse * 0.025) + ')';
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.arc(front.x, front.y, front.radius * (0.74 + pulse * 0.08), 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,238,196,' + (0.18 + pulse * 0.08) + ')';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+    }
+    ctx.restore();
+}
+
 function drawTerritories(ctx, tick) {
-    var territoryCfg = {
-        territoryRadiusBase: TERRITORY_RADIUS_BASE,
-        territoryRadiusNodeRadiusMult: TERRITORY_RADIUS_NODE_RADIUS_MULT,
-        territoryRadiusLevelBonus: TERRITORY_RADIUS_LEVEL_BONUS,
-    };
+    var territoryCfg = territoryConfig();
     var byOwner = {};
+    var territorySets = [];
 
     for (var i = 0; i < G.nodes.length; i++) {
         var node = G.nodes[i];
@@ -2622,7 +2781,9 @@ function drawTerritories(ctx, tick) {
         drawTerritoryBridgeSet(layer, territories, color, 1, 0);
         fillTerritoryCircleSet(layer, territories, color, 1, 0);
         compositeLayer(fillAlpha);
+        territorySets.push({ owner: owner, territories: territories });
     }
+    drawContestedFronts(ctx, territorySets, tick);
 }
 
 function render(ctx, cv, tick) {
@@ -3058,6 +3219,50 @@ function drawMapFeature(ctx, tick) {
             ctx.textAlign = gateNode.pos.x <= bx ? 'right' : 'left';
             ctx.fillText('GATE', bx + (gateNode.pos.x <= bx ? -16 : 16), gateNode.pos.y + 3);
         }
+    }
+
+    if (G.mapMutator && G.mapMutator.type === 'ion_storm') {
+        var ion = G.mapMutator;
+        var ionPulse = 0.72 + 0.28 * Math.sin(tick * 0.05);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(ion.x, ion.y, ion.r, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(120,210,255,0.035)';
+        ctx.fill();
+        ctx.setLineDash([8, 6]);
+        ctx.strokeStyle = 'rgba(145,228,255,' + (0.18 + ionPulse * 0.08) + ')';
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        for (var ia = 0; ia < 3; ia++) {
+            var ang = tick * 0.02 + ia * (Math.PI * 2 / 3);
+            var arcR = ion.r * (0.42 + ia * 0.16);
+            ctx.beginPath();
+            ctx.arc(ion.x, ion.y, arcR, ang, ang + Math.PI * 0.72);
+            ctx.strokeStyle = 'rgba(195,245,255,' + (0.08 + ionPulse * 0.06) + ')';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+        ctx.restore();
+    } else if (G.mapMutator && G.mapMutator.type === 'blackout') {
+        var blackout = G.mapMutator;
+        var blackoutPulse = 0.64 + 0.36 * Math.sin(tick * 0.04 + 0.8);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(blackout.x, blackout.y, blackout.r, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(12,16,28,0.14)';
+        ctx.fill();
+        ctx.setLineDash([3, 7]);
+        ctx.strokeStyle = 'rgba(255,214,150,' + (0.16 + blackoutPulse * 0.06) + ')';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(blackout.x, blackout.y, blackout.r * 0.72, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,236,196,' + (0.08 + blackoutPulse * 0.05) + ')';
+        ctx.lineWidth = 0.9;
+        ctx.stroke();
+        ctx.restore();
     }
 }
 
@@ -3582,6 +3787,7 @@ function selectionMetaText() {
     if (!ids.length) {
         var idleParts = [];
         if (G.mapFeature && G.mapFeature.type === 'barrier') idleParts.push(barrierGateStatusText());
+        if (G.mapMutator && G.mapMutator.type !== 'none') idleParts.push('Mutator: ' + mapMutatorName(G.mapMutator));
         if (G.strategicPulse && G.strategicPulse.active) idleParts.push(pulseBonusSummary());
         if (idleParts.length) return idleParts.join(' | ');
         return 'Bir gezegen sec: upgrade maliyeti, savunma alani, asimilasyon, supply ve pulse etkileri burada gorunur.';
@@ -3608,6 +3814,9 @@ function selectionMetaText() {
         if (node.gate) parts.push(node.owner === G.human && isNodeAssimilated(node) ? 'GATE ready: gecit acik' : 'GATE: bariyeri asip diger tarafa gecisi acar');
         if (strategicPulseAppliesToNode(node.id)) parts.push(pulseBonusSummary());
         else if (node.strategic) parts.push('Strategic hub: pulse buraya dondugunde uretim, hiz, asimilasyon ve cap bonusu gelir');
+        if (G.mapMutator && G.mapMutator.type !== 'none' && isPointInsideMapMutator({ point: node.pos, mapMutator: G.mapMutator })) {
+            parts.push(mapMutatorName(G.mapMutator));
+        }
         return parts.join(' | ');
     }
 
@@ -3930,6 +4139,7 @@ function captureSyncSnapshot() {
         stats: JSON.parse(JSON.stringify(G.stats || {})),
         wormholes: JSON.parse(JSON.stringify(G.wormholes || [])),
         mapFeature: JSON.parse(JSON.stringify(G.mapFeature || { type: 'none' })),
+        mapMutator: JSON.parse(JSON.stringify(G.mapMutator || { type: 'none' })),
         playerCapital: JSON.parse(JSON.stringify(G.playerCapital || {})),
         strategicNodes: Array.isArray(G.strategicNodes) ? G.strategicNodes.slice() : [],
         strategicPulse: JSON.parse(JSON.stringify(G.strategicPulse || {})),
@@ -4063,6 +4273,7 @@ function applySyncSnapshot(snapshot) {
     G.flows = JSON.parse(JSON.stringify(Array.isArray(snapshot.flows) ? snapshot.flows : []));
     G.wormholes = JSON.parse(JSON.stringify(Array.isArray(snapshot.wormholes) ? snapshot.wormholes : []));
     G.mapFeature = JSON.parse(JSON.stringify(snapshot.mapFeature || { type: 'none' }));
+    G.mapMutator = JSON.parse(JSON.stringify(snapshot.mapMutator || { type: 'none' }));
     G.playerCapital = JSON.parse(JSON.stringify(snapshot.playerCapital || {}));
     G.strategicNodes = Array.isArray(snapshot.strategicNodes) ? snapshot.strategicNodes.slice() : [];
     G.strategicPulse = JSON.parse(JSON.stringify(snapshot.strategicPulse || currentStrategicPulse(G.tick)));
@@ -4149,6 +4360,8 @@ function sendOnlineStateHash() {
         nodes: G.nodes,
         fleets: G.fleets,
         players: G.players,
+        mapFeature: G.mapFeature,
+        mapMutator: G.mapMutator,
     });
     rememberSyncSnapshot(G.tick, hash);
     net.socket.emit('stateHash', {
@@ -4571,6 +4784,7 @@ function ensureSocket() {
             aiCount: Number(payload.aiCount || 0),
             localPlayerIndex: net.localPlayerIndex,
             mapFeature: payload.mapFeature || 'none',
+            mapMutator: payload.mapMutator || 'auto',
             customMap: onlineCustomMap,
             tuneOverrides: onlineCustomMap ? onlineCustomMap.tuneOverrides || null : null,
         });
@@ -4675,6 +4889,8 @@ function normalizeReplay(raw) {
         nc: isNaN(nc) ? 16 : nc,
         diff: (typeof diff === 'string' ? diff : 'normal'),
         rulesMode: rulesMode,
+        mapFeature: raw.mapFeature || 'none',
+        mapMutator: raw.mapMutator || 'auto',
         events: raw.events.map(function (e) {
             return { tick: Number(e.tick) || 0, type: e.type, data: e.data || {} };
         }),
@@ -4684,7 +4900,14 @@ function startReplayFromData(raw) {
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
     clearRoomState('');
     var rep = normalizeReplay(raw);
-    initGame('' + rep.seed, rep.nc, rep.diff, { keepReplay: true, keepTuning: false, fogEnabled: false, rulesMode: rep.rulesMode });
+    initGame('' + rep.seed, rep.nc, rep.diff, {
+        keepReplay: true,
+        keepTuning: false,
+        fogEnabled: false,
+        rulesMode: rep.rulesMode,
+        mapFeature: rep.mapFeature || 'none',
+        mapMutator: rep.mapMutator || 'auto',
+    });
     G.campaign.active = false;
     G.campaign.levelIndex = -1;
     G.daily.active = false;
@@ -4883,6 +5106,9 @@ function campaignFeatureName(feature) {
     if (feature.type === 'none') return 'Yok';
     return 'Rastgele';
 }
+function campaignMutatorName(mutator) {
+    return mapMutatorName(mutator);
+}
 function campaignSystemsSummary(level) {
     var parts = [
         'Pulse hublari gecici tempo bonusu verir',
@@ -4908,8 +5134,11 @@ function campaignLevelSummary(level) {
     return 'Bolum ' + level.id + ': ' + level.name + '\n' +
         level.blurb + '\n' +
         'Nodes: ' + level.nc + ' | AI: ' + level.aiCount + ' | Diff: ' + level.diff.toUpperCase() +
-        ' | Feature: ' + campaignFeatureName(level.mapFeature) + (level.fog ? ' | Fog ON' : ' | Fog OFF') + '\n' +
+        ' | Feature: ' + campaignFeatureName(level.mapFeature) +
+        ' | Mutator: ' + campaignMutatorName(level.mapMutator || 'none') +
+        (level.fog ? ' | Fog ON' : ' | Fog OFF') + '\n' +
         'Harita Dersi: ' + campaignFeatureHint(level) + '\n' +
+        'Mutator: ' + mapMutatorHint(level.mapMutator || 'none') + '\n' +
         'Systems: ' + campaignSystemsSummary(level) + '\n' +
         'Objectives: ' + describeCampaignObjectives(level, { tickRate: TICK_RATE }) + '\n' +
         'Plan: ' + (level.hint || 'Map temposunu pulse, supply ve savunma alani ile yonet.');
@@ -4942,7 +5171,8 @@ function refreshCustomMapStatus() {
         'Hazir custom map: ' + currentCustomMapConfig.name +
         ' | ' + currentCustomMapConfig.nodes.length + ' node' +
         ' | ' + currentCustomMapConfig.playerCount + ' oyuncu' +
-        ' | ' + campaignFeatureName(currentCustomMapConfig.mapFeature);
+        ' | ' + campaignFeatureName(currentCustomMapConfig.mapFeature) +
+        ' | Mutator: ' + campaignMutatorName(currentCustomMapConfig.mapMutator || 'none');
 }
 function applyCampaignLevelSelection(levelIndex) {
     var unlocked = G.campaign.unlocked || 1;
@@ -4993,7 +5223,7 @@ function refreshCampaignUI() {
     var selectedDone = campaignSelectedLevel < completed;
     renderMissionPanel(scenarioMissionEl, {
         title: 'Bolum ' + selected.id + ': ' + selected.name,
-        subtitle: selected.blurb + ' | AI ' + selected.aiCount + ' | ' + selected.diff.toUpperCase() + ' | ' + campaignFeatureName(selected.mapFeature) + ' | ' + (selectedDone ? 'Durum: Gecildi' : 'Durum: Hazir'),
+        subtitle: selected.blurb + ' | AI ' + selected.aiCount + ' | ' + selected.diff.toUpperCase() + ' | ' + campaignFeatureName(selected.mapFeature) + ' | Mutator: ' + campaignMutatorName(selected.mapMutator || 'none') + ' | ' + (selectedDone ? 'Durum: Gecildi' : 'Durum: Hazir'),
         items: evaluateCampaignObjectives(selected, {
             tick: 0,
             didWin: false,
@@ -5035,6 +5265,7 @@ function startSinglePlayerGame() {
     initGame((seedIn && seedIn.value) || '42', nc, (diffSel && diffSel.value) || 'normal', {
         fogEnabled: fogOn,
         rulesMode: (gameModeSel && gameModeSel.value) || 'advanced',
+        mapMutator: 'auto',
     });
     finalizeLocalGameStart(fogOn);
     refreshCustomMapStatus();
@@ -5057,6 +5288,7 @@ function startDailyChallengeGame() {
         fogEnabled: !!challenge.fog,
         aiCount: challenge.aiCount,
         mapFeature: challenge.mapFeature || 'auto',
+        mapMutator: challenge.mapMutator || 'auto',
         rulesMode: challenge.rulesMode || 'advanced',
     });
     G.campaign.active = false;
@@ -5114,6 +5346,7 @@ function exportCurrentMapState() {
         players: G.players,
         wormholes: G.wormholes,
         mapFeature: G.mapFeature,
+        mapMutator: G.mapMutator,
         strategicNodes: G.strategicNodes,
         playerCapital: G.playerCapital,
     }, {
@@ -5141,6 +5374,7 @@ function startCampaignLevel(levelIndex) {
         fogEnabled: !!lvl.fog,
         aiCount: lvl.aiCount,
         mapFeature: lvl.mapFeature || 'auto',
+        mapMutator: lvl.mapMutator || 'none',
         tuneOverrides: lvl.tune || null,
         rulesMode: lvl.rulesMode || 'advanced',
     });

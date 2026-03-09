@@ -1,3 +1,5 @@
+import { normalizeMapMutator, resolveMapMutator } from './mutator.js';
+
 var MAP_W = 1600;
 var MAP_H = 1000;
 var NODE_RMIN = 18;
@@ -196,6 +198,7 @@ export function normalizeCustomMapConfig(rawMap) {
         nodes: nodes,
         wormholes: wormholes,
         mapFeature: mapFeature,
+        mapMutator: normalizeMapMutator(rawMap.mapMutator || rawMap.mutator),
         strategicNodes: strategicNodes,
         playerCapital: playerCapital,
         tuneOverrides: sanitizeTuneOverrides(rawMap.tuneOverrides || rawMap.tune),
@@ -208,6 +211,11 @@ export function buildCustomMapSnapshot(rawMap, players) {
     var totalPlayers = Math.max(customMap.playerCount, players.length || 0);
     var nodes = cloneValue(customMap.nodes);
     var mapFeature = cloneValue(customMap.mapFeature || { type: 'none' });
+    var mapMutator = resolveMapMutator({
+        seed: customMap.seed,
+        nodes: nodes,
+        mapMutator: customMap.mapMutator,
+    });
     var wormholes = cloneValue(customMap.wormholes || []);
     var playerCapital = cloneValue(customMap.playerCapital || {});
 
@@ -241,6 +249,7 @@ export function buildCustomMapSnapshot(rawMap, players) {
         flows: [],
         wormholes: wormholes,
         mapFeature: mapFeature,
+        mapMutator: mapMutator,
         playerCapital: playerCapital,
         strategicNodes: cloneValue(customMap.strategicNodes || []),
         players: snapshotPlayers,
@@ -285,6 +294,7 @@ export function buildCustomMapExport(state, meta) {
         nodes: exportNodes,
         wormholes: Array.isArray(state.wormholes) ? state.wormholes : [],
         mapFeature: state.mapFeature || { type: 'none' },
+        mapMutator: state.mapMutator || { type: 'none' },
         strategicNodes: Array.isArray(state.strategicNodes) ? state.strategicNodes : [],
         playerCapital: state.playerCapital || {},
         tuneOverrides: meta.tuneOverrides || state.tune || null,

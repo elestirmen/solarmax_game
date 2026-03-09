@@ -1,4 +1,5 @@
 import { selectBarrierGateIds } from './barrier_layout.js';
+import { resolveMapMutator } from './mutator.js';
 import { normalizeNodeKindForRuleset } from './ruleset.js';
 import { PLAYER_COLORS, SIM_CONSTANTS, difficultyConfig, nodeCapacity } from './shared_config.js';
 
@@ -348,6 +349,11 @@ export function buildInitialMatchSnapshot(manifest, players) {
     };
     applyMapFeature(featureState, typeof manifest.mapFeature === 'string' ? { type: manifest.mapFeature } : (manifest.mapFeature || {}), diffCfg);
     applyRulesetNodeKinds(nodes, manifest.rulesMode || 'advanced');
+    var mapMutator = resolveMapMutator({
+        seed: manifest.seed,
+        nodes: nodes,
+        mapMutator: manifest.mapMutator,
+    });
 
     var snapshotPlayers = [];
     for (var pi = 0; pi < players.length; pi++) {
@@ -368,6 +374,7 @@ export function buildInitialMatchSnapshot(manifest, players) {
         flows: [],
         wormholes: featureState.wormholes,
         mapFeature: featureState.mapFeature,
+        mapMutator: mapMutator,
         playerCapital: playerCapital,
         strategicNodes: strategicNodes,
         players: snapshotPlayers,

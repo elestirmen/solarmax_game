@@ -17,6 +17,7 @@ test('normalizeCustomMapConfig sanitizes owners, gates, and feature data', funct
             { x: 500, y: 300, radius: 24, owner: 9, units: 18, kind: 'turret' },
         ],
         mapFeature: { type: 'barrier', x: 810, gateIds: [0, 99] },
+        mapMutator: { type: 'blackout', x: 420, y: 260, r: 160 },
         strategicNodes: [1, 5],
         playerCapital: { 0: 0, 1: 1, 2: 2 },
     });
@@ -25,6 +26,7 @@ test('normalizeCustomMapConfig sanitizes owners, gates, and feature data', funct
     assert.equal(normalized.playerCount, 3);
     assert.equal(normalized.nodes[2].owner, -1);
     assert.deepEqual(normalized.mapFeature.gateIds, [0]);
+    assert.equal(normalized.mapMutator.type, 'blackout');
     assert.deepEqual(normalized.strategicNodes, [1]);
     assert.equal(normalized.playerCapital[0], 0);
     assert.equal(normalized.playerCapital[1], 1);
@@ -43,6 +45,7 @@ test('buildCustomMapExport round-trips map structure into normalized JSON', func
         ],
         wormholes: [{ a: 0, b: 1 }],
         mapFeature: { type: 'wormhole' },
+        mapMutator: { type: 'ion_storm', x: 240, y: 220, r: 150, speedMult: 0.7 },
         strategicNodes: [0],
         playerCapital: { 0: 0, 1: 1 },
     }, {
@@ -53,6 +56,7 @@ test('buildCustomMapExport round-trips map structure into normalized JSON', func
     assert.equal(exported.name, 'Exported Map');
     assert.equal(exported.nodes.length, 2);
     assert.equal(exported.mapFeature.type, 'wormhole');
+    assert.equal(exported.mapMutator.type, 'ion_storm');
     assert.deepEqual(exported.wormholes, [{ a: 0, b: 1 }]);
     assert.deepEqual(exported.playerCapital, { 0: 0, 1: 1 });
 });
@@ -67,6 +71,7 @@ test('buildCustomMapSnapshot keeps player slots and feature-normalized coordinat
             { x: 540, y: 360, owner: 2, units: 18 },
         ],
         mapFeature: { type: 'gravity', nodeId: 1, x: 1, y: 1, r: 180 },
+        mapMutator: { type: 'blackout', x: 320, y: 240, r: 160 },
     }, [
         { index: 0, botControlled: false },
         { index: 1, botControlled: false },
@@ -76,6 +81,7 @@ test('buildCustomMapSnapshot keeps player slots and feature-normalized coordinat
     assert.equal(snapshot.players.length, 3);
     assert.deepEqual(snapshot.players.map(function (player) { return player.isAI; }), [false, false, true]);
     assert.equal(snapshot.mapFeature.type, 'gravity');
+    assert.equal(snapshot.mapMutator.type, 'blackout');
     assert.equal(snapshot.mapFeature.x, snapshot.nodes[1].pos.x);
     assert.equal(snapshot.mapFeature.y, snapshot.nodes[1].pos.y);
 });

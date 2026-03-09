@@ -1,3 +1,5 @@
+import { mapMutatorHint, mapMutatorName } from '../sim/mutator.js';
+
 function hashString(input) {
     input = String(input || '');
     var hash = 2166136261 >>> 0;
@@ -114,6 +116,8 @@ export function buildDailyChallenge(inputDate) {
     var nodeCount = 12 + ((hash >>> 12) % 11);
     var aiCount = 1 + ((hash >>> 16) % 4);
     var fog = ((hash >>> 20) & 1) === 1 && diff !== 'easy';
+    var mutatorOptions = ['none', 'ion_storm', 'none', 'blackout'];
+    var mapMutator = mutatorOptions[(hash >>> 24) % mutatorOptions.length];
 
     if (feature === 'barrier' && aiCount < 2) aiCount = 2;
     if (diff === 'easy' && aiCount > 2) aiCount = 2;
@@ -135,15 +139,16 @@ export function buildDailyChallenge(inputDate) {
     return {
         key: key,
         title: parts.prefix + ' ' + parts.suffix,
-        blurb: nodeCount + ' node | ' + aiCount + ' AI | ' + diff.toUpperCase() + ' | ' + featureLabel(feature) + (fog ? ' | Fog' : ''),
+        blurb: nodeCount + ' node | ' + aiCount + ' AI | ' + diff.toUpperCase() + ' | ' + featureLabel(feature) + (mapMutator !== 'none' ? (' | ' + mapMutatorName(mapMutator)) : '') + (fog ? ' | Fog' : ''),
         seed: 'daily-' + key,
         nc: nodeCount,
         diff: diff,
         aiCount: aiCount,
         fog: fog,
         mapFeature: feature,
+        mapMutator: mapMutator,
         rulesMode: 'advanced',
-        hint: 'Bugunun haritasinda tempo degisimi anomali ve pulse etrafinda kuruluyor. Acilisi ekonomi, ikinci hamleyi pozisyon kazanmak icin kullan.',
+        hint: 'Bugunun haritasinda tempo degisimi anomali, pulse ve mutator etrafinda kuruluyor. ' + mapMutatorHint(mapMutator),
         objectives: objectives,
     };
 }

@@ -1,5 +1,6 @@
 import { resolveFriendlyArrival } from './reinforcement.js';
 import { getFleetUnitSpacingT } from './shared_config.js';
+import { getMapMutatorSpeedMultiplier } from './mutator.js';
 import { isPointInsideFriendlyTerritory } from './territory.js';
 
 function normalizeDirection(dx, dy, fallbackX, fallbackY) {
@@ -178,6 +179,7 @@ export function stepFleetMovement(params) {
     var nodes = Array.isArray(params.nodes) ? params.nodes : [];
     var tune = params.tune || {};
     var mapFeature = params.mapFeature || {};
+    var mapMutator = params.mapMutator || {};
     var callbacks = params.callbacks || {};
     var constants = params.constants || {};
 
@@ -218,6 +220,10 @@ export function stepFleetMovement(params) {
             var gravityR = Number(mapFeature.r) || 0;
             if (gdx * gdx + gdy * gdy <= gravityR * gravityR) speedMult *= gravitySpeedMult;
         }
+        speedMult *= getMapMutatorSpeedMultiplier({
+            mapMutator: mapMutator,
+            point: { x: Number(fleet.x) || 0, y: Number(fleet.y) || 0 },
+        });
         if (territorySpeedMult > 1 && isPointInsideFriendlyTerritory({
             owner: fleet.owner,
             point: { x: Number(fleet.x) || 0, y: Number(fleet.y) || 0 },

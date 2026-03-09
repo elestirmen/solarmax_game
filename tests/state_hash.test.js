@@ -77,3 +77,22 @@ test('computeSyncHash changes when a parked fleet decay state changes', function
 
     assert.notEqual(computeSyncHash(baseState), computeSyncHash(variant));
 });
+
+test('computeSyncHash changes when the active map mutator changes', function () {
+    var baseState = {
+        tick: 24,
+        players: [{ alive: true, isAI: false }],
+        nodes: [],
+        fleets: [],
+        mapMutator: { type: 'ion_storm', x: 400, y: 300, r: 180, speedMult: 0.72 },
+    };
+    var variant = {
+        tick: 24,
+        players: [{ alive: true, isAI: false }],
+        nodes: [],
+        fleets: [],
+        mapMutator: { type: 'blackout', x: 400, y: 300, r: 180 },
+    };
+
+    assert.notEqual(computeSyncHash(baseState), computeSyncHash(variant));
+});
