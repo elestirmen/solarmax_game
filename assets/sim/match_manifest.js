@@ -1,6 +1,8 @@
 import { buildDailyChallenge } from '../campaign/daily_challenge.js';
 import { toFiniteInt } from './command_schema.js';
 import { normalizeCustomMapConfig } from './custom_map.js';
+import { normalizeDoctrineId } from './doctrine.js';
+import { playlistName, resolvePlaylistConfig } from './playlists.js';
 
 export var DEFAULT_MATCH_CONFIG = {
     mode: 'standard',
@@ -12,6 +14,8 @@ export var DEFAULT_MATCH_CONFIG = {
     aiCount: 0,
     mapFeature: 'none',
     mapMutator: 'auto',
+    playlist: 'standard',
+    doctrineId: 'auto',
 };
 
 function pickDefaults(options) {
@@ -71,12 +75,7 @@ export function buildStandardMatchManifest(config, options) {
     config = config || {};
     options = options || {};
     var defaults = pickDefaults(options);
-    return {
-        mode: 'standard',
-        modeLabel: 'Standart',
-        challengeKey: '',
-        challengeTitle: '',
-        challengeBlurb: '',
+    var playlistResolved = resolvePlaylistConfig({
         seed: String(config.seed || defaults.seed),
         nodeCount: normalizeNodeCount(config.nodeCount, options),
         difficulty: normalizeDifficulty(config.difficulty, options),
@@ -85,8 +84,35 @@ export function buildStandardMatchManifest(config, options) {
         aiCount: Math.max(0, toFiniteInt(config.aiCount) || 0),
         mapFeature: config.mapFeature || defaults.mapFeature || 'none',
         mapMutator: config.mapMutator || defaults.mapMutator || 'none',
+        tuneOverrides: config.tuneOverrides || null,
+        doctrineId: config.doctrineId || defaults.doctrineId || 'auto',
+        encounters: Array.isArray(config.encounters) ? config.encounters : [],
+        playlist: config.playlist || defaults.playlist || 'standard',
+        forcePlaylistOverrides: true,
+    });
+    return {
+        mode: 'standard',
+        modeLabel: 'Standart',
+        challengeKey: '',
+        challengeTitle: '',
+        challengeBlurb: '',
+        seed: String(playlistResolved.seed || defaults.seed),
+        nodeCount: normalizeNodeCount(playlistResolved.nodeCount, options),
+        difficulty: normalizeDifficulty(playlistResolved.difficulty, options),
+        fogEnabled: playlistResolved.fogEnabled === true,
+        rulesMode: normalizeRulesMode(playlistResolved.rulesMode, options),
+        aiCount: Math.max(0, toFiniteInt(playlistResolved.aiCount) || 0),
+        mapFeature: playlistResolved.mapFeature || defaults.mapFeature || 'none',
+        mapMutator: playlistResolved.mapMutator || defaults.mapMutator || 'none',
+        playlist: playlistResolved.playlist || 'standard',
+        playlistLabel: playlistResolved.playlistLabel || playlistName(playlistResolved.playlist || 'standard'),
+        playlistBlurb: playlistResolved.playlistBlurb || '',
+        doctrineId: playlistResolved.doctrineId && playlistResolved.doctrineId !== 'auto' ? normalizeDoctrineId(playlistResolved.doctrineId) : '',
+        encounters: Array.isArray(playlistResolved.encounters) ? playlistResolved.encounters : [],
+        tuneOverrides: playlistResolved.tuneOverrides || null,
         objectives: [],
         hint: '',
+        endOnObjectives: false,
     };
 }
 
@@ -108,8 +134,14 @@ export function buildDailyMatchManifest(dateKey, options) {
         aiCount: Math.max(0, toFiniteInt(challenge.aiCount) || 0),
         mapFeature: challenge.mapFeature || defaults.mapFeature || 'none',
         mapMutator: challenge.mapMutator || defaults.mapMutator || 'none',
+        playlist: challenge.playlist || 'standard',
+        playlistLabel: playlistName(challenge.playlist || 'standard'),
+        playlistBlurb: '',
+        doctrineId: challenge.doctrineId ? normalizeDoctrineId(challenge.doctrineId) : '',
+        encounters: Array.isArray(challenge.encounters) ? challenge.encounters : [],
         objectives: Array.isArray(challenge.objectives) ? challenge.objectives : [],
         hint: challenge.hint || '',
+        endOnObjectives: challenge.endOnObjectives === true,
         challenge: challenge,
     };
 }
@@ -135,8 +167,14 @@ export function buildCustomMatchManifest(config, options) {
         aiCount: Math.max(0, customMap.playerCount - humanCount),
         mapFeature: customMap.mapFeature || { type: 'none' },
         mapMutator: customMap.mapMutator || { type: 'none' },
+        playlist: customMap.playlist || 'standard',
+        playlistLabel: playlistName(customMap.playlist || 'standard'),
+        playlistBlurb: '',
+        doctrineId: customMap.doctrineId ? normalizeDoctrineId(customMap.doctrineId) : '',
+        encounters: Array.isArray(customMap.encounters) ? customMap.encounters : [],
         objectives: [],
         hint: '',
+        endOnObjectives: customMap.endOnObjectives === true,
         customMapName: customMap.name,
         customMap: customMap,
         playerCount: customMap.playerCount,
@@ -180,6 +218,9 @@ export function normalizeRoomConfig(payload, options) {
             aiCount: manifest.aiCount,
             mapFeature: manifest.mapFeature,
             mapMutator: manifest.mapMutator,
+            playlist: manifest.playlist,
+            doctrineId: manifest.doctrineId,
+            encounters: manifest.encounters,
         };
     }
     if (mode === 'custom') {
@@ -196,6 +237,9 @@ export function normalizeRoomConfig(payload, options) {
             aiCount: customManifest.aiCount,
             mapFeature: customManifest.mapFeature,
             mapMutator: customManifest.mapMutator,
+            playlist: customManifest.playlist,
+            doctrineId: customManifest.doctrineId,
+            encounters: customManifest.encounters,
             playerCount: customManifest.playerCount,
             tuneOverrides: customManifest.tuneOverrides,
         };
@@ -211,5 +255,9 @@ export function normalizeRoomConfig(payload, options) {
         aiCount: Math.max(0, toFiniteInt(payload.aiCount) || 0),
         mapFeature: payload.mapFeature || defaults.mapFeature || 'none',
         mapMutator: payload.mapMutator || defaults.mapMutator || 'none',
+        playlist: payload.playlist || defaults.playlist || 'standard',
+        doctrineId: payload.doctrineId || defaults.doctrineId || 'auto',
+        encounters: Array.isArray(payload.encounters) ? payload.encounters : [],
+        tuneOverrides: payload.tuneOverrides || null,
     };
 }

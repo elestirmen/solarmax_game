@@ -324,3 +324,17 @@ test('ai treats a target behind a turret as protected when the attack route cros
 
     assert.equal(screenedTargetSends.length, 0);
 });
+
+test('siege doctrine lets ai trigger doctrine activation before a turret assault', function () {
+    var nodes = [
+        node(0, 1, 0, 0, 72, 'core'),
+        node(1, 1, 122, 0, 32, 'core'),
+        node(2, 0, 262, 0, 22, 'turret'),
+    ];
+    var commands = decideAiCommands(Object.assign(buildState('hard', nodes, { 0: 96, 1: 128 }), {
+        doctrines: ['logistics', 'siege'],
+        doctrineStates: [{ cooldownTicks: 0, activeTicks: 0 }, { cooldownTicks: 0, activeTicks: 0 }],
+    }), 1);
+
+    assert.equal(commands[0].type, 'activateDoctrine');
+});

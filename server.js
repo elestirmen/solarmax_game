@@ -703,6 +703,9 @@ function publicRoomList() {
                 fogEnabled: !!(preview.fogEnabled ?? room.config?.fogEnabled),
                 rulesMode: String(preview.rulesMode || room.config?.rulesMode || DEFAULT_ROOM_CONFIG.rulesMode),
                 aiCount: Number(preview.aiCount || 0),
+                playlist: preview.playlist || room.config?.playlist || 'standard',
+                playlistLabel: preview.playlistLabel || '',
+                doctrineId: preview.doctrineId || room.config?.doctrineId || '',
                 createdAt: Number(room.createdAt || 0),
             });
         }
@@ -731,6 +734,11 @@ function buildMatchStartedPayload(room, socketId) {
         rulesMode: room.matchManifest.rulesMode,
         mapFeature: room.matchManifest.mapFeature,
         mapMutator: room.matchManifest.mapMutator,
+        playlist: room.matchManifest.playlist || 'standard',
+        playlistLabel: room.matchManifest.playlistLabel || '',
+        playlistBlurb: room.matchManifest.playlistBlurb || '',
+        doctrineId: room.matchManifest.doctrineId || '',
+        encounters: Array.isArray(room.matchManifest.encounters) ? room.matchManifest.encounters : [],
         humanCount: humanSlots,
         aiCount: room.matchManifest.aiCount,
         customMap: room.matchManifest.mode === 'custom' ? room.matchManifest.customMap : null,

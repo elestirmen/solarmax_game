@@ -18,7 +18,17 @@ function typeCode(value) {
     if (value === 'ion_storm') return 19;
     if (value === 'blackout') return 23;
     if (value === 'auto') return 29;
+    if (value === 'relay_core') return 31;
+    if (value === 'mega_turret') return 37;
     return 7;
+}
+
+function doctrineCode(value) {
+    value = String(value || '').toLowerCase();
+    if (value === 'logistics') return 41;
+    if (value === 'assimilation') return 43;
+    if (value === 'siege') return 47;
+    return 11;
 }
 
 export function computeSyncHash(state) {
@@ -26,6 +36,9 @@ export function computeSyncHash(state) {
     var nodes = Array.isArray(state.nodes) ? state.nodes : [];
     var fleets = Array.isArray(state.fleets) ? state.fleets : [];
     var players = Array.isArray(state.players) ? state.players : [];
+    var doctrines = Array.isArray(state.doctrines) ? state.doctrines : [];
+    var doctrineStates = Array.isArray(state.doctrineStates) ? state.doctrineStates : [];
+    var encounters = Array.isArray(state.encounters) ? state.encounters : [];
     var tick = Number(state.tick);
     if (!Number.isFinite(tick)) tick = 0;
 
@@ -88,6 +101,22 @@ export function computeSyncHash(state) {
         var player = players[pi] || {};
         hash = mixHash(hash, player.alive === false ? 0 : 1);
         hash = mixHash(hash, player.isAI ? 1 : 0);
+        hash = mixHash(hash, doctrineCode(doctrines[pi]));
+        hash = mixHash(hash, Number(doctrineStates[pi] && doctrineStates[pi].cooldownTicks) || 0);
+        hash = mixHash(hash, Number(doctrineStates[pi] && doctrineStates[pi].activeTicks) || 0);
+    }
+
+    hash = mixHash(hash, encounters.length);
+    for (var ei = 0; ei < encounters.length; ei++) {
+        var encounter = encounters[ei] || {};
+        hash = mixHash(hash, typeCode(encounter.type));
+        hash = mixHash(hash, Number(encounter.nodeId) || 0);
+        hash = mixHash(hash, (Number(encounter.owner) || 0) + 2);
+        hash = mixHash(hash, encounter.assimilated ? 1 : 0);
+        var controlTicksByPlayer = encounter.controlTicksByPlayer || {};
+        for (var ci = 0; ci < players.length; ci++) {
+            hash = mixHash(hash, Number(controlTicksByPlayer[ci]) || 0);
+        }
     }
 
     return ('00000000' + (hash >>> 0).toString(16)).slice(-8);

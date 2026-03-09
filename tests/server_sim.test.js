@@ -240,3 +240,28 @@ test('simulateAuthoritativeTick lets blackout zones disable holding fleet territ
     assert.equal(state.fleets[0].count, 9);
     assert.equal(state.fleets[0].holdUnsuppliedTicks > SIM_CONSTANTS.HOLD_DECAY_GRACE_TICKS, true);
 });
+
+test('simulateAuthoritativeTick ends encounter missions when required objectives are complete', function () {
+    var snapshot = baseSnapshot();
+    snapshot.nodes = [
+        { id: 0, pos: { x: 0, y: 0 }, radius: 24, owner: 0, units: 30, level: 1, kind: 'core', prodAcc: 0, defense: false, assimilationProgress: 1, assimilationLock: 0 },
+        { id: 1, pos: { x: 120, y: 0 }, radius: 24, owner: 0, units: 16, level: 1, kind: 'relay', prodAcc: 0, defense: false, assimilationProgress: 1, assimilationLock: 0 },
+        { id: 2, pos: { x: 240, y: 0 }, radius: 24, owner: 1, units: 16, level: 1, kind: 'core', prodAcc: 0, defense: false, assimilationProgress: 1, assimilationLock: 0 },
+    ];
+    var state = buildAuthoritativeState(snapshot, {
+        manifest: {
+            seed: 'sim-seed',
+            difficulty: 'normal',
+            rulesMode: 'advanced',
+            fogEnabled: false,
+            encounters: [{ id: 'relay-a', type: 'relay_core', nodeId: 1 }],
+            objectives: [{ type: 'encounter_captured', target: 1, encounterId: 'relay-a' }],
+            endOnObjectives: true,
+        },
+    });
+
+    simulateAuthoritativeTick(state);
+
+    assert.equal(state.state, 'gameOver');
+    assert.equal(state.winner, 0);
+});

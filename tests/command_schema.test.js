@@ -27,3 +27,7 @@ test('sanitizeCommandData accepts grouped upgrade commands', function () {
 test('sanitizeCommandPayload rejects unsupported commands', function () {
     assert.equal(sanitizeCommandPayload({ type: 'dance', data: {} }), null);
 });
+
+test('sanitizeCommandData accepts doctrine activation without payload', function () {
+    assert.deepEqual(sanitizeCommandData('activateDoctrine', {}), {});
+});

@@ -43,14 +43,18 @@ test('buildRoomMatchManifest returns standard manifest for standard rooms', func
             aiCount: 2,
             mapFeature: 'barrier',
             mapMutator: 'blackout',
+            playlist: 'chaos',
+            doctrineId: 'auto',
         },
     }, { defaults: DEFAULT_MATCH_CONFIG, timeZone: 'Europe/Istanbul' });
 
     assert.equal(manifest.mode, 'standard');
     assert.equal(manifest.seed, 'custom');
-    assert.equal(manifest.aiCount, 2);
-    assert.equal(manifest.mapFeature, 'barrier');
-    assert.equal(manifest.mapMutator, 'blackout');
+    assert.equal(manifest.playlist, 'chaos');
+    assert.equal(manifest.playlistLabel, 'Chaos');
+    assert.equal(manifest.doctrineId, 'siege');
+    assert.equal(Array.isArray(manifest.encounters), true);
+    assert.equal(manifest.encounters.length > 0, true);
 });
 
 test('buildRoomMatchManifest returns custom manifest with sanitized map metadata', function () {

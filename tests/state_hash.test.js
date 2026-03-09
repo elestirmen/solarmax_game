@@ -96,3 +96,26 @@ test('computeSyncHash changes when the active map mutator changes', function () 
 
     assert.notEqual(computeSyncHash(baseState), computeSyncHash(variant));
 });
+
+test('computeSyncHash changes when doctrine or encounter control state changes', function () {
+    var baseState = {
+        tick: 30,
+        players: [{ alive: true, isAI: false }],
+        doctrines: ['logistics'],
+        doctrineStates: [{ cooldownTicks: 0, activeTicks: 0 }],
+        encounters: [{ type: 'relay_core', nodeId: 2, owner: 0, assimilated: true, controlTicksByPlayer: { 0: 90 } }],
+        nodes: [{ id: 2, owner: 0, units: 14, level: 1, defense: false, assimilationProgress: 1, assimilationLock: 0 }],
+        fleets: [],
+    };
+    var variant = {
+        tick: 30,
+        players: [{ alive: true, isAI: false }],
+        doctrines: ['siege'],
+        doctrineStates: [{ cooldownTicks: 120, activeTicks: 30 }],
+        encounters: [{ type: 'relay_core', nodeId: 2, owner: 0, assimilated: true, controlTicksByPlayer: { 0: 120 } }],
+        nodes: [{ id: 2, owner: 0, units: 14, level: 1, defense: false, assimilationProgress: 1, assimilationLock: 0 }],
+        fleets: [],
+    };
+
+    assert.notEqual(computeSyncHash(baseState), computeSyncHash(variant));
+});

@@ -32,6 +32,12 @@ export function stepNodeEconomy(params) {
     var isNodeAssimilated = typeof callbacks.isNodeAssimilated === 'function' ? callbacks.isNodeAssimilated : function () {
         return true;
     };
+    var ownerProdMultiplier = typeof callbacks.ownerProdMultiplier === 'function' ? callbacks.ownerProdMultiplier : function () {
+        return 1;
+    };
+    var ownerAssimilationMultiplier = typeof callbacks.ownerAssimilationMultiplier === 'function' ? callbacks.ownerAssimilationMultiplier : function () {
+        return 1;
+    };
 
     var baseProd = Number(constants.baseProd);
     var nodeRadiusMax = Number(constants.nodeRadiusMax);
@@ -82,6 +88,7 @@ export function stepNodeEconomy(params) {
                 var assimRate = (assimBaseRate + Math.floor(node.units) * assimUnitBonus) * garrisonFactor / (levelResist * typeResist);
                 if (node.defense) assimRate *= defenseAssimBonus;
                 if (strategicPulseAppliesToNode(node.id)) assimRate *= strategicPulseAssim;
+                assimRate *= Math.max(0.2, Number(ownerAssimilationMultiplier(node.owner, node)) || 1);
                 node.assimilationProgress = Math.min(1, (node.assimilationProgress || 0) + assimRate);
             }
         }
@@ -120,6 +127,7 @@ export function stepNodeEconomy(params) {
         if (ownerUnitCount >= ownerCap) continue;
 
         var prodMult = strategicPulseAppliesToNode(node.id) ? strategicPulseProd : 1;
+        prodMult *= Math.max(0.2, Number(ownerProdMultiplier(node.owner, node)) || 1);
         var prodAcc = Number(node.prodAcc) || 0;
         prodAcc += baseProd * (Number(tune.prod) || 1) * ((Number(node.radius) || 0) / nodeRadiusMax) * (Number(nodeType.prod) || 1) * nodeLevelProdMult(node) * (1 + ownerAssist) * diffMult * supplyMult * defenseMult * capProdMult * prodMult;
         node.prodAcc = prodAcc;

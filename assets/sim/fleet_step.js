@@ -190,6 +190,9 @@ export function stepFleetMovement(params) {
     var trailLen = Number(constants.trailLen);
     var clamp = typeof callbacks.clamp === 'function' ? callbacks.clamp : defaultClamp;
     var bezPt = typeof callbacks.bezPt === 'function' ? callbacks.bezPt : defaultBezPt;
+    var fleetSpeedMultiplier = typeof callbacks.fleetSpeedMultiplier === 'function' ? callbacks.fleetSpeedMultiplier : function () {
+        return 1;
+    };
 
     if (!Number.isFinite(dt) || dt <= 0) dt = 1 / 30;
     if (!Number.isFinite(baseFleetSpeed) || baseFleetSpeed <= 0) baseFleetSpeed = 80;
@@ -224,6 +227,7 @@ export function stepFleetMovement(params) {
             mapMutator: mapMutator,
             point: { x: Number(fleet.x) || 0, y: Number(fleet.y) || 0 },
         });
+        speedMult *= Math.max(0.4, Number(fleetSpeedMultiplier(fleet)) || 1);
         if (territorySpeedMult > 1 && isPointInsideFriendlyTerritory({
             owner: fleet.owner,
             point: { x: Number(fleet.x) || 0, y: Number(fleet.y) || 0 },
@@ -375,6 +379,12 @@ export function resolveCombatOutcome(params) {
     var nodeTypeOf = typeof callbacks.nodeTypeOf === 'function' ? callbacks.nodeTypeOf : function () { return { def: 1 }; };
     var nodeLevelDefMult = typeof callbacks.nodeLevelDefMult === 'function' ? callbacks.nodeLevelDefMult : function () { return 1; };
     var nodeCapacity = typeof callbacks.nodeCapacity === 'function' ? callbacks.nodeCapacity : function (node) { return Number(node.maxUnits) || 0; };
+    var attackMultiplier = typeof callbacks.attackMultiplier === 'function' ? callbacks.attackMultiplier : function () {
+        return 1;
+    };
+    var defenseMultiplier = typeof callbacks.defenseMultiplier === 'function' ? callbacks.defenseMultiplier : function () {
+        return 1;
+    };
     var turretCaptureResist = Number(constants.turretCaptureResist);
     var defenseBonus = Number(constants.defenseBonus);
     var assimLockTicks = Number(constants.assimLockTicks);
@@ -386,10 +396,11 @@ export function resolveCombatOutcome(params) {
     var targetOwnerBefore = targetNode.owner;
     var humanInvolved = fleet.owner === humanIndex || targetOwnerBefore === humanIndex;
     var defMult = (targetOwnerBefore >= 0 ? Number(tune.def) || 1 : 1) * (Number(nodeTypeOf(targetNode).def) || 1) * (Number(nodeLevelDefMult(targetNode)) || 1);
-    if (targetNode.kind === 'turret') defMult *= turretCaptureResist;
+    if (targetNode.kind === 'turret') defMult *= turretCaptureResist * Math.max(0.5, Number(targetNode.turretCaptureResistMult) || 1);
     if (targetNode.defense) defMult *= defenseBonus;
+    defMult *= Math.max(0.4, Number(defenseMultiplier(targetOwnerBefore, targetNode)) || 1);
 
-    var atk = Number(fleet.count) || 0;
+    var atk = (Number(fleet.count) || 0) * Math.max(0.4, Number(attackMultiplier(fleet.owner, targetNode)) || 1);
     var def = (Number(targetNode.units) || 0) * defMult;
     var color = players[fleet.owner] ? players[fleet.owner].color : '#fff';
     var captured = atk > def;
@@ -564,6 +575,8 @@ export function resolveFleetArrivals(params) {
                     nodeTypeOf: nodeTypeOf,
                     nodeLevelDefMult: nodeLevelDefMult,
                     nodeCapacity: nodeCapacity,
+                    attackMultiplier: typeof callbacks.attackMultiplier === 'function' ? callbacks.attackMultiplier : null,
+                    defenseMultiplier: typeof callbacks.defenseMultiplier === 'function' ? callbacks.defenseMultiplier : null,
                 },
                 constants: params.constants,
             });

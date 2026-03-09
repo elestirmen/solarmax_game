@@ -1903,6 +1903,20 @@
                         <option value="normal" selected>Normal</option>
                         <option value="hard">Hard</option>
                     </select></div>
+                <div class="menu-field"><label for="playlistSelect">Playlist</label><select id="playlistSelect">
+                        <option value="standard" selected>Standart</option>
+                        <option value="chaos">Chaos</option>
+                        <option value="ironman">Ironman</option>
+                        <option value="puzzle">Puzzle Sector</option>
+                        <option value="zen">Zen</option>
+                        <option value="frontier">Frontier</option>
+                    </select></div>
+                <div class="menu-field"><label for="doctrineSelect">Doctrine</label><select id="doctrineSelect">
+                        <option value="auto" selected>Playlist Varsayilani</option>
+                        <option value="logistics">Lojistik</option>
+                        <option value="assimilation">Asimilasyon</option>
+                        <option value="siege">Kusatma</option>
+                    </select></div>
                 <div class="menu-field"><label for="gameModeSelect">Game Mode</label><select id="gameModeSelect">
                         <option value="classic">Classic</option>
                         <option value="advanced" selected>Advanced</option>
@@ -1930,6 +1944,8 @@
                 <div class="menu-field" style="margin-bottom:8px"><label>Oda Ayarlari (Host)</label>
                     <div class="room-row" style="gap:6px; flex-wrap:wrap">
                         <select id="multiRoomTypeSelect" style="flex:0 0 96px"><option value="standard" selected>Standart</option><option value="daily">Gunluk</option><option value="custom">Custom</option></select>
+                        <select id="multiPlaylistSelect" style="flex:0 0 112px"><option value="standard" selected>Standart</option><option value="chaos">Chaos</option><option value="ironman">Ironman</option><option value="puzzle">Puzzle</option><option value="zen">Zen</option><option value="frontier">Frontier</option></select>
+                        <select id="multiDoctrineSelect" style="flex:0 0 110px"><option value="auto" selected>Doctrine Auto</option><option value="logistics">Lojistik</option><option value="assimilation">Asimilasyon</option><option value="siege">Kusatma</option></select>
                         <input type="text" id="multiSeedInput" value="42" placeholder="Seed" style="flex:0 0 70px" />
                         <input type="range" id="multiNodeInput" min="8" max="30" value="16" style="flex:1; min-width:80px" /><span id="multiNodeLabel" style="width:24px">16</span>
                         <select id="multiDiffSelect" style="flex:0 0 80px"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select>
@@ -2211,7 +2227,7 @@
             <div id="hudTelemetryRow" class="hud-center-top"><span id="hudTick">Tick: 0</span><span id="hudCap">Cap 0/0</span><span id="pingDisplay" class="ping-display"></span></div>
             <span id="hudMeta">Secili node bilgisi burada gorunur.</span>
         </div>
-        <div id="hudRight"><button id="pauseBtn" title="Duraklat">||</button><button id="speedBtn" title="Hiz">1x</button><button id="themeBtn" title="Tema">TEMA</button><button id="chatToggle" title="Sohbet">SOHBET</button><button id="exportMapHudBtn" title="Haritayi Disa Aktar">MAP</button>
+        <div id="hudRight"><button id="pauseBtn" title="Duraklat">||</button><button id="speedBtn" title="Hiz">1x</button><button id="doctrineBtn" title="Doctrine">DOC</button><button id="themeBtn" title="Tema">TEMA</button><button id="chatToggle" title="Sohbet">SOHBET</button><button id="exportMapHudBtn" title="Haritayi Disa Aktar">MAP</button>
         </div>
     </div>
     <div id="tuningPanel" class="hidden">

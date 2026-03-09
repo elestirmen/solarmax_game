@@ -53,3 +53,21 @@ test('buildInitialMatchSnapshot assigns a capital to every player and preserves 
     assert.equal(snapshot.mapFeature.type, 'wormhole');
     assert.ok(snapshot.mapMutator);
 });
+
+test('buildInitialMatchSnapshot bakes encounter nodes into the generated map', function () {
+    var snapshot = buildInitialMatchSnapshot({
+        seed: 'encounter-map',
+        nodeCount: 16,
+        difficulty: 'normal',
+        rulesMode: 'advanced',
+        mapFeature: 'none',
+        encounters: [{ type: 'mega_turret' }, { type: 'relay_core' }],
+    }, [
+        { index: 0, name: 'Host', botControlled: false },
+        { index: 1, name: 'AI 1', botControlled: true },
+    ]);
+
+    assert.equal(snapshot.encounters.length, 2);
+    assert.equal(snapshot.nodes.some(function (node) { return node.encounterType === 'mega_turret'; }), true);
+    assert.equal(snapshot.nodes.some(function (node) { return node.encounterType === 'relay_core'; }), true);
+});

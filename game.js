@@ -13,6 +13,8 @@ import { applyDefenseFieldDamage, getDefenseFieldStats } from './assets/sim/defe
 import { computePlayerUnitCount, computeGlobalCap } from './assets/sim/cap.js';
 import { computeOwnershipMetrics, computeSupplyConnected as computeSupplyConnectedState, computePowerByPlayer as computePowerByPlayerState, getPlayerCapitalId } from './assets/sim/state_metrics.js';
 import { stepNodeEconomy } from './assets/sim/node_economy.js';
+import { activateDoctrine, buildDoctrineLoadout, canActivateDoctrine, doctrineActiveName, doctrineCooldownSummary, doctrineModifiers, doctrineName, doctrineSummary, ensureDoctrineStates, tickDoctrineStates } from './assets/sim/doctrine.js';
+import { buildEncounterState, encounterHint, encounterName, encounterSummary, stepEncounterState } from './assets/sim/encounters.js';
 import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } from './assets/sim/ruleset.js';
 import { computeFriendlyReinforcementRoom } from './assets/sim/reinforcement.js';
 import { buildFleetSpawnProfile, getFleetUnitSpacingT, hashMix } from './assets/sim/shared_config.js';
@@ -31,6 +33,7 @@ import { buildDailyChallenge, dailyChallengeKey } from './assets/campaign/daily_
 import { describeCampaignObjectives, evaluateCampaignObjectives } from './assets/campaign/objectives.js';
 import { buildCustomMapExport, normalizeCustomMapConfig } from './assets/sim/custom_map.js';
 import { resolveMatchEndState } from './assets/sim/end_state.js';
+import { playlistName, resolvePlaylistConfig } from './assets/sim/playlists.js';
 import { renderLeaderboardUI, renderMissionPanel, renderRoomListUI, renderStatRows } from './assets/ui/renderers.js';
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ CONSTANTS Ã¢â€â‚¬Ã¢â€â‚¬
@@ -361,7 +364,8 @@ var G = {
     rec: { events: [], seed: 0, nc: 0, diff: 'normal' },
     rep: null, aiTicks: [], flowId: 0, fleetSerial: 0,
     aiProfiles: [], mapFeature: { type: 'none' }, mapMutator: { type: 'none' }, wormholes: [],
-    stats: { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0 },
+    playlist: 'standard', doctrineId: '', doctrines: [], doctrineStates: [], encounters: [], encounterContext: {}, endOnObjectives: false,
+    stats: { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0, doctrineActivations: 0 },
     particles: [], turretBeams: [], fieldBeams: [], shockwaves: [], mapMode: 'random',
     playerCapital: {}, strategicNodes: [],
     strategicPulse: { active: false, nodeId: -1, cycle: 0, phase: 0, remainingTicks: 0, announcedCycle: -1 },
@@ -879,12 +883,31 @@ function initGame(seedStr, nc, diff, opts) {
     var keepReplay = !!opts.keepReplay;
     var keepTuning = !!opts.keepTuning;
     var menuFog = typeof opts.fogEnabled === 'boolean' ? opts.fogEnabled : null;
-    var rulesMode = normalizeRulesetMode(opts.rulesMode || 'advanced');
+    var playlistConfig = resolvePlaylistConfig({
+        seed: seedStr,
+        nodeCount: nc,
+        difficulty: diff,
+        fogEnabled: menuFog === null ? false : menuFog,
+        rulesMode: opts.rulesMode || 'advanced',
+        aiCount: opts.aiCount,
+        mapFeature: opts.mapFeature,
+        mapMutator: opts.mapMutator,
+        tuneOverrides: opts.tuneOverrides || null,
+        doctrineId: opts.doctrineId || 'auto',
+        encounters: opts.encounters || [],
+        playlist: opts.playlist || 'standard',
+        forcePlaylistOverrides: opts.forcePlaylistOverrides === true,
+    });
+    seedStr = playlistConfig.seed;
+    nc = playlistConfig.nodeCount;
+    diff = playlistConfig.difficulty || diff;
+    if (playlistConfig.fogEnabled !== undefined) menuFog = playlistConfig.fogEnabled;
+    var rulesMode = normalizeRulesetMode(playlistConfig.rulesMode || opts.rulesMode || 'advanced');
     var mapFeatureCfg = null;
-    var mapMutatorCfg = opts.mapMutator !== undefined ? opts.mapMutator : 'auto';
+    var mapMutatorCfg = playlistConfig.mapMutator !== undefined ? playlistConfig.mapMutator : 'auto';
     var customMapCfg = opts.customMap ? normalizeCustomMapConfig(opts.customMap) : null;
-    if (typeof opts.mapFeature === 'string') mapFeatureCfg = { type: opts.mapFeature };
-    else if (opts.mapFeature && typeof opts.mapFeature === 'object') mapFeatureCfg = opts.mapFeature;
+    if (typeof playlistConfig.mapFeature === 'string') mapFeatureCfg = { type: playlistConfig.mapFeature };
+    else if (playlistConfig.mapFeature && typeof playlistConfig.mapFeature === 'object') mapFeatureCfg = playlistConfig.mapFeature;
     G.seed = (isNaN(Number(seedStr)) ? hashSeed(seedStr) : Number(seedStr)) || 42;
     G.diff = diff;
     G.rng = new RNG(G.seed);
@@ -903,8 +926,8 @@ function initGame(seedStr, nc, diff, opts) {
         G.tune.aiAssist = G.diffCfg.adaptiveAI;
     }
     if (menuFog !== null) G.tune.fogEnabled = menuFog;
-    if (opts.tuneOverrides && typeof opts.tuneOverrides === 'object') {
-        var ovr = opts.tuneOverrides;
+    if (playlistConfig.tuneOverrides && typeof playlistConfig.tuneOverrides === 'object') {
+        var ovr = playlistConfig.tuneOverrides;
         if (typeof ovr.prod === 'number') G.tune.prod = ovr.prod;
         if (typeof ovr.fspeed === 'number') G.tune.fspeed = ovr.fspeed;
         if (typeof ovr.def === 'number') G.tune.def = ovr.def;
@@ -917,6 +940,9 @@ function initGame(seedStr, nc, diff, opts) {
     }
     G.flowId = 0;
     G.fleetSerial = 0;
+    G.playlist = String(playlistConfig.playlist || 'standard');
+    G.doctrineId = playlistConfig.doctrineId && playlistConfig.doctrineId !== 'auto' ? playlistConfig.doctrineId : '';
+    G.endOnObjectives = opts.endOnObjectives === true;
     G.stats = {
         nodesCaptured: 0,
         fleetsSent: 0,
@@ -929,6 +955,7 @@ function initGame(seedStr, nc, diff, opts) {
         pulseControlTicks: 0,
         peakCapPressure: 0,
         peakPower: 0,
+        doctrineActivations: 0,
     };
     G.particles = [];
     G.turretBeams = [];
@@ -941,7 +968,7 @@ function initGame(seedStr, nc, diff, opts) {
     G.mapMutator = { type: 'none' };
     var aiDefault = diff === 'easy' ? 1 : diff === 'normal' ? 2 : 3;
     var humanCount = Math.max(1, Math.floor(Number(opts.humanCount || 1)));
-    var aic = opts.aiCount !== undefined ? Math.max(0, Math.floor(Number(opts.aiCount))) : aiDefault;
+    var aic = playlistConfig.aiCount !== undefined ? Math.max(0, Math.floor(Number(playlistConfig.aiCount))) : aiDefault;
     var totalPlayers = customMapCfg ? customMapCfg.playerCount : (humanCount + aic);
     G.players = [];
     for (var pi = 0; pi < totalPlayers; pi++) {
@@ -964,6 +991,14 @@ function initGame(seedStr, nc, diff, opts) {
         applyMapMutator(mapMutatorCfg);
     }
     applyRulesetNodeKinds();
+    G.doctrines = buildDoctrineLoadout(G.players, {
+        doctrineId: G.doctrineId || playlistConfig.doctrineId || 'logistics',
+        doctrines: opts.doctrines || [],
+    });
+    G.doctrineStates = ensureDoctrineStates(G.doctrines, opts.doctrineStates || []);
+    G.encounters = buildEncounterState(customMapCfg ? customMapCfg.encounters : playlistConfig.encounters, G.nodes, G.seed);
+    G.encounterContext = {};
+    stepEncounterState(G);
     G.fog = initFog(G.players.length, G.nodes.length);
     for (var p = 0; p < G.players.length; p++) updateVis(G.fog, p, G.nodes, 0);
     powerRenderKey = '';
@@ -980,13 +1015,18 @@ function initGame(seedStr, nc, diff, opts) {
         rulesMode: G.rulesMode,
         mapFeature: JSON.parse(JSON.stringify(G.mapFeature || { type: 'none' })),
         mapMutator: JSON.parse(JSON.stringify(G.mapMutator || { type: 'none' })),
-    };
+        playlist: G.playlist || 'standard',
+        doctrineId: G.doctrineId || '',
+        encounters: JSON.parse(JSON.stringify(G.encounters || [])),
+        };
     if (!keepReplay) G.rep = null;
     G.state = keepReplay ? 'replay' : 'playing';
     G.campaign.reminderShown = {};
     G.daily.reminderShown = {};
     if (!keepReplay && G.mapFeature.type === 'barrier') showHintToast(barrierGatePromptText());
     if (!keepReplay && G.mapMutator && G.mapMutator.type !== 'none') showHintToast(mapMutatorHint(G.mapMutator));
+    if (!keepReplay && G.encounters && G.encounters.length) showHintToast(encounterHint(G.encounters[0]));
+    if (!keepReplay && humanDoctrineId()) showHintToast(doctrineSummary(humanDoctrineId()));
 }
 function genMap(nc) {
     G.nodes = []; var att = 0, placed = 0, minDist = NODE_MINDIST;
@@ -1414,6 +1454,7 @@ function applyPlayerCommand(playerIndex, type, data) {
         rmFlow: rmFlow,
         upgrade: upgradeNode,
         toggleDefense: toggleDefense,
+        activateDoctrine: activateDoctrineForPlayer,
     });
 }
 function applyRep(evt) {
@@ -1425,6 +1466,7 @@ function applyRep(evt) {
     else if (type === 'speedChange') type = 'speed';
     else if (type === 'upgradeNode') type = 'upgrade';
     else if (type === 'toggleDefense') { applyPlayerCommand(G.human, 'toggleDefense', d); return; }
+    else if (type === 'activateDoctrine') { applyPlayerCommand(G.human, 'activateDoctrine', d); return; }
 
     switch (type) {
         case 'select': {
@@ -1511,6 +1553,7 @@ function gameTick(runtimeOpts) {
         while (G.rep.idx < G.rep.events.length && G.rep.events[G.rep.idx].tick === G.tick) { applyRep(G.rep.events[G.rep.idx]); G.rep.idx++; }
         if (G.rep.idx >= G.rep.events.length && G.tick > ((G.rep.events.length ? G.rep.events[G.rep.events.length - 1].tick : 0) + 90)) { G.state = 'gameOver'; return; }
     }
+    G.doctrineStates = tickDoctrineStates(G.doctrines, G.doctrineStates);
     G.strategicPulse = currentStrategicPulse(G.tick);
     strategicPulseToast();
     var ownershipMetrics = computeOwnershipMetrics({
@@ -1543,6 +1586,7 @@ function gameTick(runtimeOpts) {
     if (G.strategicPulse.active && livePulseNode && livePulseNode.owner === G.human && isNodeAssimilated(livePulseNode)) {
         G.stats.pulseControlTicks++;
     }
+    stepEncounterState(G);
     stepNodeEconomy({
         nodes: G.nodes,
         humanIndex: G.human,
@@ -1577,6 +1621,17 @@ function gameTick(runtimeOpts) {
             nodeLevelProdMult: nodeLevelProdMult,
             strategicPulseAppliesToNode: strategicPulseAppliesToNode,
             isNodeAssimilated: isNodeAssimilated,
+            ownerProdMultiplier: function (owner, node) {
+                var modifiers = doctrineModifiers(G.doctrines, G.doctrineStates, owner);
+                var prodMult = modifiers.prodMult;
+                if (node && node.supplied === true) prodMult *= modifiers.suppliedProdMult;
+                var relayCoreCount = Number(G.encounterContext && G.encounterContext.relayCoreCountByPlayer && G.encounterContext.relayCoreCountByPlayer[owner]) || 0;
+                if (relayCoreCount > 0) prodMult *= 1 + relayCoreCount * 0.08;
+                return prodMult;
+            },
+            ownerAssimilationMultiplier: function (owner) {
+                return doctrineModifiers(G.doctrines, G.doctrineStates, owner).assimMult;
+            },
         },
     });
     var turretReport = applyTurretDamage({
@@ -1617,6 +1672,9 @@ function gameTick(runtimeOpts) {
             isNodeTerritoryActive: isNodeAssimilated,
             isTerritoryBonusBlockedAtPoint: function (opts) {
                 return territoryBonusBlockedAtPoint(opts && opts.point);
+            },
+            fleetSpeedMultiplier: function (fleet) {
+                return doctrineModifiers(G.doctrines, G.doctrineStates, fleet && fleet.owner).fleetSpeedMult;
             },
         },
         constants: {
@@ -1662,6 +1720,15 @@ function gameTick(runtimeOpts) {
             nodeTypeOf: nodeTypeOf,
             nodeLevelDefMult: nodeLevelDefMult,
             nodeCapacity: nodeCapacity,
+            attackMultiplier: function (owner, targetNode) {
+                var modifiers = doctrineModifiers(G.doctrines, G.doctrineStates, owner);
+                var mult = modifiers.attackMult;
+                if (targetNode && targetNode.kind === 'turret') mult *= modifiers.turretAttackMult;
+                return mult;
+            },
+            defenseMultiplier: function () {
+                return 1;
+            },
         },
         constants: {
             turretCaptureResist: TURRET_CAPTURE_RESIST,
@@ -1736,6 +1803,7 @@ function gameTick(runtimeOpts) {
     maybeShowCampaignObjectiveReminder();
     refreshCampaignMissionPanels();
     advanceTransientVisuals(TICK_DT);
+    maybeResolveMissionObjectiveVictory();
     checkEnd(); G.tick++;
 }
 function checkEnd() {
@@ -2967,6 +3035,21 @@ function render(ctx, cv, tick) {
             ctx.fillText('GATE', n.pos.x, n.pos.y + n.radius + 13);
             ctx.restore();
         }
+        if ((vis || n.owner === G.human) && n.encounterType) {
+            var encounterPulse = 0.58 + 0.42 * Math.sin(tick * 0.07 + n.id * 0.9);
+            var encounterCol = n.encounterType === 'mega_turret' ? 'rgba(255,196,132,' : 'rgba(130,238,255,';
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(n.pos.x, n.pos.y, n.radius + 12, 0, Math.PI * 2);
+            ctx.strokeStyle = encounterCol + (0.24 + encounterPulse * 0.18) + ')';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+            ctx.font = 'bold 9px Outfit,sans-serif';
+            ctx.fillStyle = encounterCol + '0.92)';
+            ctx.textAlign = 'center';
+            ctx.fillText(n.encounterType === 'mega_turret' ? 'BOSS' : 'CORE', n.pos.x, n.pos.y - n.radius - 16);
+            ctx.restore();
+        }
         if ((vis || n.owner === G.human) && n.owner >= 0 && n.assimilationProgress !== undefined && n.assimilationProgress < 1) {
             var ringR = n.radius + 7;
             var lockPhase = (n.assimilationLock || 0) > 0 ? (1 - clamp((n.assimilationLock || 0) / ASSIM_LOCK_TICKS, 0, 1)) : 1;
@@ -3496,7 +3579,8 @@ var cv = document.getElementById('gameCanvas'), ctx = cv.getContext('2d');
 var $ = function (id) { return document.getElementById(id); };
 var mainMenu = $('mainMenu'), pauseOv = $('pauseOverlay'), goOv = $('gameOverOverlay'), hud = $('hud'), repBar = $('replayBar'), tunePanel = $('tuningPanel'), tuneOpen = $('tuneOpenBtn');
 var seedIn = $('seedInput'), rndSeedBtn = $('randomSeedBtn'), ncIn = $('nodeCountInput'), ncLbl = $('nodeCountLabel'), diffSel = $('difficultySelect');
-var gameModeSel = $('gameModeSelect'), multiModeSel = $('multiModeSelect');
+var playlistSel = $('playlistSelect'), doctrineSel = $('doctrineSelect');
+var gameModeSel = $('gameModeSelect'), multiModeSel = $('multiModeSelect'), multiPlaylistSel = $('multiPlaylistSelect'), multiDoctrineSel = $('multiDoctrineSelect');
 var startBtn = $('startBtn'), sandboxBtn = $('sandboxBtn'), campaignBtn = $('campaignBtn'), dailyChallengeBtn = $('dailyChallengeBtn'), importMapBtn = $('importMapBtn'), exportMapBtn = $('exportMapBtn'), loadRepBtn = $('loadReplayBtn'), repFileIn = $('replayFileInput'), customMapFileIn = $('customMapFileInput');
 var playerNameIn = $('playerNameInput');
 var startRoomBtn = $('startRoomBtn');
@@ -3543,6 +3627,7 @@ var tabSingle = $('tabSingle'), tabMulti = $('tabMulti'), panelSingle = $('panel
 var pauseTitleEl = $('pauseTitle'), pauseHintEl = $('pauseHint'), resumeBtn = $('resumeBtn'), quitBtn = $('quitBtn');
 var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameOverStats'), repBtn = $('replayBtn'), expRepBtn = $('exportReplayBtn'), restartBtn = $('restartBtn'), nextLevelBtn = $('nextLevelBtn');
 var hudTelemetryRow = $('hudTelemetryRow'), hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), hudCap = $('hudCap'), hudMeta = $('hudMeta'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
+var doctrineBtn = $('doctrineBtn');
 var sendPctQuickBtns = Array.prototype.slice.call(document.querySelectorAll('.send-quick-btn'));
 var powerSidebar = $('powerSidebar'), powerListEl = $('powerList');
 var scenarioOv = $('scenarioOverlay'), scenarioStartBtn = $('scenarioStartBtn'), scenarioCloseBtn = $('scenarioCloseBtn'), scenarioProgressEl = $('scenarioProgress'), scenarioBubbleListEl = $('scenarioBubbleList'), scenarioMissionEl = $('scenarioMission');
@@ -3781,6 +3866,52 @@ function barrierGateStatusText() {
     return 'Barrier | ' + parts.join(' | ');
 }
 
+function humanDoctrineId() {
+    if (!Array.isArray(G.doctrines) || !G.doctrines.length) return '';
+    return G.doctrines[G.human] || '';
+}
+
+function humanDoctrineStatusText() {
+    var doctrineId = humanDoctrineId();
+    if (!doctrineId) return '';
+    return doctrineName(doctrineId) + ' | ' + doctrineCooldownSummary(G.doctrines, G.doctrineStates, G.human);
+}
+
+function encounterStatusText() {
+    if (!Array.isArray(G.encounters) || !G.encounters.length) return '';
+    var parts = [];
+    for (var i = 0; i < G.encounters.length; i++) {
+        var encounter = G.encounters[i];
+        var node = G.nodes[encounter.nodeId];
+        if (!node) continue;
+        var ownerText = node.owner < 0 ? 'Tarafsiz' : labelForPlayer(node.owner);
+        if (encounter.type === 'relay_core') {
+            parts.push(encounterName(encounter) + ': ' + ownerText + (isNodeAssimilated(node) ? ' | hat acik' : ' | asimilasyon bekliyor'));
+        } else if (encounter.type === 'mega_turret') {
+            parts.push(encounterName(encounter) + ': ' + ownerText + ' | kusatma hedefi');
+        }
+    }
+    return parts.join(' | ');
+}
+
+function activateDoctrineForPlayer(playerIndex) {
+    var activation = activateDoctrine(G.doctrines, G.doctrineStates, playerIndex);
+    G.doctrineStates = activation.states;
+    if (activation.activated && playerIndex === G.human) {
+        G.stats.doctrineActivations = (Number(G.stats.doctrineActivations) || 0) + 1;
+        showGameToast(doctrineActiveName(G.doctrines[playerIndex]) + ' aktif.');
+    }
+    return activation.activated;
+}
+
+function triggerHumanDoctrine() {
+    if (!humanDoctrineId()) return false;
+    if (issueOnlineCommand('activateDoctrine', {})) return true;
+    var activated = activateDoctrineForPlayer(G.human);
+    if (activated) recEvt('activateDoctrine', {});
+    return activated;
+}
+
 function selectionMetaText() {
     if (!hudMeta || !inp || !inp.sel) return '';
     var ids = Array.from(inp.sel).filter(function (id) { return !!G.nodes[id]; });
@@ -3788,6 +3919,8 @@ function selectionMetaText() {
         var idleParts = [];
         if (G.mapFeature && G.mapFeature.type === 'barrier') idleParts.push(barrierGateStatusText());
         if (G.mapMutator && G.mapMutator.type !== 'none') idleParts.push('Mutator: ' + mapMutatorName(G.mapMutator));
+        if (G.encounters && G.encounters.length) idleParts.push(encounterStatusText());
+        if (humanDoctrineId()) idleParts.push(humanDoctrineStatusText());
         if (G.strategicPulse && G.strategicPulse.active) idleParts.push(pulseBonusSummary());
         if (idleParts.length) return idleParts.join(' | ');
         return 'Bir gezegen sec: upgrade maliyeti, savunma alani, asimilasyon, supply ve pulse etkileri burada gorunur.';
@@ -3812,6 +3945,7 @@ function selectionMetaText() {
             parts.push('Strategic hub');
         }
         if (node.gate) parts.push(node.owner === G.human && isNodeAssimilated(node) ? 'GATE ready: gecit acik' : 'GATE: bariyeri asip diger tarafa gecisi acar');
+        if (node.encounterType) parts.push(encounterName(node.encounterType));
         if (strategicPulseAppliesToNode(node.id)) parts.push(pulseBonusSummary());
         else if (node.strategic) parts.push('Strategic hub: pulse buraya dondugunde uretim, hiz, asimilasyon ve cap bonusu gelir');
         if (G.mapMutator && G.mapMutator.type !== 'none' && isPointInsideMapMutator({ point: node.pos, mapMutator: G.mapMutator })) {
@@ -3930,6 +4064,8 @@ function currentMissionSnapshot() {
         gameOver: G.state === 'gameOver',
         ownedNodes: countOwnedNodes(G.human),
         stats: G.stats || {},
+        encounters: G.encounters || [],
+        humanIndex: G.human,
     };
 }
 
@@ -3951,11 +4087,16 @@ function currentMissionPanelSubtitle(level) {
         var statusBits = [];
         statusBits.push(level.title || 'Gunluk');
         statusBits.push(level.blurb || '');
+        if (level.playlist) statusBits.push('Playlist: ' + playlistName(level.playlist));
+        if (level.doctrineId) statusBits.push('Doktrin: ' + doctrineName(level.doctrineId));
         if (G.daily.completed) statusBits.push('Durum: Tamamlandi');
         else if (G.daily.bestTick > 0) statusBits.push('En iyi: ' + G.daily.bestTick + ' tick');
         return statusBits.filter(Boolean).join(' | ');
     }
-    return level.blurb || '';
+    var subtitleParts = [level.blurb || ''];
+    if (level.playlist) subtitleParts.push('Playlist: ' + playlistName(level.playlist));
+    if (level.doctrineId) subtitleParts.push('Doktrin: ' + doctrineName(level.doctrineId));
+    return subtitleParts.filter(Boolean).join(' | ');
 }
 
 function refreshCampaignMissionPanels() {
@@ -3976,6 +4117,16 @@ function refreshCampaignMissionPanels() {
             });
         }
     }
+}
+
+function currentMissionIsComplete() {
+    var rows = currentCampaignObjectiveRows();
+    if (!rows.length) return false;
+    for (var i = 0; i < rows.length; i++) {
+        if (rows[i].optional) continue;
+        if (!rows[i].complete) return false;
+    }
+    return true;
 }
 
 function maybeShowCampaignObjectiveReminder() {
@@ -4000,6 +4151,15 @@ function maybeShowCampaignObjectiveReminder() {
     }
 }
 
+function maybeResolveMissionObjectiveVictory() {
+    var level = currentMissionDefinition();
+    if (!level || level.endOnObjectives !== true) return;
+    if (G.state !== 'playing') return;
+    if (!currentMissionIsComplete()) return;
+    G.winner = G.human;
+    G.state = 'gameOver';
+}
+
 function humanGameOverStatRows() {
     var rows = [
         { label: 'Fethedilen', value: G.stats.nodesCaptured },
@@ -4012,6 +4172,7 @@ function humanGameOverStatRows() {
         { label: 'Wormhole sevkiyat', value: G.stats.wormholeDispatches },
         { label: 'Peak power', value: Math.round(G.stats.peakPower || 0) },
         { label: 'Peak strain', value: Math.round((G.stats.peakCapPressure || 0) * 100) + '%' },
+        { label: 'Doktrin aktivasyonu', value: G.stats.doctrineActivations || 0 },
     ];
     if (G.stats.gateCaptures > 0) rows.push({ label: 'GATE fetih', value: G.stats.gateCaptures });
 
@@ -4140,6 +4301,11 @@ function captureSyncSnapshot() {
         wormholes: JSON.parse(JSON.stringify(G.wormholes || [])),
         mapFeature: JSON.parse(JSON.stringify(G.mapFeature || { type: 'none' })),
         mapMutator: JSON.parse(JSON.stringify(G.mapMutator || { type: 'none' })),
+        playlist: G.playlist || 'standard',
+        doctrineId: G.doctrineId || '',
+        doctrines: JSON.parse(JSON.stringify(G.doctrines || [])),
+        doctrineStates: JSON.parse(JSON.stringify(G.doctrineStates || [])),
+        encounters: JSON.parse(JSON.stringify(G.encounters || [])),
         playerCapital: JSON.parse(JSON.stringify(G.playerCapital || {})),
         strategicNodes: Array.isArray(G.strategicNodes) ? G.strategicNodes.slice() : [],
         strategicPulse: JSON.parse(JSON.stringify(G.strategicPulse || {})),
@@ -4274,6 +4440,12 @@ function applySyncSnapshot(snapshot) {
     G.wormholes = JSON.parse(JSON.stringify(Array.isArray(snapshot.wormholes) ? snapshot.wormholes : []));
     G.mapFeature = JSON.parse(JSON.stringify(snapshot.mapFeature || { type: 'none' }));
     G.mapMutator = JSON.parse(JSON.stringify(snapshot.mapMutator || { type: 'none' }));
+    G.playlist = String(snapshot.playlist || G.playlist || 'standard');
+    G.doctrineId = String(snapshot.doctrineId || G.doctrineId || '');
+    G.doctrines = JSON.parse(JSON.stringify(Array.isArray(snapshot.doctrines) ? snapshot.doctrines : G.doctrines || []));
+    G.doctrineStates = ensureDoctrineStates(G.doctrines, Array.isArray(snapshot.doctrineStates) ? snapshot.doctrineStates : G.doctrineStates || []);
+    G.encounters = JSON.parse(JSON.stringify(Array.isArray(snapshot.encounters) ? snapshot.encounters : G.encounters || []));
+    G.encounterContext = {};
     G.playerCapital = JSON.parse(JSON.stringify(snapshot.playerCapital || {}));
     G.strategicNodes = Array.isArray(snapshot.strategicNodes) ? snapshot.strategicNodes.slice() : [];
     G.strategicPulse = JSON.parse(JSON.stringify(snapshot.strategicPulse || currentStrategicPulse(G.tick)));
@@ -4311,6 +4483,7 @@ function applySyncSnapshot(snapshot) {
     G.cam.zoom = preservedCam.zoom;
     G.rng = new RNG(1);
     G.rng.s = Math.floor(Number(snapshot.rngState) || 1) || 1;
+    stepEncounterState(G);
     net.lastAppliedSeq = typeof snapshot.lastAppliedSeq === 'number' ? snapshot.lastAppliedSeq : -1;
     clearSelection(true);
     resetDragState();
@@ -4561,6 +4734,8 @@ function doCreateRoom() {
         difficulty: (multiDiff && multiDiff.value) || diffSel.value || 'normal',
         fogEnabled: menuFogCb ? !!menuFogCb.checked : false,
         rulesMode: (multiModeSel && multiModeSel.value) || (gameModeSel && gameModeSel.value) || 'advanced',
+        playlist: (multiPlaylistSel && multiPlaylistSel.value) || (playlistSel && playlistSel.value) || 'standard',
+        doctrineId: (multiDoctrineSel && multiDoctrineSel.value) || (doctrineSel && doctrineSel.value) || 'auto',
         customMap: roomMode === 'custom' ? currentCustomMapConfig : null,
     });
 }
@@ -4674,6 +4849,10 @@ function ensureSocket() {
             var stateMode = normalizeRulesetMode(state.config.rulesMode || 'advanced');
             if (multiModeSel) multiModeSel.value = stateMode;
             if (gameModeSel) gameModeSel.value = stateMode;
+            if (multiPlaylistSel) multiPlaylistSel.value = state.config.playlist || 'standard';
+            if (playlistSel) playlistSel.value = state.config.playlist || 'standard';
+            if (multiDoctrineSel) multiDoctrineSel.value = state.config.doctrineId || 'auto';
+            if (doctrineSel) doctrineSel.value = state.config.doctrineId || 'auto';
             if (multiRoomTypeIn) multiRoomTypeIn.value = state.config.mode === 'daily' ? 'daily' : (state.config.mode === 'custom' ? 'custom' : 'standard');
             syncRoomTypeInputs();
         }
@@ -4693,6 +4872,8 @@ function ensureSocket() {
             status += ' | Custom: ' + (state.preview.customMapName || 'Harita');
             status += ' | Slot ' + (state.preview.playerCount || state.maxPlayers || net.players.length);
             if (state.preview.aiCount) status += ' | AI ' + state.preview.aiCount;
+        } else if (state.preview) {
+            status += ' | ' + playlistName(state.preview.playlist || 'standard');
         }
         if (net.players.length < 2) status += ' | En az 2 oyuncu gerekli';
         else status += (net.isHost ? ' | Oyunu baslatabilirsin' : ' | Hostun baslatmasi bekleniyor...');
@@ -4787,6 +4968,9 @@ function ensureSocket() {
             mapMutator: payload.mapMutator || 'auto',
             customMap: onlineCustomMap,
             tuneOverrides: onlineCustomMap ? onlineCustomMap.tuneOverrides || null : null,
+            playlist: payload.playlist || 'standard',
+            doctrineId: payload.doctrineId || 'auto',
+            encounters: payload.encounters || [],
         });
         G.campaign.active = false;
         G.campaign.levelIndex = -1;
@@ -4891,6 +5075,9 @@ function normalizeReplay(raw) {
         rulesMode: rulesMode,
         mapFeature: raw.mapFeature || 'none',
         mapMutator: raw.mapMutator || 'auto',
+        playlist: raw.playlist || 'standard',
+        doctrineId: raw.doctrineId || '',
+        encounters: Array.isArray(raw.encounters) ? raw.encounters : [],
         events: raw.events.map(function (e) {
             return { tick: Number(e.tick) || 0, type: e.type, data: e.data || {} };
         }),
@@ -4907,6 +5094,9 @@ function startReplayFromData(raw) {
         rulesMode: rep.rulesMode,
         mapFeature: rep.mapFeature || 'none',
         mapMutator: rep.mapMutator || 'auto',
+        playlist: rep.playlist || 'standard',
+        doctrineId: rep.doctrineId || '',
+        encounters: rep.encounters || [],
     });
     G.campaign.active = false;
     G.campaign.levelIndex = -1;
@@ -4934,6 +5124,8 @@ function syncRoomTypeInputs() {
     if (multiNodeIn) multiNodeIn.disabled = !!locksMapConfig;
     if (multiDiff) multiDiff.disabled = !!locksMapConfig;
     if (multiModeSel) multiModeSel.disabled = !!locksMapConfig;
+    if (multiPlaylistSel) multiPlaylistSel.disabled = roomMode !== 'standard';
+    if (multiDoctrineSel) multiDoctrineSel.disabled = roomMode !== 'standard';
     if (multiNodeLbl) multiNodeLbl.style.opacity = locksMapConfig ? '0.45' : '1';
 }
 if (multiRoomTypeIn) {
@@ -4945,6 +5137,14 @@ syncRoomTypeInputs();
 if (gameModeSel && multiModeSel) {
     gameModeSel.addEventListener('change', function () { multiModeSel.value = gameModeSel.value; });
     multiModeSel.addEventListener('change', function () { gameModeSel.value = multiModeSel.value; });
+}
+if (playlistSel && multiPlaylistSel) {
+    playlistSel.addEventListener('change', function () { multiPlaylistSel.value = playlistSel.value; });
+    multiPlaylistSel.addEventListener('change', function () { playlistSel.value = multiPlaylistSel.value; });
+}
+if (doctrineSel && multiDoctrineSel) {
+    doctrineSel.addEventListener('change', function () { multiDoctrineSel.value = doctrineSel.value; });
+    multiDoctrineSel.addEventListener('change', function () { doctrineSel.value = multiDoctrineSel.value; });
 }
 rndSeedBtn.addEventListener('click', function () { seedIn.value = '' + Math.floor(Math.random() * 100000); });
 var SCENARIO_UNLOCKED_KEY = 'stellar_scenario_unlocked_v1';
@@ -5119,6 +5319,8 @@ function campaignSystemsSummary(level) {
     ];
     var rulesMode = (level && level.rulesMode) || 'advanced';
     if (rulesMode === 'advanced') parts.push('Supply altindaki node daha ucuza upgrade olur');
+    if (level && level.encounters && level.encounters.length) parts.push('Encounterlar objective akisini degistirir');
+    if (level && level.doctrineId) parts.push('Doktrin acilista oyunun temposunu belirler');
     return parts.join(' | ');
 }
 function campaignFeatureHint(level) {
@@ -5136,9 +5338,12 @@ function campaignLevelSummary(level) {
         'Nodes: ' + level.nc + ' | AI: ' + level.aiCount + ' | Diff: ' + level.diff.toUpperCase() +
         ' | Feature: ' + campaignFeatureName(level.mapFeature) +
         ' | Mutator: ' + campaignMutatorName(level.mapMutator || 'none') +
+        ' | Playlist: ' + playlistName(level.playlist || 'standard') +
+        (level.doctrineId ? (' | Doktrin: ' + doctrineName(level.doctrineId)) : '') +
         (level.fog ? ' | Fog ON' : ' | Fog OFF') + '\n' +
         'Harita Dersi: ' + campaignFeatureHint(level) + '\n' +
         'Mutator: ' + mapMutatorHint(level.mapMutator || 'none') + '\n' +
+        'Encounter: ' + encounterSummary(level.encounters || []) + '\n' +
         'Systems: ' + campaignSystemsSummary(level) + '\n' +
         'Objectives: ' + describeCampaignObjectives(level, { tickRate: TICK_RATE }) + '\n' +
         'Plan: ' + (level.hint || 'Map temposunu pulse, supply ve savunma alani ile yonet.');
@@ -5156,6 +5361,8 @@ function refreshDailyChallengeCard() {
             gameOver: false,
             ownedNodes: 0,
             stats: {},
+            encounters: challenge.encounters || [],
+            humanIndex: 0,
         }, { tickRate: TICK_RATE }).map(function (row) {
             return { label: row.label, progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
         }),
@@ -5172,7 +5379,10 @@ function refreshCustomMapStatus() {
         ' | ' + currentCustomMapConfig.nodes.length + ' node' +
         ' | ' + currentCustomMapConfig.playerCount + ' oyuncu' +
         ' | ' + campaignFeatureName(currentCustomMapConfig.mapFeature) +
-        ' | Mutator: ' + campaignMutatorName(currentCustomMapConfig.mapMutator || 'none');
+        ' | Mutator: ' + campaignMutatorName(currentCustomMapConfig.mapMutator || 'none') +
+        ' | Playlist: ' + playlistName(currentCustomMapConfig.playlist || 'standard') +
+        (currentCustomMapConfig.doctrineId ? (' | Doktrin: ' + doctrineName(currentCustomMapConfig.doctrineId)) : '') +
+        (currentCustomMapConfig.encounters && currentCustomMapConfig.encounters.length ? (' | Encounter: ' + encounterSummary(currentCustomMapConfig.encounters)) : '');
 }
 function applyCampaignLevelSelection(levelIndex) {
     var unlocked = G.campaign.unlocked || 1;
@@ -5223,13 +5433,15 @@ function refreshCampaignUI() {
     var selectedDone = campaignSelectedLevel < completed;
     renderMissionPanel(scenarioMissionEl, {
         title: 'Bolum ' + selected.id + ': ' + selected.name,
-        subtitle: selected.blurb + ' | AI ' + selected.aiCount + ' | ' + selected.diff.toUpperCase() + ' | ' + campaignFeatureName(selected.mapFeature) + ' | Mutator: ' + campaignMutatorName(selected.mapMutator || 'none') + ' | ' + (selectedDone ? 'Durum: Gecildi' : 'Durum: Hazir'),
+        subtitle: selected.blurb + ' | AI ' + selected.aiCount + ' | ' + selected.diff.toUpperCase() + ' | ' + campaignFeatureName(selected.mapFeature) + ' | Mutator: ' + campaignMutatorName(selected.mapMutator || 'none') + ' | Playlist: ' + playlistName(selected.playlist || 'standard') + (selected.doctrineId ? (' | Doktrin: ' + doctrineName(selected.doctrineId)) : '') + ' | ' + (selectedDone ? 'Durum: Gecildi' : 'Durum: Hazir'),
         items: evaluateCampaignObjectives(selected, {
             tick: 0,
             didWin: false,
             gameOver: false,
             ownedNodes: 0,
             stats: {},
+            encounters: selected.encounters || [],
+            humanIndex: 0,
         }, { tickRate: TICK_RATE }).map(function (row) {
             return { label: row.label, progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
         }),
@@ -5262,12 +5474,17 @@ function startSinglePlayerGame() {
     var fogOn = menuFogCb ? !!menuFogCb.checked : false;
     var nc = (ncIn && ncIn.value) ? parseInt(ncIn.value, 10) : 16;
     nc = (isNaN(nc) || nc < 8 || nc > 30) ? 16 : nc;
+    var playlistId = playlistSel ? playlistSel.value : 'standard';
+    var doctrineId = doctrineSel ? doctrineSel.value : 'auto';
     initGame((seedIn && seedIn.value) || '42', nc, (diffSel && diffSel.value) || 'normal', {
         fogEnabled: fogOn,
         rulesMode: (gameModeSel && gameModeSel.value) || 'advanced',
         mapMutator: 'auto',
+        playlist: playlistId,
+        doctrineId: doctrineId,
+        forcePlaylistOverrides: playlistId !== 'standard',
     });
-    finalizeLocalGameStart(fogOn);
+    finalizeLocalGameStart(G.tune.fogEnabled);
     refreshCustomMapStatus();
 }
 function startSandboxGame() {
@@ -5290,6 +5507,10 @@ function startDailyChallengeGame() {
         mapFeature: challenge.mapFeature || 'auto',
         mapMutator: challenge.mapMutator || 'auto',
         rulesMode: challenge.rulesMode || 'advanced',
+        playlist: challenge.playlist || 'standard',
+        doctrineId: challenge.doctrineId || 'auto',
+        encounters: challenge.encounters || [],
+        endOnObjectives: challenge.endOnObjectives === true,
     });
     G.campaign.active = false;
     G.campaign.levelIndex = -1;
@@ -5316,6 +5537,10 @@ function startCustomMapGame(customMap) {
         rulesMode: normalized.rulesMode || 'advanced',
         tuneOverrides: normalized.tuneOverrides || null,
         customMap: normalized,
+        playlist: normalized.playlist || 'standard',
+        doctrineId: normalized.doctrineId || 'auto',
+        encounters: normalized.encounters || [],
+        endOnObjectives: normalized.endOnObjectives === true,
     });
     finalizeLocalGameStart(normalized.fogEnabled);
     showGameToast('Custom map yuklendi: ' + normalized.name);
@@ -5355,6 +5580,9 @@ function exportCurrentMapState() {
         difficulty: G.diff,
         fogEnabled: !!G.tune.fogEnabled,
         rulesMode: G.rulesMode,
+        playlist: G.playlist || 'standard',
+        doctrineId: humanDoctrineId() || '',
+        endOnObjectives: G.endOnObjectives === true,
     });
     var blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' });
     var url = URL.createObjectURL(blob);
@@ -5377,6 +5605,10 @@ function startCampaignLevel(levelIndex) {
         mapMutator: lvl.mapMutator || 'none',
         tuneOverrides: lvl.tune || null,
         rulesMode: lvl.rulesMode || 'advanced',
+        playlist: lvl.playlist || 'standard',
+        doctrineId: lvl.doctrineId || 'auto',
+        encounters: lvl.encounters || [],
+        endOnObjectives: lvl.endOnObjectives === true,
     });
     G.campaign.active = true;
     G.campaign.levelIndex = idx;
@@ -5637,6 +5869,12 @@ repSlower.addEventListener('click', function () { if (G.rep) G.rep.speed = Math.
 repFaster.addEventListener('click', function () { if (G.rep) G.rep.speed = Math.min(8, G.rep.speed * 2); repSpdLbl.textContent = (G.rep ? G.rep.speed : 1) + 'x'; });
 repPauseBtn.addEventListener('click', function () { if (G.rep) { G.rep.paused = !G.rep.paused; repPauseBtn.textContent = G.rep.paused ? 'Oynat' : 'Duraklat'; } });
 repStopBtn.addEventListener('click', function () { G.state = 'mainMenu'; showUI('mainMenu'); });
+if (doctrineBtn) {
+    doctrineBtn.addEventListener('click', function () {
+        if (G.state !== 'playing') return;
+        triggerHumanDoctrine();
+    });
+}
 function syncTune() {
     tuneProd.value = G.tune.prod; tuneFSpd.value = G.tune.fspeed; tuneDef.value = G.tune.def; tuneFlowInt.value = G.tune.flowInt;
     tuneAiAgg.value = G.tune.aiAgg; tuneAiBuf.value = G.tune.aiBuf; tuneAiDec.value = G.tune.aiInt;
@@ -6001,6 +6239,9 @@ window.addEventListener('keydown', function (e) {
                 }
             }
         }
+        if (e.key === 'q' || e.key === 'Q') {
+            if (triggerHumanDoctrine()) e.preventDefault();
+        }
         if (e.key >= '1' && e.key <= '9') {
             setSendPct(parseInt(e.key, 10) * 10);
         } else if (e.key === '0') {
@@ -6039,7 +6280,7 @@ function loop(ts) {
                         }
                     } else {
                         goTitle.textContent = 'Senaryo Tamamlandi';
-                        goMsg.textContent = '20 bolumun tamamini bitirdin. Solarmax Protocol temizlendi.';
+                        goMsg.textContent = CAMPAIGN_LEVELS.length + ' bolumun tamamini bitirdin. Solarmax Protocol temizlendi.';
                     }
                 } else {
                     goTitle.textContent = 'Bolum ' + level.id + ' Kaybedildi';
@@ -6105,6 +6346,20 @@ function loop(ts) {
             hudCap.textContent = capText;
         }
         if (hudMeta) hudMeta.textContent = selectionMetaText();
+        if (doctrineBtn) {
+            var doctrineId = humanDoctrineId();
+            if (!doctrineId) {
+                doctrineBtn.disabled = true;
+                doctrineBtn.textContent = 'DOC';
+                doctrineBtn.title = 'Doktrin yok';
+            } else {
+                var doctrineStatus = doctrineCooldownSummary(G.doctrines, G.doctrineStates, G.human);
+                var ready = G.state === 'playing' && canActivateDoctrine(G.doctrines, G.doctrineStates, G.human);
+                doctrineBtn.disabled = !ready;
+                doctrineBtn.textContent = doctrineActiveName(doctrineId).toUpperCase();
+                doctrineBtn.title = doctrineName(doctrineId) + ' | ' + doctrineStatus;
+            }
+        }
         var pingEl = document.getElementById('pingDisplay');
         if (pingEl) {
             var pingText = net.online && net.lastPingMs !== undefined ? ('Ping: ' + Math.round(net.lastPingMs) + 'ms') : '';

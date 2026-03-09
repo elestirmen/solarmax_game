@@ -1,4 +1,4 @@
-export var COMMAND_TYPES = ['send', 'flow', 'rmFlow', 'upgrade', 'toggleDefense'];
+export var COMMAND_TYPES = ['send', 'flow', 'rmFlow', 'upgrade', 'toggleDefense', 'activateDoctrine'];
 export var ALLOWED_COMMAND_TYPES = new Set(COMMAND_TYPES);
 
 export function toFiniteInt(value) {
@@ -84,6 +84,10 @@ export function sanitizeCommandData(type, rawData, opts) {
         var nodeId = sanitizeNodeId(rawData.nodeId);
         if (nodeId === null) return null;
         return { nodeId: nodeId };
+    }
+
+    if (type === 'activateDoctrine') {
+        return {};
     }
 
     return null;

@@ -3,6 +3,8 @@ import { computeOwnershipMetrics } from './state_metrics.js';
 import { stepNodeEconomy } from './node_economy.js';
 import { applyTurretDamage } from './turret.js';
 import { applyDefenseFieldDamage } from './defense_field.js';
+import { activateDoctrine, buildDoctrineLoadout, doctrineModifiers, ensureDoctrineStates, tickDoctrineStates } from './doctrine.js';
+import { buildEncounterState, stepEncounterState } from './encounters.js';
 import { stepFleetMovement, resolveFleetArrivals } from './fleet_step.js';
 import { stepHoldingFleetDecay } from './holding_decay.js';
 import { stepFlowLinks } from './flow_step.js';
@@ -13,6 +15,7 @@ import { computeSyncHash } from './state_hash.js';
 import { decideAiCommands } from './ai.js';
 import { initFog, updateVis } from './fog.js';
 import { isTerritoryBonusBlockedAtPoint, resolveMapMutator } from './mutator.js';
+import { evaluateCampaignObjectives } from '../campaign/objectives.js';
 import {
     PLAYER_COLORS,
     SIM_CONSTANTS,
@@ -49,6 +52,7 @@ function defaultStats() {
         pulseControlTicks: 0,
         peakCapPressure: 0,
         peakPower: 0,
+        doctrineActivations: 0,
     };
 }
 
@@ -153,6 +157,44 @@ function distance(a, b) {
     return Math.sqrt(dx * dx + dy * dy);
 }
 
+function countOwnedNodes(nodes, owner) {
+    var total = 0;
+    for (var i = 0; i < nodes.length; i++) {
+        if (nodes[i] && nodes[i].owner === owner) total++;
+    }
+    return total;
+}
+
+function missionObjectiveRows(state) {
+    if (!state || !Array.isArray(state.objectives) || !state.objectives.length) return [];
+    return evaluateCampaignObjectives({
+        objectives: state.objectives,
+    }, {
+        tick: state.tick,
+        didWin: state.winner === state.humanIndex,
+        gameOver: state.state === 'gameOver',
+        ownedNodes: countOwnedNodes(state.nodes, state.humanIndex),
+        stats: state.stats || {},
+        encounters: state.encounters || [],
+        humanIndex: state.humanIndex,
+    }, {
+        tickRate: 30,
+    });
+}
+
+function maybeResolveObjectiveVictory(state) {
+    if (!state || state.endOnObjectives !== true) return false;
+    var rows = missionObjectiveRows(state);
+    if (!rows.length) return false;
+    for (var i = 0; i < rows.length; i++) {
+        if (rows[i].optional) continue;
+        if (!rows[i].complete) return false;
+    }
+    state.winner = state.humanIndex;
+    state.state = 'gameOver';
+    return true;
+}
+
 function ensureNodeDefaults(node, index) {
     node.id = index;
     node.level = Math.max(1, Math.floor(Number(node.level) || 1));
@@ -235,6 +277,17 @@ export function buildAuthoritativeState(snapshot, opts) {
             nodes: nodes,
             mapMutator: snapshot.mapMutator !== undefined ? snapshot.mapMutator : manifest.mapMutator,
         }),
+        playlist: String(snapshot.playlist || manifest.playlist || 'standard'),
+        doctrineId: String(snapshot.doctrineId || manifest.doctrineId || ''),
+        doctrines: buildDoctrineLoadout(players, {
+            doctrineId: snapshot.doctrineId || manifest.doctrineId || 'logistics',
+            doctrines: Array.isArray(snapshot.doctrines) ? snapshot.doctrines : [],
+        }),
+        doctrineStates: [],
+        encounters: [],
+        encounterContext: {},
+        objectives: Array.isArray(snapshot.objectives) ? cloneValue(snapshot.objectives) : cloneValue(Array.isArray(manifest.objectives) ? manifest.objectives : []),
+        endOnObjectives: snapshot.endOnObjectives === true || manifest.endOnObjectives === true,
         playerCapital: cloneValue(snapshot.playerCapital || {}),
         strategicNodes: Array.isArray(snapshot.strategicNodes) ? snapshot.strategicNodes.slice() : [],
         strategicPulse: cloneValue(snapshot.strategicPulse || {}),
@@ -252,6 +305,13 @@ export function buildAuthoritativeState(snapshot, opts) {
         stats: cloneValue(snapshot.stats || defaultStats()),
         lastAppliedSeq: typeof snapshot.lastAppliedSeq === 'number' ? snapshot.lastAppliedSeq : -1,
     };
+    state.doctrineStates = ensureDoctrineStates(state.doctrines, Array.isArray(snapshot.doctrineStates) ? snapshot.doctrineStates : []);
+    state.encounters = buildEncounterState(
+        snapshot.encounters !== undefined ? snapshot.encounters : manifest.encounters,
+        state.nodes,
+        seed
+    );
+    stepEncounterState(state);
 
     if (!state.strategicPulse || typeof state.strategicPulse !== 'object' || state.strategicPulse.nodeId === undefined) {
         state.strategicPulse = getStrategicPulseState({
@@ -292,6 +352,13 @@ export function captureAuthoritativeSnapshot(state) {
         wormholes: cloneValue(state.wormholes),
         mapFeature: cloneValue(state.mapFeature),
         mapMutator: cloneValue(state.mapMutator),
+        playlist: state.playlist,
+        doctrineId: state.doctrineId || '',
+        doctrines: cloneValue(state.doctrines),
+        doctrineStates: cloneValue(state.doctrineStates),
+        encounters: cloneValue(state.encounters),
+        objectives: cloneValue(state.objectives || []),
+        endOnObjectives: state.endOnObjectives === true,
         playerCapital: cloneValue(state.playerCapital),
         strategicNodes: Array.isArray(state.strategicNodes) ? state.strategicNodes.slice() : [],
         strategicPulse: cloneValue(state.strategicPulse),
@@ -318,6 +385,9 @@ export function computeAuthoritativeSnapshotHash(state) {
         players: state.players,
         mapFeature: state.mapFeature,
         mapMutator: state.mapMutator,
+        doctrines: state.doctrines,
+        doctrineStates: state.doctrineStates,
+        encounters: state.encounters,
     });
 }
 
@@ -338,11 +408,20 @@ export function applyCommandToAuthoritativeState(state, playerIndex, type, data)
         toggleDefense: function (owner, nodeId) {
             return toggleDefenseMode(state, owner, nodeId);
         },
+        activateDoctrine: function (owner) {
+            var activation = activateDoctrine(state.doctrines, state.doctrineStates, owner);
+            state.doctrineStates = activation.states;
+            if (activation.activated && owner === state.humanIndex) {
+                state.stats.doctrineActivations = (Number(state.stats.doctrineActivations) || 0) + 1;
+            }
+            return activation.activated;
+        },
     });
 }
 
 export function simulateAuthoritativeTick(state) {
     if (!state || (state.state !== 'playing' && state.state !== 'replay')) return state;
+    state.doctrineStates = tickDoctrineStates(state.doctrines, state.doctrineStates);
 
     state.strategicPulse = getStrategicPulseState({
         strategicNodeIds: state.strategicNodes,
@@ -383,6 +462,7 @@ export function simulateAuthoritativeTick(state) {
     if (state.strategicPulse.active && pulseNode && pulseNode.owner === state.humanIndex && isNodeAssimilated(pulseNode)) {
         state.stats.pulseControlTicks = (Number(state.stats.pulseControlTicks) || 0) + 1;
     }
+    stepEncounterState(state);
 
     stepNodeEconomy({
         nodes: state.nodes,
@@ -420,6 +500,17 @@ export function simulateAuthoritativeTick(state) {
                 return !!(state.strategicPulse && state.strategicPulse.active && state.strategicPulse.nodeId === nodeId);
             },
             isNodeAssimilated: isNodeAssimilated,
+            ownerProdMultiplier: function (owner, node) {
+                var modifiers = doctrineModifiers(state.doctrines, state.doctrineStates, owner);
+                var prodMult = modifiers.prodMult;
+                if (node && node.supplied === true) prodMult *= modifiers.suppliedProdMult;
+                var relayCoreCount = Number(state.encounterContext && state.encounterContext.relayCoreCountByPlayer && state.encounterContext.relayCoreCountByPlayer[owner]) || 0;
+                if (relayCoreCount > 0) prodMult *= 1 + relayCoreCount * 0.08;
+                return prodMult;
+            },
+            ownerAssimilationMultiplier: function (owner) {
+                return doctrineModifiers(state.doctrines, state.doctrineStates, owner).assimMult;
+            },
         },
     });
 
@@ -469,6 +560,9 @@ export function simulateAuthoritativeTick(state) {
                     point: opts && opts.point,
                     mapMutator: state.mapMutator,
                 });
+            },
+            fleetSpeedMultiplier: function (fleet) {
+                return doctrineModifiers(state.doctrines, state.doctrineStates, fleet && fleet.owner).fleetSpeedMult;
             },
         },
         constants: {
@@ -520,6 +614,15 @@ export function simulateAuthoritativeTick(state) {
             nodeTypeOf: nodeTypeOf,
             nodeLevelDefMult: nodeLevelDefMult,
             nodeCapacity: nodeCapacity,
+            attackMultiplier: function (owner, targetNode) {
+                var modifiers = doctrineModifiers(state.doctrines, state.doctrineStates, owner);
+                var mult = modifiers.attackMult;
+                if (targetNode && targetNode.kind === 'turret') mult *= modifiers.turretAttackMult;
+                return mult;
+            },
+            defenseMultiplier: function () {
+                return 1;
+            },
         },
         constants: {
             turretCaptureResist: SIM_CONSTANTS.TURRET_CAPTURE_RESIST,
@@ -583,6 +686,7 @@ export function simulateAuthoritativeTick(state) {
 
     for (var vp = 0; vp < state.players.length; vp++) updateVis(state.fog, vp, state.nodes, state.tick);
 
+    maybeResolveObjectiveVictory(state);
     var resolved = resolveMatchEndState({
         nodes: state.nodes,
         fleets: state.fleets,

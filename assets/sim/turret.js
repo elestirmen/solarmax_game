@@ -22,15 +22,16 @@ export function applyTurretDamage(opts) {
     var kills = 0;
     var shots = [];
     var impacts = [];
-    var rangeSq = range * range;
-
     for (var ni = 0; ni < nodes.length; ni++) {
         var turret = nodes[ni];
         if (!turret || turret.kind !== 'turret') continue;
         if (!turret.pos) continue;
-        var requiredGarrison = turret.owner === -1 ? minGarrison : 1;
+        var turretRange = range * Math.max(0.5, Number(turret.turretRangeMult) || 1);
+        var turretDps = dps * Math.max(0.2, Number(turret.turretDpsMult) || 1);
+        var requiredGarrison = turret.owner === -1 ? Math.max(1, Math.ceil(minGarrison * Math.max(0.5, Number(turret.turretMinGarrisonMult) || 1))) : 1;
         if ((turret.units || 0) < requiredGarrison) continue;
         if (turret.owner === -1 && !isAssimilated(turret)) continue;
+        var rangeSq = turretRange * turretRange;
 
         var bestFleet = null;
         var bestDistSq = rangeSq + 1;
@@ -51,7 +52,7 @@ export function applyTurretDamage(opts) {
 
         if (!bestFleet) continue;
         bestFleet.dmgAcc = Number(bestFleet.dmgAcc) || 0;
-        bestFleet.dmgAcc += dps * dt;
+        bestFleet.dmgAcc += turretDps * dt;
         var damage = Math.floor(bestFleet.dmgAcc);
         if (damage <= 0) continue;
 

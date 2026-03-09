@@ -79,3 +79,28 @@ test('describeCampaignObjectives includes goal prefixes', function () {
 
     assert.equal(summary, 'Gorev: 4 node kontrol et | Bonus: 600 tickten once kazan');
 });
+
+test('evaluateCampaignObjectives resolves encounter and survival goals', function () {
+    var level = {
+        objectives: [
+            { type: 'encounter_captured', encounterType: 'relay_core', target: 1 },
+            { type: 'encounter_control_ticks', encounterType: 'relay_core', target: 180 },
+            { type: 'survive_until_tick', target: 900 },
+        ],
+    };
+    var rows = evaluateCampaignObjectives(level, {
+        tick: 930,
+        didWin: false,
+        gameOver: false,
+        ownedNodes: 0,
+        humanIndex: 0,
+        encounters: [
+            { type: 'relay_core', owner: 0, assimilated: true, controlTicksByPlayer: { 0: 210 } },
+        ],
+        stats: {},
+    }, { tickRate: 30 });
+
+    assert.equal(rows[0].complete, true);
+    assert.equal(rows[1].progressText, '7s / 6s');
+    assert.equal(rows[2].complete, true);
+});

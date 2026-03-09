@@ -1,6 +1,7 @@
 import { computePlayerUnitCount, computeGlobalCap } from './cap.js';
 import { computeSendCount } from './dispatch_math.js';
 import { isDispatchAllowed } from './barrier.js';
+import { canActivateDoctrine, normalizeDoctrineId } from './doctrine.js';
 import { isTerritoryBonusBlockedAtPoint } from './mutator.js';
 import { getTerritoryOwnersAtPoint } from './territory.js';
 import { AI_ARCHETYPES, SIM_CONSTANTS, difficultyConfig, isNodeAssimilated, nodeLevelDefMult, nodeTypeOf, upgradeCost } from './shared_config.js';
@@ -109,6 +110,7 @@ export function decideAiCommands(state, playerIndex) {
     var aiTargetCapitalBias = Number(diffCfg.aiTargetCapitalBias);
     var aiFlowPeriod = Math.max(1, Math.floor(Number(diffCfg.aiFlowPeriod) || 13));
     var aiUpgradePeriod = Math.max(1, Math.floor(Number(diffCfg.aiUpgradePeriod) || 19));
+    var doctrineId = state.doctrines && state.doctrines[playerIndex] ? normalizeDoctrineId(state.doctrines[playerIndex]) : '';
 
     if (!Number.isFinite(aiReserveScale) || aiReserveScale <= 0) aiReserveScale = 1;
     if (!Number.isFinite(aiCommitMax) || aiCommitMax <= 0) aiCommitMax = 0.75;
@@ -644,6 +646,8 @@ export function decideAiCommands(state, playerIndex) {
         if (node.kind === 'forge') score += 20;
         if (node.kind === 'relay') score += 12;
         if (node.kind === 'turret') score -= 18;
+        if (node.encounterType === 'relay_core') score += doctrineId === 'logistics' ? 72 : 46;
+        if (node.encounterType === 'mega_turret') score += doctrineId === 'siege' ? 86 : 28;
         if (node.gate && node.owner !== playerIndex) score += ownsGate ? 10 : 64;
         if (strategicPulseAppliesToNode(state, node.id)) score += SIM_CONSTANTS.STRATEGIC_PULSE_AI_BONUS;
         if ((Number(node.level) || 1) > 1) score += ((Number(node.level) || 1) - 1) * 11;
@@ -658,6 +662,10 @@ export function decideAiCommands(state, playerIndex) {
         if (territoryState.bonusBlocked && node.owner !== playerIndex) score += 12;
         else if (territoryState.bonusBlocked) score -= 8;
         if (!isNodeAssimilated(node) && node.owner !== -1) score += territoryState.hostile ? 9 : 18;
+        if (doctrineId === 'assimilation' && !isNodeAssimilated(node) && node.owner !== playerIndex) score += 20;
+        if (doctrineId === 'assimilation' && node.owner === -1) score += 10;
+        if (doctrineId === 'logistics' && territoryState.friendlySafe) score += 12;
+        if (doctrineId === 'siege' && (node.kind === 'turret' || node.defense)) score += 32;
         if (pressureGap > 0) score -= Math.min(48, pressureGap * 0.35);
         else score += Math.min(18, (Math.max(localSupport, localFriendlyPressure) - localEnemyPressure) * 0.12);
         if ((turretThreat.covered || routeThreat.crossed) && node.kind !== 'turret') score -= humanCapitalTarget ? 28 : 84;
@@ -865,7 +873,7 @@ export function decideAiCommands(state, playerIndex) {
             canDispatchAI(flowSource, targetNode) &&
             !protectedByTurret &&
             (!target.territory.hostile || target.humanCapital || targetNode.gate) &&
-            (target.humanCapital || (flowGate && ((target.humanOwned && targetNode.units > 8) || (targetNode.owner !== -1 && targetNode.units > 12))));
+            (target.humanCapital || (flowGate && ((target.humanOwned && targetNode.units > 8) || (targetNode.owner !== -1 && targetNode.units > 12) || targetNode.encounterType === 'relay_core')));
         if (shouldFlow) commands.push({ type: 'flow', data: { srcId: sources[0], tgtId: targetNode.id } });
         commands.push({ type: 'send', data: { sources: sources, fleetIds: fleetIds, tgtId: targetNode.id, pct: pct } });
         markCommittedAssets(sources, fleetIds, pct);
@@ -923,6 +931,26 @@ export function decideAiCommands(state, playerIndex) {
         if (flow.owner !== playerIndex || !flow.active) continue;
         var flowTarget = state.nodes[flow.tgtId];
         if (!flowTarget || flowTarget.owner === playerIndex) commands.push({ type: 'rmFlow', data: { srcId: flow.srcId, tgtId: flow.tgtId } });
+    }
+
+    if (canActivateDoctrine(state.doctrines, state.doctrineStates, playerIndex)) {
+        var shouldTriggerDoctrine = false;
+        if (doctrineId === 'siege') {
+            shouldTriggerDoctrine = targets.length > 0 && (
+                state.nodes[targets[0].id].kind === 'turret' ||
+                state.nodes[targets[0].id].defense === true ||
+                targets[0].humanCapital
+            );
+        } else if (doctrineId === 'assimilation') {
+            shouldTriggerDoctrine = own.some(function (node) {
+                return node && node.owner === playerIndex && !isNodeAssimilated(node);
+            });
+        } else {
+            shouldTriggerDoctrine = capPressure > 0.86 || holdingAssets.length >= 2 || state.flows.some(function (flow) {
+                return flow && flow.owner === playerIndex && flow.active;
+            });
+        }
+        if (shouldTriggerDoctrine) commands.unshift({ type: 'activateDoctrine', data: {} });
     }
 
     return commands;

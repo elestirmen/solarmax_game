@@ -72,6 +72,8 @@ test('buildCustomMapSnapshot keeps player slots and feature-normalized coordinat
         ],
         mapFeature: { type: 'gravity', nodeId: 1, x: 1, y: 1, r: 180 },
         mapMutator: { type: 'blackout', x: 320, y: 240, r: 160 },
+        doctrineId: 'siege',
+        encounters: [{ type: 'relay_core', nodeId: 1 }],
     }, [
         { index: 0, botControlled: false },
         { index: 1, botControlled: false },
@@ -84,4 +86,7 @@ test('buildCustomMapSnapshot keeps player slots and feature-normalized coordinat
     assert.equal(snapshot.mapMutator.type, 'blackout');
     assert.equal(snapshot.mapFeature.x, snapshot.nodes[1].pos.x);
     assert.equal(snapshot.mapFeature.y, snapshot.nodes[1].pos.y);
+    assert.equal(snapshot.doctrineId, 'siege');
+    assert.equal(snapshot.encounters.length, 1);
+    assert.equal(snapshot.nodes[1].encounterType, 'relay_core');
 });

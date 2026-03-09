@@ -25,5 +25,8 @@ export function applyPlayerCommandWithOps(playerIndex, type, data, ops) {
         }
         return ops.toggleDefense(playerIndex, data.nodeId);
     }
+    if (type === 'activateDoctrine' && typeof ops.activateDoctrine === 'function') {
+        return ops.activateDoctrine(playerIndex);
+    }
     return false;
 }

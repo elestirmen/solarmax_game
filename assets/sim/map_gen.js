@@ -1,4 +1,5 @@
 import { selectBarrierGateIds } from './barrier_layout.js';
+import { buildEncounterState } from './encounters.js';
 import { resolveMapMutator } from './mutator.js';
 import { normalizeNodeKindForRuleset } from './ruleset.js';
 import { PLAYER_COLORS, SIM_CONSTANTS, difficultyConfig, nodeCapacity } from './shared_config.js';
@@ -354,6 +355,7 @@ export function buildInitialMatchSnapshot(manifest, players) {
         nodes: nodes,
         mapMutator: manifest.mapMutator,
     });
+    var encounters = buildEncounterState(manifest.encounters, nodes, manifest.seed);
 
     var snapshotPlayers = [];
     for (var pi = 0; pi < players.length; pi++) {
@@ -375,6 +377,9 @@ export function buildInitialMatchSnapshot(manifest, players) {
         wormholes: featureState.wormholes,
         mapFeature: featureState.mapFeature,
         mapMutator: mapMutator,
+        playlist: manifest.playlist || 'standard',
+        doctrineId: manifest.doctrineId || '',
+        encounters: encounters,
         playerCapital: playerCapital,
         strategicNodes: strategicNodes,
         players: snapshotPlayers,

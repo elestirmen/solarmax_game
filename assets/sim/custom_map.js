@@ -1,4 +1,7 @@
 import { normalizeMapMutator, resolveMapMutator } from './mutator.js';
+import { normalizeDoctrineId } from './doctrine.js';
+import { buildEncounterState, normalizeEncounterList } from './encounters.js';
+import { normalizePlaylistId } from './playlists.js';
 
 var MAP_W = 1600;
 var MAP_H = 1000;
@@ -202,6 +205,10 @@ export function normalizeCustomMapConfig(rawMap) {
         strategicNodes: strategicNodes,
         playerCapital: playerCapital,
         tuneOverrides: sanitizeTuneOverrides(rawMap.tuneOverrides || rawMap.tune),
+        playlist: normalizePlaylistId(rawMap.playlist || rawMap.playlistId || 'standard'),
+        doctrineId: rawMap.doctrineId && rawMap.doctrineId !== 'auto' ? normalizeDoctrineId(rawMap.doctrineId) : '',
+        encounters: normalizeEncounterList(rawMap.encounters, nodes, rawMap.seed || 'custom-map'),
+        endOnObjectives: rawMap.endOnObjectives === true,
     };
 }
 
@@ -216,6 +223,7 @@ export function buildCustomMapSnapshot(rawMap, players) {
         nodes: nodes,
         mapMutator: customMap.mapMutator,
     });
+    var encounters = buildEncounterState(customMap.encounters, nodes, customMap.seed);
     var wormholes = cloneValue(customMap.wormholes || []);
     var playerCapital = cloneValue(customMap.playerCapital || {});
 
@@ -250,6 +258,9 @@ export function buildCustomMapSnapshot(rawMap, players) {
         wormholes: wormholes,
         mapFeature: mapFeature,
         mapMutator: mapMutator,
+        playlist: customMap.playlist || 'standard',
+        doctrineId: customMap.doctrineId || '',
+        encounters: encounters,
         playerCapital: playerCapital,
         strategicNodes: cloneValue(customMap.strategicNodes || []),
         players: snapshotPlayers,
@@ -295,6 +306,10 @@ export function buildCustomMapExport(state, meta) {
         wormholes: Array.isArray(state.wormholes) ? state.wormholes : [],
         mapFeature: state.mapFeature || { type: 'none' },
         mapMutator: state.mapMutator || { type: 'none' },
+        playlist: meta.playlist || state.playlist || 'standard',
+        doctrineId: meta.doctrineId || ((Array.isArray(state.doctrines) && state.doctrines[0]) ? state.doctrines[0] : ''),
+        encounters: Array.isArray(state.encounters) ? state.encounters : [],
+        endOnObjectives: meta.endOnObjectives === true || state.endOnObjectives === true,
         strategicNodes: Array.isArray(state.strategicNodes) ? state.strategicNodes : [],
         playerCapital: state.playerCapital || {},
         tuneOverrides: meta.tuneOverrides || state.tune || null,
