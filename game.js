@@ -439,7 +439,7 @@ var ACHIEVEMENTS = [
     { id: 'capture_10', name: '10 Gezegen Fethet', check: function () { return G.stats.nodesCaptured >= 10; } },
     { id: 'upgrade_master', name: 'Upgrade Ustasi', check: function () { return G.stats.upgrades >= 5; } },
     { id: 'fleet_lord', name: 'Filo Komutani', check: function () { return G.stats.fleetsSent >= 50; } },
-    { id: 'fast_win', name: 'Hizli Zafer', check: function () { return G.winner === G.human && G.tick < 500; } },
+    { id: 'fast_win', name: 'Hızlı Zafer', check: function () { return G.winner === G.human && G.tick < 500; } },
 ];
 function checkAchievements() {
     try {
@@ -1307,7 +1307,7 @@ function dispatch(owner, srcIds, tgtId, pct) {
         if (typeof AudioFX !== 'undefined') AudioFX.send();
     }
     if (blockedByBarrier && owner === G.human) {
-        showGameToast('Gecit kilitli: ' + barrierGateObjectiveText() + ', sonra asimilasyon tamamlanana kadar bekle.');
+        showGameToast('Geçit kilitli: ' + barrierGateObjectiveText() + ', sonra asimilasyon tamamlanana kadar bekle.');
     } else if (!didSend && friendlyRoom !== null && owner === G.human) {
         showGameToast('Hedef dolu: dost takviye sigmiyor. Birlik cikar veya baska hedefe yonlendir.');
     }
@@ -3584,14 +3584,23 @@ var mainMenu = $('mainMenu'), pauseOv = $('pauseOverlay'), goOv = $('gameOverOve
 var seedIn = $('seedInput'), rndSeedBtn = $('randomSeedBtn'), ncIn = $('nodeCountInput'), ncLbl = $('nodeCountLabel'), diffSel = $('difficultySelect');
 var playlistSel = $('playlistSelect'), doctrineSel = $('doctrineSelect');
 var gameModeSel = $('gameModeSelect'), multiModeSel = $('multiModeSelect'), multiPlaylistSel = $('multiPlaylistSelect'), multiDoctrineSel = $('multiDoctrineSelect');
-var startBtn = $('startBtn'), sandboxBtn = $('sandboxBtn'), campaignBtn = $('campaignBtn'), dailyChallengeBtn = $('dailyChallengeBtn'), importMapBtn = $('importMapBtn'), exportMapBtn = $('exportMapBtn'), loadRepBtn = $('loadReplayBtn'), repFileIn = $('replayFileInput'), customMapFileIn = $('customMapFileInput');
-var playerNameIn = $('playerNameInput');
+var multiSeedIn = $('multiSeedInput'), multiNodeIn = $('multiNodeInput'), multiNodeLbl = $('multiNodeLabel'), multiDiffSel = $('multiDiffSelect'), multiRoomTypeIn = $('multiRoomTypeSelect');
+var startBtn = $('startBtn'), customStartBtn = $('customStartBtn'), sandboxBtn = $('sandboxBtn'), campaignBtn = $('campaignBtn'), dailyChallengeBtn = $('dailyChallengeBtn'), importMapBtn = $('importMapBtn'), exportMapBtn = $('exportMapBtn'), loadRepBtn = $('loadReplayBtn'), repFileIn = $('replayFileInput'), customMapFileIn = $('customMapFileInput');
+var menuCustomizeBtn = $('menuCustomizeBtn'), menuOpenContentBtn = $('menuOpenContentBtn'), menuOpenMultiplayerBtn = $('menuOpenMultiplayerBtn'), menuOpenToolsBtn = $('menuOpenToolsBtn');
+var menuHubView = $('menuHubView'), menuSubHeader = $('menuSubHeader'), menuSectionTitle = $('menuSectionTitle'), menuSectionCopy = $('menuSectionCopy'), menuBackBtn = $('menuBackBtn');
+var panelSingleCustomize = $('panelSingleCustomize'), panelContent = $('panelContent'), panelMultiplayer = $('panelMultiplayer'), panelHostSetup = $('panelHostSetup'), panelTools = $('panelTools');
+var playerNameIn = $('playerNameInput'), hostSetupBtn = $('hostSetupBtn'), hostSetupCreateRoomBtn = $('hostSetupCreateRoomBtn'), hostSetupBackBtn = $('hostSetupBackBtn');
 var startRoomBtn = $('startRoomBtn');
 var createRoomBtn = $('createRoomBtn');
 var joinRoomCodeInput = $('joinRoomCodeInput');
 var joinRoomBtn = $('joinRoomBtn');
 var hostControls = $('hostControls'), leaveRoomBtn = $('leaveRoomBtn');
 var customMapStatusEl = $('customMapStatus');
+var contentCampaignProgressEl = $('contentCampaignProgress'), contentCampaignMissionEl = $('contentCampaignMission'), contentCampaignStartBtn = $('contentCampaignStartBtn');
+var menuSeedChip = $('menuSeedChip'), menuPlaylistChip = $('menuPlaylistChip'), menuDoctrineChip = $('menuDoctrineChip'), menuModeChip = $('menuModeChip'), menuFogChip = $('menuFogChip');
+var menuQuickStatusEl = $('menuQuickStatus'), menuStagePlaylistLabel = $('menuStagePlaylistLabel'), menuStageDoctrineLabel = $('menuStageDoctrineLabel');
+var menuDailySpotlightTitle = $('menuDailySpotlightTitle'), menuDailySpotlightCopy = $('menuDailySpotlightCopy'), menuCampaignSpotlightTitle = $('menuCampaignSpotlightTitle'), menuCampaignSpotlightCopy = $('menuCampaignSpotlightCopy');
+var menuHubDailyBtn = $('menuHubDailyBtn'), menuHubCampaignBtn = $('menuHubCampaignBtn'), menuContentCardMeta = $('menuContentCardMeta'), menuMultiCardMeta = $('menuMultiCardMeta');
 var howToPlayBtn = $('howToPlayBtn');
 var howToPlayOv = $('howToPlayOverlay');
 var closeHowToPlayBtn = $('closeHowToPlayBtn');
@@ -3626,7 +3635,6 @@ if (howToPlayOv) {
 }
 var roomStatusEl = $('roomStatus'), roomPlayersEl = $('roomPlayers'), roomListEl = $('roomList');
 var chatMessagesEl = $('chatMessages');
-var tabSingle = $('tabSingle'), tabMulti = $('tabMulti'), panelSingle = $('panelSingle'), panelMulti = $('panelMulti');
 var pauseTitleEl = $('pauseTitle'), pauseHintEl = $('pauseHint'), resumeBtn = $('resumeBtn'), quitBtn = $('quitBtn');
 var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameOverStats'), repBtn = $('replayBtn'), expRepBtn = $('exportReplayBtn'), restartBtn = $('restartBtn'), nextLevelBtn = $('nextLevelBtn');
 var hudTelemetryRow = $('hudTelemetryRow'), hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), hudCap = $('hudCap'), hudMeta = $('hudMeta'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
@@ -3646,6 +3654,167 @@ var tuneVals = { p: $('tuneProductionVal'), f: $('tuneFleetSpeedVal'), d: $('tun
 var UI_PREFS_KEY = 'stellar_ui_prefs_v1';
 var DEFAULT_SFX_VOLUME = 0.85, DEFAULT_MUSIC_VOLUME = 0.55;
 var tuningOpen = false, lastRepData = null, powerRenderKey = '', inGameMenuOpen = false;
+var MENU_PANEL_META = {
+    hub: { title: '', copy: '' },
+    single_customize: { title: 'Oyunu Özelleştir', copy: 'Serbest maç ayarları ikinci katmanda durur; hızlı başlat akışından ayrıdır.' },
+    content: { title: 'Senaryo ve Challenge', copy: 'Kampanya ve günlük challenge aynı panelde toplanır; serbest maç ayarlarından ayrıdır.' },
+    multiplayer: { title: 'Çok Oyunculu', copy: 'İlk ekranda yalnızca nick, oda listesi, oda kur ve koda katıl akışı görünür.' },
+    host_setup: { title: 'Oda Kurulumu', copy: 'Host ayarları ayrı açılır; standard room varsayımları shared menu state üzerinden korunur.' },
+    tools: { title: 'Araçlar', copy: 'Özel harita, replay, liderlik ve yardım ana oyun başlatma akışından ayrıldı.' },
+};
+var menuPanelViews = {
+    hub: menuHubView,
+    single_customize: panelSingleCustomize,
+    content: panelContent,
+    multiplayer: panelMultiplayer,
+    host_setup: panelHostSetup,
+    tools: panelTools,
+};
+
+function clampMenuNodeCount(v) {
+    var n = Math.floor(Number(v));
+    if (!isFinite(n)) n = 16;
+    return Math.max(8, Math.min(30, n));
+}
+function normalizeMenuDifficulty(v) {
+    return v === 'easy' || v === 'hard' ? v : 'normal';
+}
+function normalizeMenuRulesMode(v) {
+    return normalizeRulesetMode(v || 'advanced');
+}
+function normalizeMenuPlaylist(v) {
+    var raw = v === null || v === undefined ? '' : String(v).trim();
+    return raw || 'standard';
+}
+function normalizeMenuDoctrine(v) {
+    var raw = v === null || v === undefined ? '' : String(v).trim();
+    return raw || 'auto';
+}
+function normalizeMenuRoomType(v) {
+    return v === 'daily' || v === 'custom' ? v : 'standard';
+}
+function normalizeMenuSeed(v) {
+    var raw = v === null || v === undefined ? '' : String(v).trim();
+    return raw || '42';
+}
+function normalizeMenuPanel(panel) {
+    if (panel === 'quick_start') return 'hub';
+    return MENU_PANEL_META[panel] ? panel : 'hub';
+}
+function menuRulesModeLabel(mode) {
+    return normalizeMenuRulesMode(mode) === 'classic' ? 'Classic' : 'Advanced';
+}
+function menuDoctrineMenuLabel(doctrineId) {
+    if (!doctrineId || doctrineId === 'auto') return 'Doctrine Auto';
+    return doctrineName(doctrineId);
+}
+function setMenuLobbyMeta(text) {
+    if (menuMultiCardMeta) menuMultiCardMeta.textContent = text || 'Lobi taraması bekleniyor';
+}
+function refreshMenuHeroSummary() {
+    var sk = menuState.skirmish;
+    if (menuSeedChip) menuSeedChip.textContent = 'Seed ' + sk.seed;
+    if (menuPlaylistChip) menuPlaylistChip.textContent = playlistName(sk.playlist || 'standard');
+    if (menuDoctrineChip) menuDoctrineChip.textContent = menuDoctrineMenuLabel(sk.doctrineId);
+    if (menuModeChip) menuModeChip.textContent = menuRulesModeLabel(sk.rulesMode);
+    if (menuFogChip) menuFogChip.textContent = sk.fogEnabled ? 'Fog ON' : 'Fog OFF';
+    if (menuQuickStatusEl) {
+        menuQuickStatusEl.textContent = sk.nodeCount + ' node | ' + String(sk.difficulty || 'normal').toUpperCase() + ' | ' + playlistName(sk.playlist || 'standard') + ' | ' + menuDoctrineMenuLabel(sk.doctrineId);
+    }
+    if (menuStagePlaylistLabel) menuStagePlaylistLabel.textContent = 'PLAYLIST // ' + String(playlistName(sk.playlist || 'standard')).toUpperCase();
+    if (menuStageDoctrineLabel) menuStageDoctrineLabel.textContent = 'DOCTRINE // ' + String(menuDoctrineMenuLabel(sk.doctrineId)).toUpperCase();
+}
+function createInitialMenuState() {
+    return {
+        panel: 'hub',
+        skirmish: {
+            seed: normalizeMenuSeed(seedIn ? seedIn.value : '42'),
+            nodeCount: clampMenuNodeCount(ncIn ? ncIn.value : 16),
+            difficulty: normalizeMenuDifficulty(diffSel ? diffSel.value : 'normal'),
+            playlist: normalizeMenuPlaylist(playlistSel ? playlistSel.value : 'standard'),
+            doctrineId: normalizeMenuDoctrine(doctrineSel ? doctrineSel.value : 'auto'),
+            rulesMode: normalizeMenuRulesMode(gameModeSel ? gameModeSel.value : 'advanced'),
+            fogEnabled: menuFogCb ? !!menuFogCb.checked : false,
+        },
+        multiplayer: {
+            playerName: playerNameIn ? playerNameIn.value.trim() : '',
+            joinCode: joinRoomCodeInput ? String(joinRoomCodeInput.value || '').trim().toUpperCase() : '',
+            roomType: normalizeMenuRoomType(multiRoomTypeIn ? multiRoomTypeIn.value : 'standard'),
+        },
+    };
+}
+var menuState = createInitialMenuState();
+
+function applySkirmishMenuState() {
+    var sk = menuState.skirmish;
+    if (seedIn) seedIn.value = sk.seed;
+    if (multiSeedIn) multiSeedIn.value = sk.seed;
+    if (ncIn) ncIn.value = '' + sk.nodeCount;
+    if (ncLbl) ncLbl.textContent = '' + sk.nodeCount;
+    if (multiNodeIn) multiNodeIn.value = '' + sk.nodeCount;
+    if (multiNodeLbl) multiNodeLbl.textContent = '' + sk.nodeCount;
+    if (diffSel) diffSel.value = sk.difficulty;
+    if (multiDiffSel) multiDiffSel.value = sk.difficulty;
+    if (playlistSel) playlistSel.value = sk.playlist;
+    if (multiPlaylistSel) multiPlaylistSel.value = sk.playlist;
+    if (doctrineSel) doctrineSel.value = sk.doctrineId;
+    if (multiDoctrineSel) multiDoctrineSel.value = sk.doctrineId;
+    if (gameModeSel) gameModeSel.value = sk.rulesMode;
+    if (multiModeSel) multiModeSel.value = sk.rulesMode;
+    if (menuFogCb) menuFogCb.checked = !!sk.fogEnabled;
+    refreshMenuHeroSummary();
+}
+function applyMultiplayerMenuState() {
+    var mp = menuState.multiplayer;
+    if (playerNameIn && playerNameIn.value !== mp.playerName) playerNameIn.value = mp.playerName;
+    if (joinRoomCodeInput && joinRoomCodeInput.value !== mp.joinCode) joinRoomCodeInput.value = mp.joinCode;
+    if (multiRoomTypeIn) multiRoomTypeIn.value = mp.roomType;
+    syncRoomTypeInputs();
+}
+function applyMenuStateToInputs() {
+    applySkirmishMenuState();
+    applyMultiplayerMenuState();
+}
+function updateSkirmishMenuState(patch) {
+    if (!patch) return;
+    if (patch.seed !== undefined) menuState.skirmish.seed = normalizeMenuSeed(patch.seed);
+    if (patch.nodeCount !== undefined) menuState.skirmish.nodeCount = clampMenuNodeCount(patch.nodeCount);
+    if (patch.difficulty !== undefined) menuState.skirmish.difficulty = normalizeMenuDifficulty(patch.difficulty);
+    if (patch.playlist !== undefined) menuState.skirmish.playlist = normalizeMenuPlaylist(patch.playlist);
+    if (patch.doctrineId !== undefined) menuState.skirmish.doctrineId = normalizeMenuDoctrine(patch.doctrineId);
+    if (patch.rulesMode !== undefined) menuState.skirmish.rulesMode = normalizeMenuRulesMode(patch.rulesMode);
+    if (patch.fogEnabled !== undefined) menuState.skirmish.fogEnabled = !!patch.fogEnabled;
+    applySkirmishMenuState();
+}
+function updateMultiplayerMenuState(patch) {
+    if (!patch) return;
+    if (patch.playerName !== undefined) menuState.multiplayer.playerName = String(patch.playerName || '').trim();
+    if (patch.joinCode !== undefined) menuState.multiplayer.joinCode = String(patch.joinCode || '').trim().toUpperCase();
+    if (patch.roomType !== undefined) menuState.multiplayer.roomType = normalizeMenuRoomType(patch.roomType);
+    applyMultiplayerMenuState();
+}
+function menuBackTarget(panel) {
+    return panel === 'host_setup' ? 'multiplayer' : 'hub';
+}
+function setMenuPanel(panel, opts) {
+    opts = opts || {};
+    var next = normalizeMenuPanel(panel);
+    menuState.panel = next;
+    for (var key in menuPanelViews) {
+        if (!Object.prototype.hasOwnProperty.call(menuPanelViews, key)) continue;
+        var view = menuPanelViews[key];
+        if (view) view.classList.toggle('hidden', key !== next);
+    }
+    if (menuSubHeader) menuSubHeader.classList.toggle('hidden', next === 'hub');
+    if (menuSectionTitle) menuSectionTitle.textContent = next === 'hub' ? '' : MENU_PANEL_META[next].title;
+    if (menuSectionCopy) menuSectionCopy.textContent = next === 'hub' ? '' : MENU_PANEL_META[next].copy;
+    if (menuBackBtn) menuBackBtn.dataset.target = menuBackTarget(next);
+    if (next === 'multiplayer' || next === 'host_setup') requestLobby();
+    if (!opts.keepOverlay) closeScenarioMenu();
+}
+
+applyMenuStateToInputs();
+setMenuLobbyMeta('Lobi taraması bekleniyor');
 var uiPrefs = loadUiPrefs();
 
 function loadUiPrefs() {
@@ -3686,43 +3855,43 @@ function applyAudioPreference() {
 }
 function syncAudioToggleButton() {
     if (!audioToggleBtn) return;
-    audioToggleBtn.textContent = uiPrefs.audioEnabled ? 'Ses: Acik' : 'Ses: Kapali';
+    audioToggleBtn.textContent = uiPrefs.audioEnabled ? 'Ses: Açık' : 'Ses: Kapalı';
 }
 function syncHudTelemetryVisibility() {
     if (hudTelemetryRow) hudTelemetryRow.classList.toggle('hidden', !uiPrefs.hudTelemetryVisible);
-    if (hudInfoToggleBtn) hudInfoToggleBtn.textContent = uiPrefs.hudTelemetryVisible ? 'Tick: Acik' : 'Tick: Kapali';
+    if (hudInfoToggleBtn) hudInfoToggleBtn.textContent = uiPrefs.hudTelemetryVisible ? 'Tick: Açık' : 'Tick: Kapalı';
 }
 function syncHintToggleButton() {
     if (!hintToggleBtn) return;
-    hintToggleBtn.textContent = uiPrefs.hintsEnabled !== false ? 'Ipucu: Acik' : 'Ipucu: Kapali';
+    hintToggleBtn.textContent = uiPrefs.hintsEnabled !== false ? 'İpucu: Açık' : 'İpucu: Kapalı';
 }
 function syncPauseOverlayContent() {
     var onlineMenu = net.online && G.state === 'playing' && inGameMenuOpen;
-    if (pauseTitleEl) pauseTitleEl.textContent = onlineMenu ? 'Mac Menusu' : 'Duraklatildi';
+    if (pauseTitleEl) pauseTitleEl.textContent = onlineMenu ? 'Maç Menüsü' : 'Duraklatıldı';
     if (pauseHintEl) {
         if (onlineMenu) {
-            pauseHintEl.textContent = 'Ana menuye donersin. Ayrilirsan yerine AI devam eder.';
+            pauseHintEl.textContent = 'Ana menüye dönersin. Ayrılırsan yerine AI devam eder.';
             pauseHintEl.classList.remove('hidden');
         } else {
             pauseHintEl.textContent = '';
             pauseHintEl.classList.add('hidden');
         }
     }
-    if (resumeBtn) resumeBtn.textContent = onlineMenu ? 'Oyuna Don' : 'Devam';
-    if (quitBtn) quitBtn.textContent = onlineMenu ? 'Ana Menuye Don' : 'Ana Menu';
+    if (resumeBtn) resumeBtn.textContent = onlineMenu ? 'Oyuna Dön' : 'Devam';
+    if (quitBtn) quitBtn.textContent = onlineMenu ? 'Ana Menüye Dön' : 'Ana Menü';
     syncAudioToggleButton();
     syncHudTelemetryVisibility();
     syncHintToggleButton();
 }
 function syncMatchHudControls() {
     if (pauseBtn) {
-        pauseBtn.textContent = net.online ? 'CIKIS' : '||';
-        pauseBtn.title = net.online ? 'Ana Menuye Don' : 'Duraklat';
+        pauseBtn.textContent = net.online ? 'ÇIKIŞ' : '||';
+        pauseBtn.title = net.online ? 'Ana Menüye Dön' : 'Duraklat';
         pauseBtn.classList.toggle('hud-exit-btn', !!net.online);
     }
     if (spdBtn) {
         spdBtn.disabled = !!net.online;
-        spdBtn.title = net.online ? 'Online maclarda devre disi' : 'Hiz';
+        spdBtn.title = net.online ? 'Online maçlarda devre dışı' : 'Hız';
     }
 }
 function setAudioEnabled(enabled) {
@@ -3804,7 +3973,7 @@ function labelForPlayer(idx) {
 }
 
 function pulseBonusSummary() {
-    return 'Pulse: uretim +' + Math.round((STRATEGIC_PULSE_PROD - 1) * 100) + '% | filo hizi +' + Math.round((STRATEGIC_PULSE_SPEED - 1) * 100) + '% | asimilasyon +' + Math.round((STRATEGIC_PULSE_ASSIM - 1) * 100) + '% | cap +' + STRATEGIC_PULSE_CAP;
+    return 'Pulse: üretim +' + Math.round((STRATEGIC_PULSE_PROD - 1) * 100) + '% | filo hızı +' + Math.round((STRATEGIC_PULSE_SPEED - 1) * 100) + '% | asimilasyon +' + Math.round((STRATEGIC_PULSE_ASSIM - 1) * 100) + '% | cap +' + STRATEGIC_PULSE_CAP;
 }
 
 function defenseFieldCfg() {
@@ -3821,8 +3990,8 @@ function defenseFieldCfg() {
 
 function defenseFieldSummary(node) {
     var stats = getDefenseFieldStats(node, defenseFieldCfg());
-    if (!stats.active) return 'Field OFF: asimilasyon tamamlaninca acilir';
-    return 'Field: r' + Math.round(stats.range) + ' | dusman filo ' + stats.dps.toFixed(1) + '/s erir';
+    if (!stats.active) return 'Field OFF: asimilasyon tamamlanınca açılır';
+    return 'Field: r' + Math.round(stats.range) + ' | düşman filo ' + stats.dps.toFixed(1) + '/s erir';
 }
 
 function barrierGateNodes() {
@@ -3841,29 +4010,29 @@ function barrierGateNodes() {
 
 function barrierGateLabel(index, total) {
     if (total <= 1) return 'Merkez GATE';
-    if (total === 2) return index === 0 ? 'Ust GATE' : 'Alt GATE';
+    if (total === 2) return index === 0 ? 'Üst GATE' : 'Alt GATE';
     return 'GATE ' + (index + 1);
 }
 
 function barrierGateObjectiveText() {
     var gates = barrierGateNodes();
-    if (!gates.length) return 'haritadaki GATE gezegeni bulunamadi';
-    if (gates.length === 1) return 'haritadaki GATE etiketli gezegeni ele gecir';
-    return 'haritadaki GATE etiketli gezegenlerden birini ele gecir';
+    if (!gates.length) return 'haritadaki GATE gezegeni bulunamadı';
+    if (gates.length === 1) return 'haritadaki GATE etiketli gezegeni ele geçir';
+    return 'haritadaki GATE etiketli gezegenlerden birini ele geçir';
 }
 
 function barrierGatePromptText() {
-    return 'Barrier aktif: ' + barrierGateObjectiveText() + '. Gecis, fetih yetmez; asimilasyon tamamlaninca acilir.';
+    return 'Barrier aktif: ' + barrierGateObjectiveText() + '. Geçiş, fetih yetmez; asimilasyon tamamlanınca açılır.';
 }
 
 function barrierGateStatusText() {
     var gates = barrierGateNodes();
-    if (!gates.length) return 'Barrier aktif ama GATE gezegeni bulunamadi.';
+    if (!gates.length) return 'Barrier aktif ama GATE gezegeni bulunamadı.';
     var parts = [];
     for (var i = 0; i < gates.length; i++) {
         var gate = gates[i];
-        var ownerText = gate.owner < 0 ? 'Tarafsiz' : labelForPlayer(gate.owner);
-        var statusText = gate.owner >= 0 ? (isNodeAssimilated(gate) ? 'hazir, gecit acik' : 'asimile oluyor, gecit kapali') : 'bos, once fethet';
+        var ownerText = gate.owner < 0 ? 'Tarafsız' : labelForPlayer(gate.owner);
+        var statusText = gate.owner >= 0 ? (isNodeAssimilated(gate) ? 'hazır, geçit açık' : 'asimile oluyor, geçit kapalı') : 'boş, önce fethet';
         parts.push(barrierGateLabel(i, gates.length) + ': ' + ownerText + ' ' + statusText);
     }
     return 'Barrier | ' + parts.join(' | ');
@@ -3887,11 +4056,11 @@ function encounterStatusText() {
         var encounter = G.encounters[i];
         var node = G.nodes[encounter.nodeId];
         if (!node) continue;
-        var ownerText = node.owner < 0 ? 'Tarafsiz' : labelForPlayer(node.owner);
+        var ownerText = node.owner < 0 ? 'Tarafsız' : labelForPlayer(node.owner);
         if (encounter.type === 'relay_core') {
-            parts.push(encounterName(encounter) + ': ' + ownerText + (isNodeAssimilated(node) ? ' | hat acik' : ' | asimilasyon bekliyor'));
+            parts.push(encounterName(encounter) + ': ' + ownerText + (isNodeAssimilated(node) ? ' | hat açık' : ' | asimilasyon bekliyor'));
         } else if (encounter.type === 'mega_turret') {
-            parts.push(encounterName(encounter) + ': ' + ownerText + ' | kusatma hedefi');
+            parts.push(encounterName(encounter) + ': ' + ownerText + ' | kuşatma hedefi');
         }
     }
     return parts.join(' | ');
@@ -3926,12 +4095,12 @@ function selectionMetaText() {
         if (humanDoctrineId()) idleParts.push(humanDoctrineStatusText());
         if (G.strategicPulse && G.strategicPulse.active) idleParts.push(pulseBonusSummary());
         if (idleParts.length) return idleParts.join(' | ');
-        return 'Bir gezegen sec: upgrade maliyeti, savunma alani, asimilasyon, supply ve pulse etkileri burada gorunur.';
+        return 'Bir gezegen seç: upgrade maliyeti, savunma alanı, asimilasyon, supply ve pulse etkileri burada görünür.';
     }
 
     if (ids.length === 1) {
         var node = G.nodes[ids[0]];
-        var ownerLabel = node.owner >= 0 ? labelForPlayer(node.owner) : 'Tarafsiz';
+        var ownerLabel = node.owner >= 0 ? labelForPlayer(node.owner) : 'Tarafsız';
         var parts = [nodeTypeOf(node).label + ' L' + node.level, ownerLabel];
         if (node.owner === G.human) {
             if (G.rules && G.rules.allowUpgrade) {
@@ -3947,10 +4116,10 @@ function selectionMetaText() {
         } else if (node.strategic) {
             parts.push('Strategic hub');
         }
-        if (node.gate) parts.push(node.owner === G.human && isNodeAssimilated(node) ? 'GATE ready: gecit acik' : 'GATE: bariyeri asip diger tarafa gecisi acar');
+        if (node.gate) parts.push(node.owner === G.human && isNodeAssimilated(node) ? 'GATE ready: geçit açık' : 'GATE: bariyeri aşıp diğer tarafa geçişi açar');
         if (node.encounterType) parts.push(encounterName(node.encounterType));
         if (strategicPulseAppliesToNode(node.id)) parts.push(pulseBonusSummary());
-        else if (node.strategic) parts.push('Strategic hub: pulse buraya dondugunde uretim, hiz, asimilasyon ve cap bonusu gelir');
+        else if (node.strategic) parts.push('Strategic hub: pulse buraya döndüğünde üretim, hız, asimilasyon ve cap bonusu gelir');
         if (G.mapMutator && G.mapMutator.type !== 'none' && isPointInsideMapMutator({ point: node.pos, mapMutator: G.mapMutator })) {
             parts.push(mapMutatorName(G.mapMutator));
         }
@@ -3958,7 +4127,7 @@ function selectionMetaText() {
     }
 
     var owned = ids.map(function (id) { return G.nodes[id]; }).filter(function (node) { return node.owner === G.human; });
-    var summary = [ids.length + ' secili'];
+    var summary = [ids.length + ' seçili'];
     if (!owned.length) return summary.join(' | ');
 
     if (G.rules && G.rules.allowUpgrade) {
@@ -4052,8 +4221,8 @@ function currentCampaignLevel() {
 function currentObjectiveMissionDefinition() {
     if (!Array.isArray(G.objectives) || !G.objectives.length) return null;
     return {
-        name: 'Hedef Maci',
-        title: 'Hedef Maci',
+        name: 'Hedef Maçı',
+        title: 'Hedef Maçı',
         blurb: '',
         playlist: G.playlist || 'standard',
         doctrineId: humanDoctrineId() || G.doctrineId || '',
@@ -4095,8 +4264,8 @@ function currentCampaignObjectiveRows() {
 function currentMissionPanelTitle(level) {
     if (!level) return 'Misyon';
     var mode = currentMissionMode();
-    if (mode === 'daily') return 'Gunluk Challenge';
-    if (mode === 'campaign') return 'Bolum ' + level.id + ': ' + level.name;
+    if (mode === 'daily') return 'Günlük Challenge';
+    if (mode === 'campaign') return 'Bölüm ' + level.id + ': ' + level.name;
     return level.title || level.name || 'Misyon';
 }
 
@@ -4105,11 +4274,11 @@ function currentMissionPanelSubtitle(level) {
     var mode = currentMissionMode();
     if (mode === 'daily') {
         var statusBits = [];
-        statusBits.push(level.title || 'Gunluk');
+        statusBits.push(level.title || 'Günlük');
         statusBits.push(level.blurb || '');
         if (level.playlist) statusBits.push('Playlist: ' + playlistName(level.playlist));
         if (level.doctrineId) statusBits.push('Doktrin: ' + doctrineName(level.doctrineId));
-        if (G.daily.completed) statusBits.push('Durum: Tamamlandi');
+        if (G.daily.completed) statusBits.push('Durum: Tamamlandı');
         else if (G.daily.bestTick > 0) statusBits.push('En iyi: ' + G.daily.bestTick + ' tick');
         return statusBits.filter(Boolean).join(' | ');
     }
@@ -4199,7 +4368,7 @@ function humanGameOverStatRows() {
     var missionRows = currentCampaignObjectiveRows();
     for (var i = 0; i < missionRows.length; i++) {
         rows.push({
-            label: (missionRows[i].optional ? 'Bonus' : 'Gorev') + ' ' + (i + 1),
+            label: (missionRows[i].optional ? 'Bonus' : 'Görev') + ' ' + (i + 1),
             value: missionRows[i].complete ? 'Tamam' : (missionRows[i].failed ? 'Kacirildi' : missionRows[i].progressText),
             emphasis: missionRows[i].complete && !missionRows[i].optional,
         });
@@ -4389,7 +4558,7 @@ function handleAuthoritativeState(payload) {
     net.syncWarningText = '';
     if (typeof payload.hash === 'string' && payload.hash) rememberSyncSnapshot(payload.tick, payload.hash);
     if (firstAuthoritativeFrame) {
-        setRoomStatus('Online mac sunucu state ile senkronize edildi.', false);
+        setRoomStatus('Online maç sunucu state ile senkronize edildi.', false);
     }
 }
 
@@ -4583,28 +4752,23 @@ window.addEventListener('resize', resize); resize();
 roomButtonState();
 setRoomStatus('', false);
 ensureSocket();
+setMenuPanel('hub', { keepOverlay: true });
 
-if (tabSingle && tabMulti && panelSingle && panelMulti) {
-    tabSingle.addEventListener('click', function () {
-        tabSingle.classList.add('active'); tabMulti.classList.remove('active');
-        panelSingle.classList.remove('hidden'); panelMulti.classList.add('hidden');
-        closeScenarioMenu();
-    });
-    tabMulti.addEventListener('click', function () {
-        tabMulti.classList.add('active'); tabSingle.classList.remove('active');
-        panelMulti.classList.remove('hidden'); panelSingle.classList.add('hidden');
-        closeScenarioMenu();
-        requestLobby();
-    });
-}
+if (menuCustomizeBtn) menuCustomizeBtn.addEventListener('click', function () { setMenuPanel('single_customize'); });
+if (menuOpenContentBtn) menuOpenContentBtn.addEventListener('click', function () { setMenuPanel('content'); });
+if (menuOpenMultiplayerBtn) menuOpenMultiplayerBtn.addEventListener('click', function () { setMenuPanel('multiplayer'); });
+if (menuOpenToolsBtn) menuOpenToolsBtn.addEventListener('click', function () { setMenuPanel('tools'); });
+if (menuBackBtn) menuBackBtn.addEventListener('click', function () { setMenuPanel(menuBackBtn.dataset.target || 'hub'); });
+if (hostSetupBtn) hostSetupBtn.addEventListener('click', function () { setMenuPanel('host_setup'); });
+if (hostSetupBackBtn) hostSetupBackBtn.addEventListener('click', function () { setMenuPanel('multiplayer'); });
 
 if (roomListEl) {
     roomListEl.addEventListener('click', function (e) {
         var btn = e.target.closest('button[data-room-code]');
         if (!btn || net.roomCode) return;
         var code = btn.getAttribute('data-room-code');
-        if (code && joinRoomCodeInput) {
-            joinRoomCodeInput.value = code;
+        if (code) {
+            updateMultiplayerMenuState({ joinCode: code });
             doJoinRoom();
         }
     });
@@ -4618,6 +4782,8 @@ function showUI(st) {
     if (powerSidebar) powerSidebar.classList.toggle('hidden', !ig || st === 'replay');
     var cp = document.getElementById('chatPanel'); if (cp) cp.classList.toggle('hidden', !ig || !net.online);
     if (st === 'mainMenu') {
+        setMenuPanel(net.roomCode ? 'multiplayer' : 'hub', { keepOverlay: true });
+        applyMenuStateToInputs();
         refreshCampaignUI();
         refreshDailyChallengeCard();
         refreshCustomMapStatus();
@@ -4678,15 +4844,18 @@ function renderRoomPlayers(players, hostId) {
 
 function roomButtonState() {
     var inRoom = !!net.roomCode;
-    if (playerNameIn) playerNameIn.disabled = inRoom || net.online;
+    if (playerNameIn) playerNameIn.disabled = inRoom;
     if (startRoomBtn) {
         startRoomBtn.disabled = !inRoom || !net.connected || net.players.length < 2;
-        startRoomBtn.textContent = 'Oyunu Baslat';
+        startRoomBtn.textContent = 'Oyunu Başlat';
     }
 }
 
 function renderRoomList(rooms) {
     renderRoomListUI(roomListEl, rooms, { connected: net.connected });
+    if (!net.connected) setMenuLobbyMeta('Sunucuya bağlanılıyor');
+    else if (!rooms || rooms.length === 0) setMenuLobbyMeta('Henüz açık oda yok');
+    else setMenuLobbyMeta(rooms.length + ' aktif oda tarandı');
 }
 
 function clearRoomState(message, opts) {
@@ -4718,13 +4887,14 @@ function clearRoomState(message, opts) {
     roomButtonState();
     if (roomListEl) roomListEl.style.display = '';
     if (createRoomBtn) createRoomBtn.style.display = '';
+    if (hostSetupBtn) hostSetupBtn.style.display = '';
     if (joinRoomCodeInput && joinRoomCodeInput.parentElement) joinRoomCodeInput.parentElement.style.display = '';
     if (hostControls) hostControls.style.display = 'none';
     if (leaveRoomBtn) leaveRoomBtn.style.display = 'none';
-    if (multiRoomTypeIn) multiRoomTypeIn.value = 'standard';
     syncRoomTypeInputs();
     syncPauseOverlayContent();
     syncMatchHudControls();
+    if (net.connected) setMenuLobbyMeta('Lobi taranıyor');
     requestLobby();
 }
 
@@ -4734,51 +4904,54 @@ function requestLobby() {
 
 function doCreateRoom() {
     ensureSocket();
-    if (!net.socket) { setRoomStatus('Socket.IO yuklenemedi.', true); return; }
-    if (!net.connected) { setRoomStatus('Sunucuya baglaniyor...', false); return; }
+    if (!net.socket) { setRoomStatus('Socket.IO yüklenemedi.', true); return; }
+    if (!net.connected) { setRoomStatus('Sunucuya bağlanıyor...', false); return; }
     if (net.roomCode) return;
 
-    var chosen = (playerNameIn && playerNameIn.value.trim()) || '';
-    if (!chosen) { setRoomStatus('Once nick secmelisin.', true); return; }
+    var chosen = (playerNameIn && playerNameIn.value.trim()) || menuState.multiplayer.playerName || '';
+    if (!chosen) { setRoomStatus('Önce nick seçmelisin.', true); return; }
+    updateMultiplayerMenuState({ playerName: chosen });
     net.playerName = chosen;
 
     setRoomStatus('Oda kuruluyor...', false);
-    var multiSeed = $('multiSeedInput'), multiNode = $('multiNodeInput'), multiDiff = $('multiDiffSelect'), multiRoomType = $('multiRoomTypeSelect');
-    var roomMode = (multiRoomType && multiRoomType.value) || 'standard';
+    var roomMode = normalizeMenuRoomType(menuState.multiplayer.roomType);
+    var sk = menuState.skirmish;
     if (roomMode === 'custom' && !currentCustomMapConfig) {
-        setRoomStatus('Custom oda acmak icin once bir custom map yukle.', true);
+        setRoomStatus('Custom oda açmak için önce bir custom map yükle.', true);
         return;
     }
     net.socket.emit('createRoom', {
         action: 'create',
         playerName: net.playerName,
         mode: roomMode,
-        seed: (multiSeed && multiSeed.value) || seedIn.value || '42',
-        nodeCount: Number((multiNode && multiNode.value) || ncIn.value || 16),
-        difficulty: (multiDiff && multiDiff.value) || diffSel.value || 'normal',
-        fogEnabled: menuFogCb ? !!menuFogCb.checked : false,
-        rulesMode: (multiModeSel && multiModeSel.value) || (gameModeSel && gameModeSel.value) || 'advanced',
-        playlist: (multiPlaylistSel && multiPlaylistSel.value) || (playlistSel && playlistSel.value) || 'standard',
-        doctrineId: (multiDoctrineSel && multiDoctrineSel.value) || (doctrineSel && doctrineSel.value) || 'auto',
+        seed: sk.seed,
+        nodeCount: sk.nodeCount,
+        difficulty: sk.difficulty,
+        fogEnabled: !!sk.fogEnabled,
+        rulesMode: sk.rulesMode,
+        playlist: sk.playlist,
+        doctrineId: sk.doctrineId,
         customMap: roomMode === 'custom' ? currentCustomMapConfig : null,
     });
 }
 
 function doJoinRoom() {
     ensureSocket();
-    if (!net.socket) { setRoomStatus('Socket.IO yuklenemedi.', true); return; }
-    if (!net.connected) { setRoomStatus('Sunucuya baglaniyor...', false); return; }
+    if (!net.socket) { setRoomStatus('Socket.IO yüklenemedi.', true); return; }
+    if (!net.connected) { setRoomStatus('Sunucuya bağlanıyor...', false); return; }
     if (net.roomCode) return;
 
-    var chosen = (playerNameIn && playerNameIn.value.trim()) || '';
-    if (!chosen) { setRoomStatus('Once nick secmelisin.', true); return; }
+    var chosen = (playerNameIn && playerNameIn.value.trim()) || menuState.multiplayer.playerName || '';
+    if (!chosen) { setRoomStatus('Önce nick seçmelisin.', true); return; }
+    updateMultiplayerMenuState({ playerName: chosen });
     net.playerName = chosen;
 
-    var code = (joinRoomCodeInput && joinRoomCodeInput.value.trim().toUpperCase()) || '';
-    if (!code || code.length !== 5) { setRoomStatus('Gecerli bir oda kodu girin (5 karakter).', true); return; }
+    var code = (joinRoomCodeInput && joinRoomCodeInput.value.trim().toUpperCase()) || menuState.multiplayer.joinCode || '';
+    if (!code || code.length !== 5) { setRoomStatus('Geçerli bir oda kodu girin (5 karakter).', true); return; }
+    updateMultiplayerMenuState({ joinCode: code });
 
     net.pendingJoin = false;
-    setRoomStatus('Odaya baglaniliyor...', false);
+    setRoomStatus('Odaya bağlanılıyor...', false);
     net.socket.emit('joinRoom', {
         action: 'join',
         playerName: net.playerName,
@@ -4790,7 +4963,7 @@ function doJoinRoom() {
 function issueOnlineCommand(type, data) {
     if (net.online && net.socket && net.roomCode) {
         if (net.authoritativeEnabled && !net.authoritativeReady) {
-            setRoomStatus('Mac acilisi sunucudan senkronize ediliyor. Bir an bekle.', false);
+            setRoomStatus('Maç açılışı sunucudan senkronize ediliyor. Bir an bekle.', false);
             return true;
         }
         var sanitized = sanitizeCommandData(type, data || {});
@@ -4819,7 +4992,8 @@ function ensureSocket() {
 
     net.socket.on('connect', function () {
         net.connected = true;
-        setRoomStatus('Baglanti kuruldu. Oda Kur veya Katil.', false);
+        setRoomStatus('Bağlantı kuruldu. Oda Kur veya Katıl.', false);
+        setMenuLobbyMeta('Lobi taranıyor');
         requestLobby();
         net.socket.emit('requestDailyChallenge');
         maybeResumeOnlineRoom();
@@ -4830,7 +5004,8 @@ function ensureSocket() {
         net.connected = false;
         serverDailyChallenge = null;
         refreshDailyChallengeCard();
-        setRoomStatus('Cok oyunculu sunucuya ulasilamadi. "npm run server" ile baslat.', true);
+        setRoomStatus('Çok oyunculu sunucuya ulaşılamadı. "npm run server" ile başlat.', true);
+        setMenuLobbyMeta('Çok oyunculu sunucu offline');
         roomButtonState();
     });
 
@@ -4838,7 +5013,8 @@ function ensureSocket() {
         net.connected = false;
         serverDailyChallenge = null;
         refreshDailyChallengeCard();
-        clearRoomState('Cok oyunculu sunucudan baglanti koptu.', { preserveResume: true });
+        clearRoomState('Çok oyunculu sunucudan bağlantı koptu.', { preserveResume: true });
+        setMenuLobbyMeta('Bağlantı koptu');
         if (G.state === 'playing' || G.state === 'paused' || G.state === 'gameOver') {
             G.state = 'mainMenu';
             showUI('mainMenu');
@@ -4850,9 +5026,9 @@ function ensureSocket() {
         if (net.roomCode) return; // Already in a room
         renderRoomList(rooms);
         if (rooms.length === 0) {
-            setRoomStatus('Henuz oda yok. Oda Kur ile yeni oda olustur veya arkadasindan oda kodu al.', false);
+            setRoomStatus('Henüz oda yok. Oda Kur ile yeni oda oluştur veya arkadaşından oda kodu al.', false);
         } else {
-            setRoomStatus(rooms.length + ' oda mevcut. Birine katil veya yeni oda kur.', false);
+            setRoomStatus(rooms.length + ' oda mevcut. Birine katıl veya yeni oda kur.', false);
         }
     });
 
@@ -4871,26 +5047,31 @@ function ensureSocket() {
         }
         if (state.config) {
             var stateMode = normalizeRulesetMode(state.config.rulesMode || 'advanced');
-            if (multiModeSel) multiModeSel.value = stateMode;
-            if (gameModeSel) gameModeSel.value = stateMode;
-            if (multiPlaylistSel) multiPlaylistSel.value = state.config.playlist || 'standard';
-            if (playlistSel) playlistSel.value = state.config.playlist || 'standard';
-            if (multiDoctrineSel) multiDoctrineSel.value = state.config.doctrineId || 'auto';
-            if (doctrineSel) doctrineSel.value = state.config.doctrineId || 'auto';
-            if (multiRoomTypeIn) multiRoomTypeIn.value = state.config.mode === 'daily' ? 'daily' : (state.config.mode === 'custom' ? 'custom' : 'standard');
-            syncRoomTypeInputs();
+            updateSkirmishMenuState({
+                seed: state.config.seed || menuState.skirmish.seed,
+                nodeCount: state.config.nodeCount || menuState.skirmish.nodeCount,
+                difficulty: state.config.difficulty || menuState.skirmish.difficulty,
+                rulesMode: stateMode,
+                playlist: state.config.playlist || 'standard',
+                doctrineId: state.config.doctrineId || 'auto',
+                fogEnabled: state.config.fogEnabled === true,
+            });
+            updateMultiplayerMenuState({
+                roomType: state.config.mode === 'daily' ? 'daily' : (state.config.mode === 'custom' ? 'custom' : 'standard'),
+            });
         }
 
         if (hostControls) hostControls.style.display = net.isHost ? 'flex' : 'none';
         if (roomListEl) roomListEl.style.display = 'none';
         if (createRoomBtn) createRoomBtn.style.display = 'none';
+        if (hostSetupBtn) hostSetupBtn.style.display = 'none';
         if (joinRoomCodeInput && joinRoomCodeInput.parentElement) joinRoomCodeInput.parentElement.style.display = 'none';
         if (leaveRoomBtn) leaveRoomBtn.style.display = 'block';
 
         renderRoomPlayers(net.players, state.hostId);
         var status = 'Oda: ' + state.code + ' | ' + net.players.length + '/' + state.maxPlayers + ' oyuncu';
         if (state.preview && state.preview.mode === 'daily') {
-            status += ' | Gunluk: ' + ((state.preview.challengeTitle || '') + (state.preview.challengeKey ? (' (' + state.preview.challengeKey + ')') : ''));
+            status += ' | Günlük: ' + ((state.preview.challengeTitle || '') + (state.preview.challengeKey ? (' (' + state.preview.challengeKey + ')') : ''));
             if (state.preview.aiCount) status += ' | AI ' + state.preview.aiCount;
         } else if (state.preview && state.preview.mode === 'custom') {
             status += ' | Custom: ' + (state.preview.customMapName || 'Harita');
@@ -4900,9 +5081,11 @@ function ensureSocket() {
             status += ' | ' + playlistName(state.preview.playlist || 'standard');
         }
         if (net.players.length < 2) status += ' | En az 2 oyuncu gerekli';
-        else status += (net.isHost ? ' | Oyunu baslatabilirsin' : ' | Hostun baslatmasi bekleniyor...');
+        else status += (net.isHost ? ' | Oyunu başlatabilirsin' : ' | Hostun başlatması bekleniyor...');
         setRoomStatus(status, false);
+        setMenuLobbyMeta('Canlı oda // ' + state.code);
         roomButtonState();
+        if (G.state === 'mainMenu') setMenuPanel('multiplayer', { keepOverlay: true });
     });
 
     net.socket.on('roomError', function (err) {
@@ -4918,6 +5101,9 @@ function ensureSocket() {
         if (G.state === 'playing' || G.state === 'paused' || G.state === 'replay') {
             G.state = 'mainMenu';
             showUI('mainMenu');
+            setMenuPanel('multiplayer', { keepOverlay: true });
+        } else {
+            setMenuPanel('multiplayer', { keepOverlay: true });
         }
     });
 
@@ -4926,18 +5112,18 @@ function ensureSocket() {
         var leftColor = chatColorForPlayer(payload && payload.index);
         if (G.state === 'playing' && G.players && G.players[payload.index]) {
             G.players[payload.index].isAI = true;
-            appendChatMessage(leftName + ' oyundan ayrildi. Yerine Yapay Zeka gecti.', leftColor);
+            appendChatMessage(leftName + ' oyundan ayrıldı. Yerine Yapay Zeka geçti.', leftColor);
         } else if (net.players) {
             net.players = net.players.filter(function (p) { return p.index !== payload.index; });
             renderRoomPlayers(net.players, net.isHost ? net.socket.id : null);
-            appendChatMessage(leftName + ' odadan ayrildi.', leftColor);
+            appendChatMessage(leftName + ' odadan ayrıldı.', leftColor);
         }
     });
     net.socket.on('playerRejoined', function (payload) {
         if (G.state === 'playing' && G.players && G.players[payload.index]) {
             G.players[payload.index].isAI = false;
         }
-        appendChatMessage((payload && payload.name ? payload.name : 'Bir oyuncu') + ' yeniden baglandi.', 'var(--success)');
+        appendChatMessage((payload && payload.name ? payload.name : 'Bir oyuncu') + ' yeniden bağlandı.', 'var(--success)');
     });
 
     net.socket.on('pongTick', function (payload) {
@@ -5013,15 +5199,15 @@ function ensureSocket() {
         tuneFogCb.checked = G.tune.fogEnabled;
         if (menuFogCb) menuFogCb.checked = G.tune.fogEnabled;
         setRoomStatus(
-            'Online mac basladi. Sen P' + (net.localPlayerIndex + 1) + ' oldun.' +
-            (payload.mode === 'daily' && payload.challengeTitle ? (' | Gunluk: ' + payload.challengeTitle) : '') +
+            'Online maç başladı. Sen P' + (net.localPlayerIndex + 1) + ' oldun.' +
+            (payload.mode === 'daily' && payload.challengeTitle ? (' | Günlük: ' + payload.challengeTitle) : '') +
             (payload.mode === 'custom' && payload.customMapName ? (' | Custom: ' + payload.customMapName) : '') +
             (net.authoritativeEnabled ? ' | Sunucu state senkronu bekleniyor...' : ''),
             false
         );
         applyAudioPreference();
         showUI('playing');
-        showHintToast('Ana menu icin sag ustteki CIKIS butonunu kullan.');
+        showHintToast('Ana menü için sağ üstteki CIKIS butonunu kullan.');
     });
 
     net.socket.on('roomCommand', function (cmd) {
@@ -5036,7 +5222,7 @@ function ensureSocket() {
         if (!net.online) return;
         if (!payload) return;
         net.syncWarningTick = G.tick;
-        net.syncWarningText = 'Sync uyusmazligi tespit edildi (tick ' + payload.tick + '). Mac sonucu dogrulanmayabilir.';
+        net.syncWarningText = 'Sync uyuşmazlığı tespit edildi (tick ' + payload.tick + '). Maç sonucu doğrulanmayabilir.';
         showGameToast(net.syncWarningText);
         setRoomStatus(net.syncWarningText, true);
     });
@@ -5070,12 +5256,12 @@ function ensureSocket() {
         appendChatMessage(payload.name + ' tekrar oynamak istiyor (' + payload.count + '/' + payload.total + ')', 'var(--success)');
     });
     net.socket.on('resultConflict', function (payload) {
-        setRoomStatus((payload && payload.message) || 'Mac sonucu dogrulanamadi.', true);
+        setRoomStatus((payload && payload.message) || 'Maç sonucu doğrulanamadı.', true);
     });
     net.socket.on('matchResultConfirmed', function (payload) {
-        if (payload && payload.draw) appendChatMessage('Mac sonucu: Berabere', 'var(--text-dim)');
-        else appendChatMessage('Mac sonucu onaylandi: ' + ((payload && payload.winnerName) || ('P' + ((payload && payload.winnerIndex >= 0) ? (payload.winnerIndex + 1) : '?'))), 'var(--text-dim)');
-        setRoomStatus('Mac sonucu sunucu tarafinda onaylandi.', false);
+        if (payload && payload.draw) appendChatMessage('Maç sonucu: Berabere', 'var(--text-dim)');
+        else appendChatMessage('Maç sonucu onaylandı: ' + ((payload && payload.winnerName) || ('P' + ((payload && payload.winnerIndex >= 0) ? (payload.winnerIndex + 1) : '?'))), 'var(--text-dim)');
+        setRoomStatus('Maç sonucu sunucu tarafında onaylandı.', false);
     });
     net.socket.on('leaderboard', function (payload) {
         var el = document.getElementById('leaderboardList');
@@ -5142,41 +5328,36 @@ function startReplayFromData(raw) {
     showUI('replay');
 }
 // Menu
-ncIn.addEventListener('input', function () { ncLbl.textContent = ncIn.value; });
-var multiNodeIn = $('multiNodeInput'), multiNodeLbl = $('multiNodeLabel');
-if (multiNodeIn && multiNodeLbl) multiNodeIn.addEventListener('input', function () { multiNodeLbl.textContent = multiNodeIn.value; });
-var multiRoomTypeIn = $('multiRoomTypeSelect');
 function syncRoomTypeInputs() {
-    var roomMode = multiRoomTypeIn ? multiRoomTypeIn.value : 'standard';
+    var roomMode = normalizeMenuRoomType(menuState.multiplayer.roomType);
     var locksMapConfig = roomMode === 'daily' || roomMode === 'custom';
-    var multiSeed = $('multiSeedInput'), multiDiff = $('multiDiffSelect');
-    if (multiSeed) multiSeed.disabled = !!locksMapConfig;
+    if (multiRoomTypeIn && multiRoomTypeIn.value !== roomMode) multiRoomTypeIn.value = roomMode;
+    if (multiSeedIn) multiSeedIn.disabled = !!locksMapConfig;
     if (multiNodeIn) multiNodeIn.disabled = !!locksMapConfig;
-    if (multiDiff) multiDiff.disabled = !!locksMapConfig;
+    if (multiDiffSel) multiDiffSel.disabled = !!locksMapConfig;
     if (multiModeSel) multiModeSel.disabled = !!locksMapConfig;
     if (multiPlaylistSel) multiPlaylistSel.disabled = roomMode !== 'standard';
     if (multiDoctrineSel) multiDoctrineSel.disabled = roomMode !== 'standard';
     if (multiNodeLbl) multiNodeLbl.style.opacity = locksMapConfig ? '0.45' : '1';
 }
-if (multiRoomTypeIn) {
-    multiRoomTypeIn.addEventListener('change', function () {
-        syncRoomTypeInputs();
-    });
-}
 syncRoomTypeInputs();
-if (gameModeSel && multiModeSel) {
-    gameModeSel.addEventListener('change', function () { multiModeSel.value = gameModeSel.value; });
-    multiModeSel.addEventListener('change', function () { gameModeSel.value = multiModeSel.value; });
-}
-if (playlistSel && multiPlaylistSel) {
-    playlistSel.addEventListener('change', function () { multiPlaylistSel.value = playlistSel.value; });
-    multiPlaylistSel.addEventListener('change', function () { playlistSel.value = multiPlaylistSel.value; });
-}
-if (doctrineSel && multiDoctrineSel) {
-    doctrineSel.addEventListener('change', function () { multiDoctrineSel.value = doctrineSel.value; });
-    multiDoctrineSel.addEventListener('change', function () { doctrineSel.value = multiDoctrineSel.value; });
-}
-rndSeedBtn.addEventListener('click', function () { seedIn.value = '' + Math.floor(Math.random() * 100000); });
+if (seedIn) seedIn.addEventListener('input', function () { updateSkirmishMenuState({ seed: seedIn.value }); });
+if (multiSeedIn) multiSeedIn.addEventListener('input', function () { updateSkirmishMenuState({ seed: multiSeedIn.value }); });
+if (ncIn) ncIn.addEventListener('input', function () { updateSkirmishMenuState({ nodeCount: ncIn.value }); });
+if (multiNodeIn) multiNodeIn.addEventListener('input', function () { updateSkirmishMenuState({ nodeCount: multiNodeIn.value }); });
+if (diffSel) diffSel.addEventListener('change', function () { updateSkirmishMenuState({ difficulty: diffSel.value }); });
+if (multiDiffSel) multiDiffSel.addEventListener('change', function () { updateSkirmishMenuState({ difficulty: multiDiffSel.value }); });
+if (playlistSel) playlistSel.addEventListener('change', function () { updateSkirmishMenuState({ playlist: playlistSel.value }); });
+if (multiPlaylistSel) multiPlaylistSel.addEventListener('change', function () { updateSkirmishMenuState({ playlist: multiPlaylistSel.value }); });
+if (doctrineSel) doctrineSel.addEventListener('change', function () { updateSkirmishMenuState({ doctrineId: doctrineSel.value }); });
+if (multiDoctrineSel) multiDoctrineSel.addEventListener('change', function () { updateSkirmishMenuState({ doctrineId: multiDoctrineSel.value }); });
+if (gameModeSel) gameModeSel.addEventListener('change', function () { updateSkirmishMenuState({ rulesMode: gameModeSel.value }); });
+if (multiModeSel) multiModeSel.addEventListener('change', function () { updateSkirmishMenuState({ rulesMode: multiModeSel.value }); });
+if (menuFogCb) menuFogCb.addEventListener('change', function () { updateSkirmishMenuState({ fogEnabled: !!menuFogCb.checked }); });
+if (multiRoomTypeIn) multiRoomTypeIn.addEventListener('change', function () { updateMultiplayerMenuState({ roomType: multiRoomTypeIn.value }); });
+if (playerNameIn) playerNameIn.addEventListener('input', function () { updateMultiplayerMenuState({ playerName: playerNameIn.value }); });
+if (joinRoomCodeInput) joinRoomCodeInput.addEventListener('input', function () { updateMultiplayerMenuState({ joinCode: joinRoomCodeInput.value }); });
+if (rndSeedBtn) rndSeedBtn.addEventListener('click', function () { updateSkirmishMenuState({ seed: '' + Math.floor(Math.random() * 100000) }); });
 var SCENARIO_UNLOCKED_KEY = 'stellar_scenario_unlocked_v1';
 var SCENARIO_COMPLETED_KEY = 'stellar_scenario_completed_v1';
 var LEGACY_CAMPAIGN_UNLOCKED_KEY = 'stellar_campaign_unlocked_v2';
@@ -5223,9 +5404,10 @@ function maybeResumeOnlineRoom() {
     var resume = loadRoomResumeState();
     if (!resume) return false;
     net.playerName = resume.playerName;
+    updateMultiplayerMenuState({ playerName: resume.playerName, joinCode: resume.roomCode });
     net.reconnectToken = resume.reconnectToken;
     net.resumePending = true;
-    setRoomStatus('Baglanti geri geldi. Mactaki koltuk geri aliniyor...', false);
+    setRoomStatus('Bağlantı geri geldi. Maçtaki koltuk geri alınıyor...', false);
     net.socket.emit('joinRoom', {
         action: 'join',
         playerName: resume.playerName,
@@ -5341,29 +5523,29 @@ function campaignMutatorName(mutator) {
 }
 function campaignSystemsSummary(level) {
     var parts = [
-        'Pulse hublari gecici tempo bonusu verir',
-        'Strain capin %' + Math.round(CAP_SOFT_START * 100) + '\'inde baslar',
-        'Defense asimilasyonu hizlandirir ama uretimi keser',
-        'Asimile gezegenler yakin savunma alani acar',
-        'Turretler artik daha sert kusatma hedefidir',
+        'Pulse hubları geçici tempo bonusu verir',
+        'Strain cap\'in %' + Math.round(CAP_SOFT_START * 100) + '\'inde başlar',
+        'Defense asimilasyonu hızlandırır ama üretimi keser',
+        'Asimile gezegenler yakın savunma alanı açar',
+        'Turretler artık daha sert kuşatma hedefidir',
     ];
     var rulesMode = (level && level.rulesMode) || 'advanced';
-    if (rulesMode === 'advanced') parts.push('Supply altindaki node daha ucuza upgrade olur');
-    if (level && level.encounters && level.encounters.length) parts.push('Encounterlar objective akisini degistirir');
-    if (level && level.doctrineId) parts.push('Doktrin acilista oyunun temposunu belirler');
+    if (rulesMode === 'advanced') parts.push('Supply altındaki node daha ucuza upgrade olur');
+    if (level && level.encounters && level.encounters.length) parts.push('Encounterlar objective akışını değiştirir');
+    if (level && level.doctrineId) parts.push('Doktrin açılışta oyunun temposunu belirler');
     return parts.join(' | ');
 }
 function campaignFeatureHint(level) {
     var feature = level ? level.mapFeature : null;
     var featureType = typeof feature === 'string' ? feature : ((feature && feature.type) || 'none');
-    if (featureType === 'wormhole') return 'Wormhole: bagli iki uc arasinda filolar 2.0x hizla gider. Uzun rota yerine wormhole eksenini tut.';
-    if (featureType === 'gravity') return 'Gravity: merkez alani filolari 1.35x hizlandirir. Merkezden gecen rota hem baskin hem savunmada avantaja doner.';
-    if (featureType === 'barrier') return 'Barrier: karsi tarafa gecmek icin GATE gezegenini al ve asimilasyon tamamlanana kadar tut.';
-    if (featureType === 'auto') return 'Anomali: harita tek bir ozel mekanikle acilir. Ilk dakikada ne oldugunu gozleyip plana hizla don.';
-    return 'Standart harita: supply zinciri, pulse zamani ve savunma alani kullanimi macin temposunu belirler.';
+    if (featureType === 'wormhole') return 'Wormhole: bağlı iki uç arasında filolar 2.0x hızla gider. Uzun rota yerine wormhole eksenini tut.';
+    if (featureType === 'gravity') return 'Gravity: merkez alanı filoları 1.35x hızlandırır. Merkezden geçen rota hem baskın hem savunmada avantaja döner.';
+    if (featureType === 'barrier') return 'Barrier: karşı tarafa geçmek için GATE gezegenini al ve asimilasyon tamamlanana kadar tut.';
+    if (featureType === 'auto') return 'Anomali: harita tek bir özel mekanikle açılır. İlk dakikada ne olduğunu gözleyip plana hızla dön.';
+    return 'Standart harita: supply zinciri, pulse zamanı ve savunma alanı kullanımı maçın temposunu belirler.';
 }
 function campaignLevelSummary(level) {
-    return 'Bolum ' + level.id + ': ' + level.name + '\n' +
+    return 'Bölüm ' + level.id + ': ' + level.name + '\n' +
         level.blurb + '\n' +
         'Nodes: ' + level.nc + ' | AI: ' + level.aiCount + ' | Diff: ' + level.diff.toUpperCase() +
         ' | Feature: ' + campaignFeatureName(level.mapFeature) +
@@ -5376,36 +5558,42 @@ function campaignLevelSummary(level) {
         'Encounter: ' + encounterSummary(level.encounters || []) + '\n' +
         'Systems: ' + campaignSystemsSummary(level) + '\n' +
         'Objectives: ' + describeCampaignObjectives(level, { tickRate: TICK_RATE }) + '\n' +
-        'Plan: ' + (level.hint || 'Map temposunu pulse, supply ve savunma alani ile yonet.');
+        'Plan: ' + (level.hint || 'Map temposunu pulse, supply ve savunma alanı ile yönet.');
 }
 function refreshDailyChallengeCard() {
-    if (!dailyChallengeCard) return;
     var challenge = todayDailyChallenge();
     var progress = getDailyChallengeProgress(challenge.key);
-    renderMissionPanel(dailyChallengeCard, {
-        title: 'Bugunun Challenge\'i',
-        subtitle: challenge.key + ' | ' + challenge.blurb + (progress.completed ? ' | Temizlendi' : (progress.bestTick > 0 ? ' | En iyi: ' + progress.bestTick + ' tick' : ' | Henuz temizlenmedi')),
-        items: evaluateCampaignObjectives(challenge, {
-            tick: 0,
-            didWin: false,
-            gameOver: false,
-            ownedNodes: 0,
-            stats: {},
-            encounters: challenge.encounters || [],
-            humanIndex: 0,
-        }, { tickRate: TICK_RATE }).map(function (row) {
-            return { label: row.label, progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
-        }),
+    var subtitle = challenge.key + ' | ' + challenge.blurb + (progress.completed ? ' | Temizlendi' : (progress.bestTick > 0 ? ' | En iyi: ' + progress.bestTick + ' tick' : ' | Henüz temizlenmedi'));
+    var items = evaluateCampaignObjectives(challenge, {
+        tick: 0,
+        didWin: false,
+        gameOver: false,
+        ownedNodes: 0,
+        stats: {},
+        encounters: challenge.encounters || [],
+        humanIndex: 0,
+    }, { tickRate: TICK_RATE }).map(function (row) {
+        return { label: row.label, progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
     });
+    if (dailyChallengeCard) {
+        renderMissionPanel(dailyChallengeCard, {
+            title: 'Bugünün Challenge\'ı',
+            subtitle: subtitle,
+            items: items,
+        });
+    }
+    if (menuDailySpotlightTitle) menuDailySpotlightTitle.textContent = challenge.title || 'Günlük challenge hazır';
+    if (menuDailySpotlightCopy) menuDailySpotlightCopy.textContent = challenge.blurb + (progress.completed ? ' | Temizlendi' : (progress.bestTick > 0 ? ' | En iyi: ' + progress.bestTick + ' tick' : ' | İlk temizliği yap'));
+    if (menuHubDailyBtn) menuHubDailyBtn.textContent = progress.completed ? 'Challenge\'ı Tekrar Oyna' : 'Günlük Challenge';
 }
 function refreshCustomMapStatus() {
     if (!customMapStatusEl) return;
     if (!currentCustomMapConfig) {
-        customMapStatusEl.textContent = 'Custom map yukleyip baslangic duzenini, anomalileri ve acilis node sahipliklerini sabitleyebilirsin.';
+        customMapStatusEl.textContent = 'Custom map yükleyip başlangıç düzenini, anomalileri ve açılış node sahipliklerini sabitleyebilirsin.';
         return;
     }
     customMapStatusEl.textContent =
-        'Hazir custom map: ' + currentCustomMapConfig.name +
+        'Hazır custom map: ' + currentCustomMapConfig.name +
         ' | ' + currentCustomMapConfig.nodes.length + ' node' +
         ' | ' + currentCustomMapConfig.playerCount + ' oyuncu' +
         ' | ' + campaignFeatureName(currentCustomMapConfig.mapFeature) +
@@ -5422,7 +5610,6 @@ function applyCampaignLevelSelection(levelIndex) {
     return idx;
 }
 function refreshCampaignUI() {
-    if (!scenarioProgressEl || !scenarioBubbleListEl || !scenarioMissionEl) return;
     var unlocked = G.campaign.unlocked || 1;
     var completed = G.campaign.completed || 0;
     if (!isFinite(unlocked) || unlocked < 1) unlocked = 1;
@@ -5433,37 +5620,39 @@ function refreshCampaignUI() {
     G.campaign.completed = completed;
     applyCampaignLevelSelection(campaignSelectedLevel);
 
-    scenarioProgressEl.textContent = 'Gecilen: ' + completed + ' / ' + CAMPAIGN_LEVELS.length + '  |  Acilan: ' + unlocked + ' / ' + CAMPAIGN_LEVELS.length;
-    scenarioBubbleListEl.replaceChildren();
-    for (var i = 0; i < CAMPAIGN_LEVELS.length; i++) {
-        var lvl = CAMPAIGN_LEVELS[i];
-        var bubble = document.createElement('button');
-        bubble.type = 'button';
-        bubble.className = 'scenario-bubble';
-        bubble.textContent = '' + lvl.id;
-        if (i < unlocked) bubble.classList.add('unlocked');
-        else bubble.classList.add('locked');
-        if (i < completed) bubble.classList.add('done');
-        if (i === campaignSelectedLevel) bubble.classList.add('selected');
-        var status = i < completed ? 'Gecildi' : (i < unlocked ? 'Acik' : 'Kilitli');
-        bubble.title = 'Bolum ' + lvl.id + ' - ' + lvl.name + ' (' + status + ')';
-        if (i < unlocked) {
-            (function (idx) {
-                bubble.addEventListener('click', function () {
-                    applyCampaignLevelSelection(idx);
-                    refreshCampaignUI();
-                });
-            })(i);
-        } else {
-            bubble.disabled = true;
+    if (scenarioProgressEl) scenarioProgressEl.textContent = 'Geçilen: ' + completed + ' / ' + CAMPAIGN_LEVELS.length + '  |  Açılan: ' + unlocked + ' / ' + CAMPAIGN_LEVELS.length;
+    if (scenarioBubbleListEl) {
+        scenarioBubbleListEl.replaceChildren();
+        for (var i = 0; i < CAMPAIGN_LEVELS.length; i++) {
+            var lvl = CAMPAIGN_LEVELS[i];
+            var bubble = document.createElement('button');
+            bubble.type = 'button';
+            bubble.className = 'scenario-bubble';
+            bubble.textContent = '' + lvl.id;
+            if (i < unlocked) bubble.classList.add('unlocked');
+            else bubble.classList.add('locked');
+            if (i < completed) bubble.classList.add('done');
+            if (i === campaignSelectedLevel) bubble.classList.add('selected');
+            var status = i < completed ? 'Geçildi' : (i < unlocked ? 'Açık' : 'Kilitli');
+            bubble.title = 'Bölüm ' + lvl.id + ' - ' + lvl.name + ' (' + status + ')';
+            if (i < unlocked) {
+                (function (idx) {
+                    bubble.addEventListener('click', function () {
+                        applyCampaignLevelSelection(idx);
+                        refreshCampaignUI();
+                    });
+                })(i);
+            } else {
+                bubble.disabled = true;
+            }
+            scenarioBubbleListEl.appendChild(bubble);
         }
-        scenarioBubbleListEl.appendChild(bubble);
     }
     var selected = CAMPAIGN_LEVELS[campaignSelectedLevel];
     var selectedDone = campaignSelectedLevel < completed;
-    renderMissionPanel(scenarioMissionEl, {
-        title: 'Bolum ' + selected.id + ': ' + selected.name,
-        subtitle: selected.blurb + ' | AI ' + selected.aiCount + ' | ' + selected.diff.toUpperCase() + ' | ' + campaignFeatureName(selected.mapFeature) + ' | Mutator: ' + campaignMutatorName(selected.mapMutator || 'none') + ' | Playlist: ' + playlistName(selected.playlist || 'standard') + (selected.doctrineId ? (' | Doktrin: ' + doctrineName(selected.doctrineId)) : '') + ' | ' + (selectedDone ? 'Durum: Gecildi' : 'Durum: Hazir'),
+    var missionData = {
+        title: 'Bölüm ' + selected.id + ': ' + selected.name,
+        subtitle: selected.blurb + ' | AI ' + selected.aiCount + ' | ' + selected.diff.toUpperCase() + ' | ' + campaignFeatureName(selected.mapFeature) + ' | Mutator: ' + campaignMutatorName(selected.mapMutator || 'none') + ' | Playlist: ' + playlistName(selected.playlist || 'standard') + (selected.doctrineId ? (' | Doktrin: ' + doctrineName(selected.doctrineId)) : '') + ' | ' + (selectedDone ? 'Durum: Geçildi' : 'Durum: Hazır'),
         items: evaluateCampaignObjectives(selected, {
             tick: 0,
             didWin: false,
@@ -5475,8 +5664,22 @@ function refreshCampaignUI() {
         }, { tickRate: TICK_RATE }).map(function (row) {
             return { label: row.label, progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
         }),
-    });
-    if (scenarioStartBtn) scenarioStartBtn.textContent = 'Bolum ' + selected.id + ' Baslat';
+    };
+    if (scenarioMissionEl) renderMissionPanel(scenarioMissionEl, missionData);
+    if (contentCampaignMissionEl) renderMissionPanel(contentCampaignMissionEl, missionData);
+    if (contentCampaignProgressEl) {
+        contentCampaignProgressEl.textContent = 'Geçilen: ' + completed + ' / ' + CAMPAIGN_LEVELS.length + ' | Açılan: ' + unlocked + ' / ' + CAMPAIGN_LEVELS.length + ' | Seçili: Bölüm ' + selected.id;
+    }
+    if (menuCampaignSpotlightTitle) menuCampaignSpotlightTitle.textContent = 'Bölüm ' + selected.id + ': ' + selected.name;
+    if (menuCampaignSpotlightCopy) {
+        menuCampaignSpotlightCopy.textContent = selected.blurb + ' | ' + (selectedDone ? 'Geçildi' : 'Hazır') + ' | AI ' + selected.aiCount + ' | ' + playlistName(selected.playlist || 'standard');
+    }
+    if (menuContentCardMeta) {
+        menuContentCardMeta.textContent = 'Seçili görev // Bölüm ' + selected.id + ' | ' + (selectedDone ? 'Geçildi' : 'Hazır');
+    }
+    if (scenarioStartBtn) scenarioStartBtn.textContent = 'Bölüm ' + selected.id + ' Başlat';
+    if (contentCampaignStartBtn) contentCampaignStartBtn.textContent = 'Bölüm ' + selected.id + ' Başlat';
+    if (menuHubCampaignBtn) menuHubCampaignBtn.textContent = 'Bölüm ' + selected.id + ' Başlat';
 }
 function resetSelectionAndSpeed() {
     clearSelection(true);
@@ -5501,18 +5704,14 @@ function startSinglePlayerGame() {
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
     clearRoomState('');
     currentCustomMapConfig = null;
-    var fogOn = menuFogCb ? !!menuFogCb.checked : false;
-    var nc = (ncIn && ncIn.value) ? parseInt(ncIn.value, 10) : 16;
-    nc = (isNaN(nc) || nc < 8 || nc > 30) ? 16 : nc;
-    var playlistId = playlistSel ? playlistSel.value : 'standard';
-    var doctrineId = doctrineSel ? doctrineSel.value : 'auto';
-    initGame((seedIn && seedIn.value) || '42', nc, (diffSel && diffSel.value) || 'normal', {
-        fogEnabled: fogOn,
-        rulesMode: (gameModeSel && gameModeSel.value) || 'advanced',
+    var sk = menuState.skirmish;
+    initGame(sk.seed, sk.nodeCount, sk.difficulty, {
+        fogEnabled: !!sk.fogEnabled,
+        rulesMode: sk.rulesMode,
         mapMutator: 'auto',
-        playlist: playlistId,
-        doctrineId: doctrineId,
-        forcePlaylistOverrides: playlistId !== 'standard',
+        playlist: sk.playlist,
+        doctrineId: sk.doctrineId,
+        forcePlaylistOverrides: sk.playlist !== 'standard',
     });
     finalizeLocalGameStart(G.tune.fogEnabled);
     refreshCustomMapStatus();
@@ -5554,7 +5753,7 @@ function startDailyChallengeGame() {
     if (tuneFogCb) tuneFogCb.checked = !!challenge.fog;
     applyAudioPreference();
     showUI('playing');
-    showGameToast('Gunluk challenge acildi: ' + challenge.title);
+    showGameToast('Günlük challenge açıldı: ' + challenge.title);
 }
 function startCustomMapGame(customMap) {
     var normalized = normalizeCustomMapConfig(customMap);
@@ -5575,7 +5774,7 @@ function startCustomMapGame(customMap) {
         endOnObjectives: normalized.endOnObjectives === true,
     });
     finalizeLocalGameStart(normalized.fogEnabled);
-    showGameToast('Custom map yuklendi: ' + normalized.name);
+    showGameToast('Custom map yüklendi: ' + normalized.name);
     refreshCustomMapStatus();
 }
 function exportCurrentMapState() {
@@ -5588,10 +5787,10 @@ function exportCurrentMapState() {
             presetLink.download = (currentCustomMapConfig.name || 'stellar-map').replace(/[^a-z0-9_-]+/gi, '-').toLowerCase() + '.json';
             presetLink.click();
             URL.revokeObjectURL(presetUrl);
-            showGameToast('Hazir custom map disa aktarıldi.');
+            showGameToast('Hazır custom map dışa aktarıldı.');
             return;
         }
-        showGameToast('Disa aktarmak icin once bir mac ac.');
+        showGameToast('Dışa aktarmak için önce bir maç aç.');
         return;
     }
     var exported = buildCustomMapExport({
@@ -5623,7 +5822,7 @@ function exportCurrentMapState() {
     link.download = (exported.name || 'stellar-map').replace(/[^a-z0-9_-]+/gi, '-').toLowerCase() + '.json';
     link.click();
     URL.revokeObjectURL(url);
-    showGameToast('Harita JSON olarak disa aktarıldi.');
+    showGameToast('Harita JSON olarak dışa aktarıldı.');
 }
 function startCampaignLevel(levelIndex) {
     var idx = applyCampaignLevelSelection(levelIndex);
@@ -5660,7 +5859,7 @@ function startCampaignLevel(levelIndex) {
     showUI('playing');
     if (lvl.hint) {
         setTimeout(function () {
-            if (G.campaign.active && G.campaign.levelIndex === idx && G.state === 'playing') showHintToast('Bolum ipucu: ' + lvl.hint);
+            if (G.campaign.active && G.campaign.levelIndex === idx && G.state === 'playing') showHintToast('Bölüm ipucu: ' + lvl.hint);
         }, 1200);
     }
     refreshCampaignMissionPanels();
@@ -5708,9 +5907,29 @@ if (startBtn) {
         startSinglePlayerGame();
     });
 }
+if (menuHubDailyBtn) {
+    menuHubDailyBtn.addEventListener('click', function () {
+        startDailyChallengeGame();
+    });
+}
+if (menuHubCampaignBtn) {
+    menuHubCampaignBtn.addEventListener('click', function () {
+        startCampaignLevel(campaignSelectedLevel);
+    });
+}
+if (customStartBtn) {
+    customStartBtn.addEventListener('click', function () {
+        startSinglePlayerGame();
+    });
+}
 if (campaignBtn) {
     campaignBtn.addEventListener('click', function () {
         openScenarioMenu();
+    });
+}
+if (contentCampaignStartBtn) {
+    contentCampaignStartBtn.addEventListener('click', function () {
+        startCampaignLevel(campaignSelectedLevel);
     });
 }
 if (dailyChallengeBtn) {
@@ -5743,7 +5962,7 @@ if (customMapFileIn) {
                 var normalized = normalizeCustomMapConfig(JSON.parse(reader.result));
                 startCustomMapGame(normalized);
             } catch (err) {
-                alert('Custom map yuklenemedi: ' + err);
+                alert('Custom map yüklenemedi: ' + err);
             }
             customMapFileIn.value = '';
         };
@@ -5756,6 +5975,12 @@ if (createRoomBtn) {
         doCreateRoom();
     });
 }
+if (hostSetupCreateRoomBtn) {
+    hostSetupCreateRoomBtn.addEventListener('click', function () {
+        doCreateRoom();
+        setMenuPanel('multiplayer', { keepOverlay: true });
+    });
+}
 
 if (joinRoomBtn) {
     joinRoomBtn.addEventListener('click', function () {
@@ -5766,7 +5991,8 @@ if (joinRoomBtn) {
 if (leaveRoomBtn) {
     leaveRoomBtn.addEventListener('click', function () {
         if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
-        clearRoomState('Odadan ayrildin.');
+        clearRoomState('Odadan ayrıldın.');
+        setMenuPanel('multiplayer', { keepOverlay: true });
     });
 }
 
@@ -5774,10 +6000,10 @@ if (startRoomBtn) {
     startRoomBtn.addEventListener('click', function () {
         if (!net.socket || !net.roomCode) return;
         if (net.players.length < 2) {
-            setRoomStatus('Online baslat icin en az 2 oyuncu gerekli.', true);
+            setRoomStatus('Online başlat için en az 2 oyuncu gerekli.', true);
             return;
         }
-        setRoomStatus('Online mac baslatiliyor...', false);
+        setRoomStatus('Online maç başlatılıyor...', false);
         net.socket.emit('startMatch');
     });
 }
@@ -5800,25 +6026,25 @@ resumeBtn.addEventListener('click', function () {
 });
 quitBtn.addEventListener('click', function () {
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
-    clearRoomState(net.online ? 'Mactan ayrildin. Yerine AI devam ediyor.' : '');
+    clearRoomState(net.online ? 'Maçtan ayrıldın. Yerine AI devam ediyor.' : '');
     G.state = 'mainMenu'; showUI('mainMenu');
 });
 if (audioToggleBtn) {
     audioToggleBtn.addEventListener('click', function () {
         setAudioEnabled(!uiPrefs.audioEnabled);
-        showGameToast(uiPrefs.audioEnabled ? 'Ses acildi.' : 'Ses kapatildi.');
+        showGameToast(uiPrefs.audioEnabled ? 'Ses açıldı.' : 'Ses kapatıldı.');
     });
 }
 if (hudInfoToggleBtn) {
     hudInfoToggleBtn.addEventListener('click', function () {
         setHudTelemetryVisible(!uiPrefs.hudTelemetryVisible);
-        showGameToast(uiPrefs.hudTelemetryVisible ? 'Tick bilgisi acildi.' : 'Tick bilgisi kapatildi.');
+        showGameToast(uiPrefs.hudTelemetryVisible ? 'Tick bilgisi açıldı.' : 'Tick bilgisi kapatıldı.');
     });
 }
 if (hintToggleBtn) {
     hintToggleBtn.addEventListener('click', function () {
         setHintsEnabled(!(uiPrefs.hintsEnabled !== false));
-        showGameToast(uiPrefs.hintsEnabled !== false ? 'Ipuclari acildi.' : 'Ipuclari kapatildi.');
+        showGameToast(uiPrefs.hintsEnabled !== false ? 'İpuçları açıldı.' : 'İpuçları kapatıldı.');
     });
 }
 var speeds = [1, 2, 4], spIdx = 0;
@@ -6305,19 +6531,19 @@ function loop(ts) {
                     completeCampaignLevel();
                     if (G.campaign.levelIndex + 1 < CAMPAIGN_LEVELS.length) {
                         var nextInfo = CAMPAIGN_LEVELS[G.campaign.levelIndex + 1];
-                        goTitle.textContent = 'Bolum ' + level.id + ' Tamamlandi';
-                        goMsg.textContent = 'Yeni bolum acildi: ' + nextInfo.id + '. ' + nextInfo.name;
+                        goTitle.textContent = 'Bölüm ' + level.id + ' Tamamlandı';
+                        goMsg.textContent = 'Yeni bölüm açıldı: ' + nextInfo.id + '. ' + nextInfo.name;
                         if (nextLevelBtn) {
-                            nextLevelBtn.textContent = 'Sonraki Bolum (' + nextInfo.id + ')';
+                            nextLevelBtn.textContent = 'Sonraki Bölüm (' + nextInfo.id + ')';
                             nextLevelBtn.style.display = 'block';
                         }
                     } else {
-                        goTitle.textContent = 'Senaryo Tamamlandi';
-                        goMsg.textContent = CAMPAIGN_LEVELS.length + ' bolumun tamamini bitirdin. Solarmax Protocol temizlendi.';
+                        goTitle.textContent = 'Senaryo Tamamlandı';
+                        goMsg.textContent = CAMPAIGN_LEVELS.length + ' bölümün tamamını bitirdin. Solarmax Protocol temizlendi.';
                     }
                 } else {
-                    goTitle.textContent = 'Bolum ' + level.id + ' Kaybedildi';
-                    goMsg.textContent = 'Ayni bolumu tekrar dene veya stratejini degistir.';
+                    goTitle.textContent = 'Bölüm ' + level.id + ' Kaybedildi';
+                    goMsg.textContent = 'Aynı bölümü tekrar dene veya stratejini değiştir.';
                 }
             }
             if (G.daily.active && G.daily.challenge) {
@@ -6326,15 +6552,15 @@ function loop(ts) {
                 G.daily.completed = dailyProgress.completed;
                 refreshDailyChallengeCard();
                 if (G.winner === G.human) {
-                    goTitle.textContent = 'Gunluk Challenge Tamamlandi';
+                    goTitle.textContent = 'Günlük Challenge Tamamlandı';
                     goMsg.textContent = dailyProgress.bestTick === G.tick ?
-                        ('Yeni en iyi sure: ' + G.tick + ' tick.') :
-                        ('Challenge temizlendi. En iyi sure: ' + dailyProgress.bestTick + ' tick.');
+                        ('Yeni en iyi süre: ' + G.tick + ' tick.') :
+                        ('Challenge temizlendi. En iyi süre: ' + dailyProgress.bestTick + ' tick.');
                 } else {
-                    goTitle.textContent = 'Gunluk Challenge Kacirildi';
+                    goTitle.textContent = 'Günlük Challenge Kaçırıldı';
                     goMsg.textContent = dailyProgress.bestTick > 0 ?
-                        ('Bugunun en iyi sonucun: ' + dailyProgress.bestTick + ' tick. Bir tur daha dene.') :
-                        'Bugunun challengei henuz temizlenmedi. Acilisi daha agresif kur.';
+                        ('Bugünün en iyi sonucun: ' + dailyProgress.bestTick + ' tick. Bir tur daha dene.') :
+                        'Bugünün challengei henüz temizlenmedi. Açılışı daha agresif kur.';
                 }
             }
             if (goStatsEl) renderStatRows(goStatsEl, humanGameOverStatRows());
@@ -6364,7 +6590,7 @@ function loop(ts) {
         if (G.strategicPulse && G.strategicPulse.active) {
             var pulseNode = G.nodes[G.strategicPulse.nodeId];
             var pulseOwner = pulseNode ? pulseNode.owner : -1;
-            var pulseOwnerText = pulseOwner < 0 ? 'Tarafsiz' : (pulseOwner === G.human ? 'Sen' : ('P' + (pulseOwner + 1)));
+            var pulseOwnerText = pulseOwner < 0 ? 'Tarafsız' : (pulseOwner === G.human ? 'Sen' : ('P' + (pulseOwner + 1)));
             pulseText = ' | Pulse: ' + pulseOwnerText + ' ' + Math.max(1, Math.ceil((G.strategicPulse.remainingTicks || 0) / 30)) + 's';
         }
         hudTick.textContent = 'Tick: ' + G.tick + ' | ' + G.diff + pulseText;

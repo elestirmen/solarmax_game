@@ -80,6 +80,168 @@
             }
         }
 
+        @keyframes nebulaFloat {
+            from {
+                transform: translate3d(-2%, -2%, 0) scale(1);
+            }
+
+            to {
+                transform: translate3d(3%, 3%, 0) scale(1.08);
+            }
+        }
+
+        @keyframes starfieldDrift {
+            from {
+                transform: translate3d(0, 0, 0);
+            }
+
+            to {
+                transform: translate3d(-40px, 30px, 0);
+            }
+        }
+
+        @keyframes signalSweep {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes nodePulse {
+            0%,
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(95, 162, 255, 0.18);
+            }
+
+            50% {
+                transform: scale(1.08);
+                box-shadow: 0 0 0 10px rgba(95, 162, 255, 0);
+            }
+        }
+
+        @keyframes fleetTraverseA {
+            0% {
+                left: 16%;
+                top: 66%;
+                opacity: 0;
+            }
+
+            12% {
+                opacity: 1;
+            }
+
+            50% {
+                left: 50%;
+                top: 42%;
+                opacity: 1;
+            }
+
+            100% {
+                left: 76%;
+                top: 24%;
+                opacity: 0;
+            }
+        }
+
+        @keyframes fleetTraverseB {
+            0% {
+                left: 74%;
+                top: 26%;
+                opacity: 0;
+            }
+
+            15% {
+                opacity: 1;
+            }
+
+            55% {
+                left: 46%;
+                top: 40%;
+                opacity: 1;
+            }
+
+            100% {
+                left: 24%;
+                top: 24%;
+                opacity: 0;
+            }
+        }
+
+        #mainMenu {
+            overflow: hidden;
+        }
+
+        .menu-atmosphere {
+            position: absolute;
+            inset: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+
+        .menu-nebula,
+        .menu-starfield,
+        .menu-atmosphere-grid {
+            position: absolute;
+            inset: 0;
+        }
+
+        .menu-nebula {
+            inset: auto;
+            width: 42vw;
+            height: 42vw;
+            border-radius: 50%;
+            filter: blur(18px);
+            opacity: 0.34;
+            animation: nebulaFloat 22s ease-in-out infinite alternate;
+        }
+
+        .menu-nebula-a {
+            left: -10vw;
+            top: -8vw;
+            background: radial-gradient(circle, rgba(74, 142, 255, 0.28), rgba(74, 142, 255, 0) 66%);
+        }
+
+        .menu-nebula-b {
+            right: -8vw;
+            bottom: -12vw;
+            width: 36vw;
+            height: 36vw;
+            background: radial-gradient(circle, rgba(106, 84, 255, 0.2), rgba(106, 84, 255, 0) 62%);
+            animation-duration: 28s;
+        }
+
+        .menu-starfield {
+            opacity: 0.38;
+            animation: starfieldDrift 40s linear infinite;
+            background-image:
+                radial-gradient(circle at 12% 18%, rgba(255, 255, 255, 0.92) 0, rgba(255, 255, 255, 0.92) 1px, transparent 1.8px),
+                radial-gradient(circle at 72% 28%, rgba(163, 198, 255, 0.9) 0, rgba(163, 198, 255, 0.9) 1.2px, transparent 2px),
+                radial-gradient(circle at 34% 78%, rgba(255, 255, 255, 0.72) 0, rgba(255, 255, 255, 0.72) 1px, transparent 2px),
+                radial-gradient(circle at 86% 66%, rgba(120, 169, 255, 0.72) 0, rgba(120, 169, 255, 0.72) 1.1px, transparent 2px),
+                radial-gradient(circle at 48% 46%, rgba(255, 255, 255, 0.65) 0, rgba(255, 255, 255, 0.65) 1px, transparent 2px);
+            background-size: 340px 340px, 480px 480px, 420px 420px, 520px 520px, 390px 390px;
+            background-repeat: repeat;
+        }
+
+        .menu-starfield-far {
+            opacity: 0.16;
+            animation-duration: 65s;
+            transform: scale(1.05);
+        }
+
+        .menu-atmosphere-grid {
+            opacity: 0.12;
+            background-image:
+                linear-gradient(rgba(96, 140, 255, 0.12) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(96, 140, 255, 0.12) 1px, transparent 1px);
+            background-size: 96px 96px;
+            mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.86), transparent 82%);
+        }
+
         .menu-panel {
             background: var(--panel-bg);
             border: 1px solid var(--panel-border);
@@ -89,7 +251,23 @@
             max-height: min(92vh, 900px);
             overflow-y: auto;
             text-align: center;
-            box-shadow: 0 0 60px rgba(74, 142, 255, 0.08)
+            box-shadow: 0 24px 70px rgba(6, 12, 28, 0.44);
+            position: relative;
+            z-index: 2;
+            isolation: isolate;
+            backdrop-filter: blur(18px)
+        }
+
+        .menu-panel::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            background:
+                radial-gradient(circle at top right, rgba(118, 168, 255, 0.12), transparent 28%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0));
+            pointer-events: none;
+            z-index: -1;
         }
 
         .pause-menu-panel {
@@ -116,19 +294,23 @@
         }
 
         .game-title {
-            font-size: 2.4rem;
+            font-size: 2.7rem;
             font-weight: 700;
             background: linear-gradient(135deg, #4a8eff, #a78bfa);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            margin-bottom: 4px
+            margin-bottom: 6px;
+            letter-spacing: 0.03em;
+            text-shadow: 0 0 30px rgba(74, 142, 255, 0.16)
         }
 
         .tagline {
-            font-size: .85rem;
+            font-size: .8rem;
             color: var(--text-dim);
-            margin-bottom: 28px
+            margin-bottom: 24px;
+            text-transform: uppercase;
+            letter-spacing: .22em
         }
 
         .menu-field {
@@ -485,42 +667,605 @@
             color: #d6e4ff;
         }
 
-        .menu-tabs {
-            display: flex;
-            gap: 4px;
-            margin-bottom: 20px;
-        }
-
-        .menu-tab {
-            flex: 1;
-            padding: 10px 16px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid var(--panel-border);
-            border-radius: var(--radius);
-            color: var(--text-dim);
-            font-family: var(--font);
-            font-size: .95rem;
-            cursor: pointer;
-            transition: all .2s;
-        }
-
-        .menu-tab:hover {
-            background: rgba(255, 255, 255, 0.08);
-            color: var(--text);
-        }
-
-        .menu-tab.active {
-            background: linear-gradient(135deg, rgba(74, 142, 255, 0.25), rgba(99, 102, 241, 0.2));
-            border-color: var(--accent);
-            color: #fff;
-        }
-
         .menu-panel-content.hidden {
             display: none !important;
         }
 
         .menu-panel-wide {
-            min-width: 420px;
+            width: min(980px, calc(100vw - 28px));
+            min-width: 0;
+        }
+
+        .menu-hub {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .menu-hero-card {
+            position: relative;
+            overflow: hidden;
+            padding: 24px;
+            border: 1px solid rgba(118, 162, 255, 0.26);
+            border-radius: 22px;
+            background:
+                radial-gradient(circle at top right, rgba(99, 102, 241, 0.2), transparent 34%),
+                linear-gradient(135deg, rgba(74, 142, 255, 0.16), rgba(255, 255, 255, 0.02)),
+                rgba(9, 15, 28, 0.94);
+            text-align: left;
+            box-shadow: 0 26px 52px rgba(9, 15, 29, 0.26);
+        }
+
+        .menu-hero-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(90deg, rgba(118, 162, 255, 0.12), transparent 28%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 34%);
+            pointer-events: none;
+        }
+
+        .menu-hero-layout {
+            position: relative;
+            display: grid;
+            grid-template-columns: minmax(0, 1.15fr) minmax(300px, .85fr);
+            gap: 18px;
+            align-items: stretch;
+        }
+
+        .menu-hero-copy-block {
+            position: relative;
+            z-index: 1;
+        }
+
+        .menu-eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 10px;
+            border-radius: 999px;
+            background: rgba(74, 142, 255, 0.12);
+            border: 1px solid rgba(123, 170, 255, 0.2);
+            color: #dbe8ff;
+            font-size: .7rem;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+        }
+
+        .menu-hero-title {
+            margin: 14px 0 8px;
+            font-size: 1.72rem;
+            line-height: 1.1;
+            color: #eef4ff;
+        }
+
+        .menu-hero-copy {
+            margin: 0;
+            color: var(--text-dim);
+            line-height: 1.5;
+            font-size: .94rem;
+            max-width: 56ch;
+        }
+
+        .menu-hero-chip-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 16px;
+        }
+
+        .menu-hero-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 5px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(126, 170, 255, 0.16);
+            background: rgba(255, 255, 255, 0.04);
+            color: #dce8ff;
+            font-size: .72rem;
+            letter-spacing: .04em;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+        }
+
+        .menu-hero-status {
+            margin-top: 16px;
+            padding: 12px 14px;
+            border-left: 3px solid rgba(113, 168, 255, 0.7);
+            border-radius: 0 14px 14px 0;
+            background: rgba(8, 14, 27, 0.55);
+            color: #d7e5ff;
+            font-size: .82rem;
+            letter-spacing: .03em;
+        }
+
+        .menu-hero-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 18px;
+            flex-wrap: wrap;
+        }
+
+        .menu-hero-actions .primary-btn,
+        .menu-hero-actions .secondary-btn {
+            margin-top: 0;
+            flex: 1 1 220px;
+        }
+
+        .menu-sector-stage {
+            position: relative;
+            min-height: 280px;
+            border-radius: 18px;
+            border: 1px solid rgba(116, 164, 255, 0.2);
+            background:
+                radial-gradient(circle at 20% 22%, rgba(99, 102, 241, 0.12), transparent 26%),
+                linear-gradient(180deg, rgba(5, 10, 20, 0.68), rgba(5, 10, 20, 0.92)),
+                rgba(5, 10, 20, 0.94);
+            overflow: hidden;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+        }
+
+        .menu-sector-grid,
+        .menu-sector-sweep,
+        .menu-sector-route,
+        .menu-sector-node,
+        .menu-sector-label,
+        .menu-sector-fleet {
+            position: absolute;
+        }
+
+        .menu-sector-grid {
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(96, 140, 255, 0.12) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(96, 140, 255, 0.12) 1px, transparent 1px);
+            background-size: 44px 44px;
+            opacity: 0.22;
+        }
+
+        .menu-sector-sweep {
+            width: 180%;
+            height: 180%;
+            left: -40%;
+            top: -40%;
+            border-radius: 50%;
+            background: conic-gradient(from 0deg, rgba(118, 162, 255, 0.18), rgba(118, 162, 255, 0) 18%, rgba(118, 162, 255, 0) 100%);
+            opacity: 0.52;
+            animation: signalSweep 10s linear infinite;
+            mix-blend-mode: screen;
+        }
+
+        .menu-sector-route {
+            height: 2px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, rgba(102, 157, 255, 0.14), rgba(149, 205, 255, 0.95), rgba(102, 157, 255, 0.12));
+            box-shadow: 0 0 14px rgba(92, 154, 255, 0.24);
+        }
+
+        .menu-sector-route.route-a {
+            width: 58%;
+            left: 18%;
+            top: 67%;
+            transform: rotate(-28deg);
+        }
+
+        .menu-sector-route.route-b {
+            width: 34%;
+            left: 29%;
+            top: 41%;
+            transform: rotate(12deg);
+        }
+
+        .menu-sector-route.route-c {
+            width: 28%;
+            left: 22%;
+            top: 26%;
+            transform: rotate(-3deg);
+        }
+
+        .menu-sector-node {
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(214, 235, 255, 0.96), rgba(87, 155, 255, 0.96));
+            border: 1px solid rgba(198, 225, 255, 0.84);
+            box-shadow: 0 0 18px rgba(89, 154, 255, 0.34);
+            animation: nodePulse 4.6s ease-in-out infinite;
+        }
+
+        .menu-sector-node span {
+            position: absolute;
+            top: 20px;
+            left: -6px;
+            font-size: .62rem;
+            letter-spacing: .08em;
+            color: #dce8ff;
+            white-space: nowrap;
+        }
+
+        .menu-sector-node.node-a {
+            left: 14%;
+            top: 70%;
+        }
+
+        .menu-sector-node.node-b {
+            left: 48%;
+            top: 42%;
+            animation-delay: -1.2s;
+        }
+
+        .menu-sector-node.node-c {
+            right: 18%;
+            top: 22%;
+            animation-delay: -2.1s;
+        }
+
+        .menu-sector-node.node-d {
+            left: 24%;
+            top: 22%;
+            animation-delay: -.6s;
+        }
+
+        .menu-sector-label {
+            left: 16px;
+            right: 16px;
+            padding: 8px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(118, 162, 255, 0.16);
+            background: rgba(6, 10, 20, 0.54);
+            color: #dce8ff;
+            font-size: .68rem;
+            letter-spacing: .16em;
+            text-transform: uppercase;
+            text-align: left;
+        }
+
+        .menu-sector-label-top {
+            top: 14px;
+        }
+
+        .menu-sector-label-bottom {
+            bottom: 14px;
+        }
+
+        .menu-sector-fleet {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: rgba(214, 237, 255, 0.95);
+            box-shadow: 0 0 16px rgba(146, 201, 255, 0.42);
+        }
+
+        .menu-sector-fleet::after {
+            content: '';
+            position: absolute;
+            right: 6px;
+            top: 50%;
+            width: 18px;
+            height: 2px;
+            background: linear-gradient(90deg, rgba(150, 210, 255, 0.7), rgba(150, 210, 255, 0));
+            transform: translateY(-50%);
+        }
+
+        .menu-sector-fleet.fleet-a {
+            animation: fleetTraverseA 8s linear infinite;
+        }
+
+        .menu-sector-fleet.fleet-b {
+            animation: fleetTraverseB 10s linear infinite;
+            animation-delay: -4s;
+        }
+
+        .menu-command-strip {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .menu-spotlight-card {
+            padding: 16px 18px;
+            border-radius: 18px;
+            border: 1px solid rgba(118, 162, 255, 0.18);
+            background:
+                linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+                rgba(8, 13, 24, 0.82);
+            text-align: left;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .menu-spotlight-card::before {
+            content: '';
+            position: absolute;
+            inset: auto 0 0 0;
+            height: 1px;
+            background: linear-gradient(90deg, rgba(118, 162, 255, 0), rgba(118, 162, 255, 0.68), rgba(118, 162, 255, 0));
+            opacity: 0.8;
+        }
+
+        .menu-spotlight-daily {
+            background:
+                radial-gradient(circle at top left, rgba(255, 167, 90, 0.16), transparent 32%),
+                linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+                rgba(8, 13, 24, 0.82);
+        }
+
+        .menu-spotlight-campaign {
+            background:
+                radial-gradient(circle at top left, rgba(39, 174, 96, 0.14), transparent 30%),
+                linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+                rgba(8, 13, 24, 0.82);
+        }
+
+        .menu-spotlight-kicker {
+            font-size: .66rem;
+            letter-spacing: .16em;
+            text-transform: uppercase;
+            color: #d6e4ff;
+            margin-bottom: 8px;
+        }
+
+        .menu-spotlight-card strong {
+            display: block;
+            font-size: 1.04rem;
+            color: #eef4ff;
+        }
+
+        .menu-spotlight-card p {
+            margin-top: 8px;
+            color: var(--text-dim);
+            line-height: 1.45;
+            font-size: .82rem;
+            min-height: 2.8em;
+        }
+
+        .menu-spotlight-card .secondary-btn {
+            margin-top: 12px;
+        }
+
+        .menu-overview-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .menu-overview-card {
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 8px;
+            width: 100%;
+            min-height: 190px;
+            padding: 18px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 18px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018)),
+                rgba(8, 13, 24, 0.82);
+            color: var(--text);
+            cursor: pointer;
+            text-align: left;
+            font-family: var(--font);
+            transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease;
+        }
+
+        .menu-overview-card::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(90deg, rgba(118, 162, 255, 0), rgba(118, 162, 255, 0.82), rgba(118, 162, 255, 0));
+            opacity: 0.82;
+        }
+
+        .menu-overview-card:hover {
+            transform: translateY(-3px);
+            border-color: rgba(123, 170, 255, 0.28);
+            box-shadow: 0 18px 32px rgba(11, 18, 34, 0.24);
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.024)),
+                rgba(10, 16, 29, 0.9);
+        }
+
+        .menu-overview-card-live {
+            border-color: rgba(108, 178, 255, 0.18);
+            background:
+                linear-gradient(180deg, rgba(92, 156, 255, 0.08), rgba(255, 255, 255, 0.02)),
+                rgba(7, 15, 29, 0.86);
+            box-shadow: 0 16px 28px rgba(8, 18, 36, 0.18);
+        }
+
+        .menu-overview-card-live::before {
+            background: linear-gradient(90deg, rgba(120, 214, 255, 0), rgba(120, 214, 255, 0.92), rgba(120, 214, 255, 0));
+            opacity: 0.9;
+        }
+
+        .menu-overview-card-live:hover {
+            border-color: rgba(126, 198, 255, 0.34);
+            box-shadow: 0 20px 36px rgba(10, 25, 44, 0.28);
+            background:
+                linear-gradient(180deg, rgba(98, 170, 255, 0.11), rgba(255, 255, 255, 0.026)),
+                rgba(8, 17, 32, 0.92);
+        }
+
+        .menu-overview-card-live .menu-overview-kicker {
+            color: #dff3ff;
+        }
+
+        .menu-overview-card-live .menu-overview-meta {
+            color: #d9f0ff;
+        }
+
+        .menu-overview-kicker {
+            font-size: .64rem;
+            letter-spacing: .18em;
+            text-transform: uppercase;
+            color: #d6e4ff;
+            margin-bottom: 2px;
+        }
+
+        .menu-overview-card strong {
+            font-size: 1rem;
+            color: #eef4ff;
+        }
+
+        .menu-overview-card span {
+            display: block;
+            width: auto;
+            text-align: left;
+            color: var(--text-dim);
+            line-height: 1.45;
+        }
+
+        .menu-overview-meta {
+            margin-top: auto;
+            font-size: .73rem;
+            color: #d6e4ff;
+            letter-spacing: .05em;
+        }
+
+        .menu-subheader {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 14px;
+            text-align: left;
+        }
+
+        .menu-subheader.hidden {
+            display: none !important;
+        }
+
+        .menu-subheader-copy {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .menu-subheader-copy h2 {
+            margin: 0;
+            font-size: 1.2rem;
+            color: #eef4ff;
+        }
+
+        .menu-subheader-copy p {
+            margin: 6px 0 0;
+            color: var(--text-dim);
+            font-size: .82rem;
+            line-height: 1.45;
+        }
+
+        .menu-back-btn {
+            width: auto;
+            min-width: 120px;
+            margin: 0;
+            padding-inline: 16px;
+        }
+
+        .menu-stack {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .menu-grid-2 {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .menu-card {
+            position: relative;
+            overflow: hidden;
+            padding: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.018)),
+                rgba(8, 13, 24, 0.74);
+            text-align: left;
+        }
+
+        .menu-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background:
+                linear-gradient(135deg, rgba(118, 162, 255, 0.06), transparent 30%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 26%);
+            pointer-events: none;
+        }
+
+        .menu-card-live {
+            border-color: rgba(106, 176, 255, 0.16);
+            background:
+                linear-gradient(180deg, rgba(84, 150, 255, 0.07), rgba(255, 255, 255, 0.02)),
+                rgba(8, 14, 27, 0.78);
+            box-shadow: 0 12px 24px rgba(8, 18, 34, 0.14);
+        }
+
+        .menu-card-live::before {
+            background:
+                linear-gradient(135deg, rgba(120, 214, 255, 0.08), transparent 30%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent 26%);
+        }
+
+        .menu-card h3 {
+            margin: 0 0 8px;
+            font-size: 1rem;
+            color: #eef4ff;
+        }
+
+        .menu-card-copy {
+            margin: 0 0 10px;
+            color: var(--text-dim);
+            line-height: 1.45;
+            font-size: .82rem;
+        }
+
+        .menu-card-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+        }
+
+        .menu-card-actions .primary-btn,
+        .menu-card-actions .secondary-btn {
+            margin-top: 0;
+            flex: 1 1 180px;
+            min-width: 0;
+        }
+
+        .menu-form-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .menu-field-span-2 {
+            grid-column: 1 / -1;
+        }
+
+        .menu-compact-range {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .menu-compact-range input[type="range"] {
+            flex: 1;
+            width: auto;
+        }
+
+        .menu-compact-range span {
+            width: 26px;
         }
 
         .room-list {
@@ -1432,30 +2177,56 @@
                 font-size: 0.8rem;
             }
 
-            .menu-tabs {
-                margin-bottom: 14px;
-            }
-
-            .menu-tab {
-                padding: 12px 10px;
-                font-size: 0.9rem;
-            }
-
+            .menu-overview-grid,
+            .menu-grid-2,
+            .menu-form-grid,
             .menu-action-grid {
                 grid-template-columns: 1fr;
             }
 
+            .menu-hero-layout,
+            .menu-command-strip {
+                grid-template-columns: 1fr;
+            }
+
+            .menu-hero-card {
+                padding: 18px;
+            }
+
+            .menu-hero-title {
+                font-size: 1.28rem;
+            }
+
+            .menu-sector-stage {
+                min-height: 220px;
+            }
+
+            .menu-spotlight-card p {
+                min-height: 0;
+            }
+
             .seed-row,
             .room-row,
-            .scenario-actions {
+            .scenario-actions,
+            .menu-subheader,
+            .menu-hero-actions {
                 flex-direction: column;
                 align-items: stretch;
             }
 
+            .menu-hero-chip-row {
+                gap: 6px;
+            }
+
+            .menu-back-btn,
             .seed-row button,
             .room-row button,
             .scenario-actions .primary-btn,
-            .scenario-actions .secondary-btn {
+            .scenario-actions .secondary-btn,
+            .menu-card-actions .primary-btn,
+            .menu-card-actions .secondary-btn,
+            .menu-hero-actions .primary-btn,
+            .menu-hero-actions .secondary-btn {
                 width: 100%;
             }
 
@@ -1760,12 +2531,28 @@
             }
 
             .game-title {
-                font-size: 1.7rem;
+                font-size: 1.95rem;
             }
 
-            .menu-tab {
-                padding: 11px 8px;
-                font-size: 0.84rem;
+            .tagline {
+                letter-spacing: .16em;
+            }
+
+            .menu-hero-title {
+                font-size: 1.18rem;
+            }
+
+            .menu-sector-stage {
+                min-height: 188px;
+            }
+
+            .menu-sector-label {
+                font-size: .6rem;
+                letter-spacing: .12em;
+            }
+
+            .menu-overview-card {
+                min-height: 0;
             }
 
             .room-item-header {
@@ -1882,103 +2669,318 @@
 <body>
     <canvas id="gameCanvas"></canvas>
     <div id="mainMenu" class="overlay">
+        <div class="menu-atmosphere" aria-hidden="true">
+            <div class="menu-nebula menu-nebula-a"></div>
+            <div class="menu-nebula menu-nebula-b"></div>
+            <div class="menu-starfield menu-starfield-far"></div>
+            <div class="menu-starfield menu-starfield-near"></div>
+            <div class="menu-atmosphere-grid"></div>
+        </div>
         <div class="menu-panel menu-panel-wide">
             <h1 class="game-title">Stellar Conquest</h1>
             <p class="tagline">Conquer the stars. Command the flow.</p>
-
-            <div class="menu-tabs">
-                <button id="tabSingle" class="menu-tab active">Tek Oyunculu</button>
-                <button id="tabMulti" class="menu-tab">Cok Oyunculu</button>
-            </div>
-
-            <div id="panelSingle" class="menu-panel-content">
-                <div id="menuSeedField" class="menu-field"><label for="seedInput">Seed</label>
-                    <div class="seed-row"><input type="text" id="seedInput" value="42" /><button id="randomSeedBtn"
-                            title="Random seed">RND</button></div>
-                </div>
-                <div id="menuNodesField" class="menu-field"><label for="nodeCountInput">Nodes</label><input type="range" id="nodeCountInput"
-                        min="8" max="30" value="16" /><span id="nodeCountLabel">16</span></div>
-                <div id="menuDifficultyField" class="menu-field"><label for="difficultySelect">Difficulty</label><select id="difficultySelect">
-                        <option value="easy">Easy</option>
-                        <option value="normal" selected>Normal</option>
-                        <option value="hard">Hard</option>
-                    </select></div>
-                <div class="menu-field"><label for="playlistSelect">Playlist</label><select id="playlistSelect">
-                        <option value="standard" selected>Standart</option>
-                        <option value="chaos">Chaos</option>
-                        <option value="ironman">Ironman</option>
-                        <option value="puzzle">Puzzle Sector</option>
-                        <option value="zen">Zen</option>
-                        <option value="frontier">Frontier</option>
-                    </select></div>
-                <div class="menu-field"><label for="doctrineSelect">Doctrine</label><select id="doctrineSelect">
-                        <option value="auto" selected>Playlist Varsayilani</option>
-                        <option value="logistics">Lojistik</option>
-                        <option value="assimilation">Asimilasyon</option>
-                        <option value="siege">Kusatma</option>
-                    </select></div>
-                <div class="menu-field"><label for="gameModeSelect">Game Mode</label><select id="gameModeSelect">
-                        <option value="classic">Classic</option>
-                        <option value="advanced" selected>Advanced</option>
-                    </select></div>
-                <div id="menuFogField" class="tune-toggle" style="margin-top:4px"><label>Fog of War</label><label class="switch"><input
-                            type="checkbox" id="menuFogOfWar" /><span class="slider"></span></label></div>
-                <div id="dailyChallengeCard" class="scenario-mission"></div>
-                <button id="startBtn" class="primary-btn">Oyuna Basla</button>
-                <button id="sandboxBtn" class="secondary-btn" style="margin-top:8px">Sandbox Baslat</button>
-                <div class="menu-action-grid">
-                    <button id="campaignBtn" class="secondary-btn">Senaryo Menusu</button>
-                    <button id="dailyChallengeBtn" class="secondary-btn">Gunluk Challenge</button>
-                    <button id="importMapBtn" class="secondary-btn">Ozel Harita Yukle</button>
-                    <button id="exportMapBtn" class="secondary-btn">Haritayi Disa Aktar</button>
-                </div>
-                <div id="customMapStatus" class="menu-status-note">Custom map yukleyip baslangic duzenini, anomalileri ve acilis node sahipliklerini sabitleyebilirsin. Yuklenen haritayi online oda olarak da acabilirsin.</div>
-            </div>
-
-            <div id="panelMulti" class="menu-panel-content hidden">
-                <div class="menu-field"><label for="playerNameInput">Nick</label>
-                    <div class="room-row">
-                        <input type="text" id="playerNameInput" value="" maxlength="20" placeholder="Nick sec" />
+            <div id="menuHubView" class="menu-panel-content">
+                <div class="menu-hub">
+                    <div class="menu-hero-card">
+                        <div class="menu-hero-layout">
+                            <div class="menu-hero-copy-block">
+                                <div class="menu-eyebrow">Command Relay</div>
+                                <h2 class="menu-hero-title">Sektöre gir, akışı ele geçir ve hattını tek darbeyle kur.</h2>
+                                <p class="menu-hero-copy">Ana ekran artık sadece temiz değil; bir sonraki hamlenin nereye taşınacağını hissettirmeli. Serbest maç ayarları ikinci katmanda, ama savaş tiyatrosu burada başlıyor.</p>
+                                <div class="menu-hero-chip-row">
+                                    <span id="menuSeedChip" class="menu-hero-chip">Seed 42</span>
+                                    <span id="menuPlaylistChip" class="menu-hero-chip">Standart</span>
+                                    <span id="menuDoctrineChip" class="menu-hero-chip">Doctrine Auto</span>
+                                    <span id="menuModeChip" class="menu-hero-chip">Advanced</span>
+                                    <span id="menuFogChip" class="menu-hero-chip">Fog OFF</span>
+                                </div>
+                                <div id="menuQuickStatus" class="menu-hero-status">16 node | NORMAL | Standart akışı hazır</div>
+                                <div class="menu-hero-actions">
+                                    <button id="startBtn" class="primary-btn">Hemen Başla</button>
+                                    <button id="menuCustomizeBtn" class="secondary-btn">Oyunu Özelleştir</button>
+                                </div>
+                            </div>
+                            <div class="menu-sector-stage">
+                                <div class="menu-sector-grid"></div>
+                                <div class="menu-sector-sweep"></div>
+                                <div class="menu-sector-route route-a"></div>
+                                <div class="menu-sector-route route-b"></div>
+                                <div class="menu-sector-route route-c"></div>
+                                <div class="menu-sector-fleet fleet-a"></div>
+                                <div class="menu-sector-fleet fleet-b"></div>
+                                <div class="menu-sector-node node-a"><span>CAP</span></div>
+                                <div class="menu-sector-node node-b"><span>RELAY</span></div>
+                                <div class="menu-sector-node node-c"><span>FRONT</span></div>
+                                <div class="menu-sector-node node-d"><span>EDGE</span></div>
+                                <div id="menuStagePlaylistLabel" class="menu-sector-label menu-sector-label-top">PLAYLIST // STANDARD</div>
+                                <div id="menuStageDoctrineLabel" class="menu-sector-label menu-sector-label-bottom">DOCTRINE // AUTO</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="menu-command-strip">
+                        <div class="menu-spotlight-card menu-spotlight-daily">
+                            <div class="menu-spotlight-kicker">Today</div>
+                            <strong id="menuDailySpotlightTitle">Günlük challenge hazır</strong>
+                            <p id="menuDailySpotlightCopy">Bugünün operasyonda yeni bir sektör baskısı seni bekliyor.</p>
+                            <button id="menuHubDailyBtn" class="secondary-btn">Günlük Challenge</button>
+                        </div>
+                        <div class="menu-spotlight-card menu-spotlight-campaign">
+                            <div class="menu-spotlight-kicker">Campaign</div>
+                            <strong id="menuCampaignSpotlightTitle">Seçili bölüm hazır</strong>
+                            <p id="menuCampaignSpotlightCopy">Açık bölümler arasından seçili olan görev tek tıkla başlatılabilir.</p>
+                            <button id="menuHubCampaignBtn" class="secondary-btn">Seçili Bölüm</button>
+                        </div>
+                    </div>
+                    <div class="menu-overview-grid">
+                        <button id="menuOpenContentBtn" class="menu-overview-card" type="button">
+                            <div class="menu-overview-kicker">CONTENT TRACK</div>
+                            <strong>Senaryo ve Challenge</strong>
+                            <span>Kampanya ilerlemeni, seçili bölümünü ve bugünün challenge'ını aynı yerde gör.</span>
+                            <span id="menuContentCardMeta" class="menu-overview-meta">Kampanya ve günlük akışı hazır</span>
+                        </button>
+                        <button id="menuOpenMultiplayerBtn" class="menu-overview-card menu-overview-card-live" type="button">
+                            <div class="menu-overview-kicker">LIVE LOBBY</div>
+                            <strong>Çok Oyunculu</strong>
+                            <span>Nick seç, aktif odaları tara, koda katıl ya da kayıtlı host ayarlarıyla oda kur.</span>
+                            <span id="menuMultiCardMeta" class="menu-overview-meta">Lobi taraması bekleniyor</span>
+                        </button>
+                        <button id="menuOpenToolsBtn" class="menu-overview-card" type="button">
+                            <div class="menu-overview-kicker">ARCHIVE</div>
+                            <strong>Araçlar</strong>
+                            <span>Özel harita, replay, liderlik ve nasıl oynanır yardımını ana akıştan ayrı tut.</span>
+                            <span class="menu-overview-meta">Custom map, replay, liderlik, yardım</span>
+                        </button>
                     </div>
                 </div>
-                <div class="menu-field" style="margin-bottom:8px"><label>Oda Ayarlari (Host)</label>
-                    <div class="room-row" style="gap:6px; flex-wrap:wrap">
-                        <select id="multiRoomTypeSelect" style="flex:0 0 96px"><option value="standard" selected>Standart</option><option value="daily">Gunluk</option><option value="custom">Custom</option></select>
-                        <select id="multiPlaylistSelect" style="flex:0 0 112px"><option value="standard" selected>Standart</option><option value="chaos">Chaos</option><option value="ironman">Ironman</option><option value="puzzle">Puzzle</option><option value="zen">Zen</option><option value="frontier">Frontier</option></select>
-                        <select id="multiDoctrineSelect" style="flex:0 0 110px"><option value="auto" selected>Doctrine Auto</option><option value="logistics">Lojistik</option><option value="assimilation">Asimilasyon</option><option value="siege">Kusatma</option></select>
-                        <input type="text" id="multiSeedInput" value="42" placeholder="Seed" style="flex:0 0 70px" />
-                        <input type="range" id="multiNodeInput" min="8" max="30" value="16" style="flex:1; min-width:80px" /><span id="multiNodeLabel" style="width:24px">16</span>
-                        <select id="multiDiffSelect" style="flex:0 0 80px"><option value="easy">Easy</option><option value="normal" selected>Normal</option><option value="hard">Hard</option></select>
-                        <select id="multiModeSelect" style="flex:0 0 92px"><option value="classic">Classic</option><option value="advanced" selected>Advanced</option></select>
-                    </div>
-                </div>
-                <div class="menu-field">
-                    <label>Oda Listesi</label>
-                    <div id="roomList" class="room-list">
-                        <div class="room-list-empty">Sunucuya baglaniliyor...</div>
-                    </div>
-                </div>
-                <div class="room-row" style="gap:8px; margin-top:8px">
-                    <button id="createRoomBtn" class="primary-btn" style="margin:0; flex:1">Oda Kur</button>
-                    <div class="room-row" style="flex:1; margin:0">
-                        <input type="text" id="joinRoomCodeInput" placeholder="Oda Kodu (5 hane)" maxlength="6"
-                            style="text-transform: uppercase; flex:1" />
-                        <button id="joinRoomBtn" class="secondary-btn" style="margin:0">Koda Katil</button>
-                    </div>
-                </div>
-                <div class="room-row" style="display:none; margin-top:12px" id="hostControls">
-                    <button id="startRoomBtn" class="primary-btn" style="margin:0; flex:1">Oyunu Baslat (Host)</button>
-                </div>
-                <button id="leaveRoomBtn" class="secondary-btn" style="display:none; margin-top:8px">Odadan Ayril</button>
-                <p id="roomStatus" class="room-status" aria-live="polite"></p>
-                <div id="roomPlayers" class="room-players"></div>
             </div>
 
-            <div style="display: flex; gap: 8px; margin-top: 16px; justify-content: center; flex-wrap: wrap;">
-                <button id="howToPlayBtn" class="secondary-btn" style="margin: 0;">Nasil Oynanir?</button>
-                <button id="loadReplayBtn" class="secondary-btn" style="margin: 0;">Replay Yukle</button>
-                <button id="leaderboardBtn" class="secondary-btn" style="margin: 0;">Liderlik</button>
+            <div id="menuSubHeader" class="menu-subheader hidden">
+                <div class="menu-subheader-copy">
+                    <h2 id="menuSectionTitle">Menü</h2>
+                    <p id="menuSectionCopy">Buradan ilgili akışı yönetebilirsin.</p>
+                </div>
+                <button id="menuBackBtn" class="secondary-btn menu-back-btn">Ana Ekrana Dön</button>
             </div>
+
+            <div id="panelSingleCustomize" class="menu-panel-content hidden">
+                <div class="menu-card">
+                    <h3>Serbest Maç Ayarları</h3>
+                    <p class="menu-card-copy">Buradaki ayarlar yerel maç ve standart çok oyunculu host kurulumunda ortak kullanılır.</p>
+                    <div class="menu-form-grid">
+                        <div id="menuSeedField" class="menu-field menu-field-span-2">
+                            <label for="seedInput">Seed</label>
+                            <div class="seed-row">
+                                <input type="text" id="seedInput" value="42" />
+                                <button id="randomSeedBtn" title="Random seed">RND</button>
+                            </div>
+                        </div>
+                        <div id="menuNodesField" class="menu-field menu-field-span-2">
+                            <label for="nodeCountInput">Nodes</label>
+                            <div class="menu-compact-range">
+                                <input type="range" id="nodeCountInput" min="8" max="30" value="16" />
+                                <span id="nodeCountLabel">16</span>
+                            </div>
+                        </div>
+                        <div id="menuDifficultyField" class="menu-field">
+                            <label for="difficultySelect">Difficulty</label>
+                            <select id="difficultySelect">
+                                <option value="easy">Easy</option>
+                                <option value="normal" selected>Normal</option>
+                                <option value="hard">Hard</option>
+                            </select>
+                        </div>
+                        <div class="menu-field">
+                            <label for="gameModeSelect">Game Mode</label>
+                            <select id="gameModeSelect">
+                                <option value="classic">Classic</option>
+                                <option value="advanced" selected>Advanced</option>
+                            </select>
+                        </div>
+                        <div class="menu-field">
+                            <label for="playlistSelect">Playlist</label>
+                            <select id="playlistSelect">
+                                <option value="standard" selected>Standart</option>
+                                <option value="chaos">Chaos</option>
+                                <option value="ironman">Ironman</option>
+                                <option value="puzzle">Puzzle Sector</option>
+                                <option value="zen">Zen</option>
+                                <option value="frontier">Frontier</option>
+                            </select>
+                        </div>
+                        <div class="menu-field">
+                            <label for="doctrineSelect">Doctrine</label>
+                            <select id="doctrineSelect">
+                                <option value="auto" selected>Playlist Varsayılanı</option>
+                                <option value="logistics">Lojistik</option>
+                                <option value="assimilation">Asimilasyon</option>
+                                <option value="siege">Kuşatma</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="menuFogField" class="tune-toggle" style="margin-top:10px"><label>Fog of War</label><label class="switch"><input
+                                type="checkbox" id="menuFogOfWar" /><span class="slider"></span></label></div>
+                    <div class="menu-card-actions">
+                        <button id="customStartBtn" class="primary-btn">Bu Ayarlarla Başlat</button>
+                        <button id="sandboxBtn" class="secondary-btn">Sandbox Başlat</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="panelContent" class="menu-panel-content hidden">
+                <div class="menu-stack">
+                    <div class="menu-card menu-card-live">
+                        <h3>Senaryo</h3>
+                        <p id="contentCampaignProgress" class="menu-status-note">Senaryo ilerleme yükleniyor...</p>
+                        <div id="contentCampaignMission" class="scenario-mission"></div>
+                        <div class="menu-card-actions">
+                            <button id="campaignBtn" class="secondary-btn">Bölümleri Gözden Geçir</button>
+                            <button id="contentCampaignStartBtn" class="primary-btn">Seçili Bölümü Başlat</button>
+                        </div>
+                    </div>
+                    <div class="menu-card">
+                        <h3>Günlük Challenge</h3>
+                        <p class="menu-card-copy">Bugünün kurallı maçını ayrı bir akışta aç. Bu bölüm serbest maç ayarlarından bağımsızdır.</p>
+                        <div id="dailyChallengeCard" class="scenario-mission"></div>
+                        <div class="menu-card-actions">
+                            <button id="dailyChallengeBtn" class="primary-btn">Günlük Challenge'ı Başlat</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="panelMultiplayer" class="menu-panel-content hidden">
+                <div class="menu-stack">
+                    <div class="menu-card">
+                        <h3>Çok Oyunculu Giriş</h3>
+                        <div class="menu-field">
+                            <label for="playerNameInput">Nick</label>
+                            <div class="room-row">
+                                <input type="text" id="playerNameInput" value="" maxlength="20" placeholder="Nick seç" />
+                            </div>
+                        </div>
+                        <div class="menu-card-actions">
+                            <button id="createRoomBtn" class="primary-btn">Oda Kur</button>
+                            <button id="hostSetupBtn" class="secondary-btn">Oda Kurulumu</button>
+                        </div>
+                        <div class="room-row" style="gap:8px; margin-top:12px">
+                            <input type="text" id="joinRoomCodeInput" placeholder="Oda Kodu (5 hane)" maxlength="6"
+                                style="text-transform: uppercase; flex:1" />
+                            <button id="joinRoomBtn" class="secondary-btn" style="margin:0">Koda Katıl</button>
+                        </div>
+                        <div class="room-row" style="display:none; margin-top:12px" id="hostControls">
+                            <button id="startRoomBtn" class="primary-btn" style="margin:0; flex:1">Oyunu Başlat (Host)</button>
+                        </div>
+                        <button id="leaveRoomBtn" class="secondary-btn" style="display:none; margin-top:8px">Odadan Ayrıl</button>
+                        <p id="roomStatus" class="room-status" aria-live="polite"></p>
+                        <div id="roomPlayers" class="room-players"></div>
+                    </div>
+                    <div class="menu-card">
+                        <h3>Oda Listesi</h3>
+                        <p class="menu-card-copy">Aktif odalara tek tıkla katılabilir veya kendi host ayarlarını ikinci panelden düzenleyebilirsin.</p>
+                        <div id="roomList" class="room-list">
+                            <div class="room-list-empty">Sunucuya bağlanılıyor...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="panelHostSetup" class="menu-panel-content hidden">
+                <div class="menu-card">
+                    <h3>Oda Kurulumu</h3>
+                    <p class="menu-card-copy">Host ayarları standart odalarda ortaktır. Günlük ve custom oda seçildiğinde uygun alanlar kilitlenir.</p>
+                    <div class="menu-form-grid">
+                        <div class="menu-field">
+                            <label for="multiRoomTypeSelect">Oda Türü</label>
+                            <select id="multiRoomTypeSelect">
+                                <option value="standard" selected>Standart</option>
+                                <option value="daily">Günlük</option>
+                                <option value="custom">Custom</option>
+                            </select>
+                        </div>
+                        <div class="menu-field">
+                            <label for="multiModeSelect">Game Mode</label>
+                            <select id="multiModeSelect">
+                                <option value="classic">Classic</option>
+                                <option value="advanced" selected>Advanced</option>
+                            </select>
+                        </div>
+                        <div class="menu-field">
+                            <label for="multiPlaylistSelect">Playlist</label>
+                            <select id="multiPlaylistSelect">
+                                <option value="standard" selected>Standart</option>
+                                <option value="chaos">Chaos</option>
+                                <option value="ironman">Ironman</option>
+                                <option value="puzzle">Puzzle</option>
+                                <option value="zen">Zen</option>
+                                <option value="frontier">Frontier</option>
+                            </select>
+                        </div>
+                        <div class="menu-field">
+                            <label for="multiDoctrineSelect">Doctrine</label>
+                            <select id="multiDoctrineSelect">
+                                <option value="auto" selected>Doctrine Auto</option>
+                                <option value="logistics">Lojistik</option>
+                                <option value="assimilation">Asimilasyon</option>
+                                <option value="siege">Kuşatma</option>
+                            </select>
+                        </div>
+                        <div class="menu-field">
+                            <label for="multiSeedInput">Seed</label>
+                            <input type="text" id="multiSeedInput" value="42" placeholder="Seed" />
+                        </div>
+                        <div class="menu-field">
+                            <label for="multiDiffSelect">Difficulty</label>
+                            <select id="multiDiffSelect">
+                                <option value="easy">Easy</option>
+                                <option value="normal" selected>Normal</option>
+                                <option value="hard">Hard</option>
+                            </select>
+                        </div>
+                        <div class="menu-field menu-field-span-2">
+                            <label for="multiNodeInput">Nodes</label>
+                            <div class="menu-compact-range">
+                                <input type="range" id="multiNodeInput" min="8" max="30" value="16" />
+                                <span id="multiNodeLabel">16</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="menu-card-actions">
+                        <button id="hostSetupCreateRoomBtn" class="primary-btn">Bu Ayarlarla Oda Kur</button>
+                        <button id="hostSetupBackBtn" class="secondary-btn">Çok Oyunculuya Dön</button>
+                    </div>
+                    <div class="menu-status-note">Custom oda açmak için önce Araçlar bölümünden bir harita yükle. Günlük oda seçildiğinde playlist, doctrine ve harita alanları günün challenge'ına kilitlenir.</div>
+                </div>
+            </div>
+
+            <div id="panelTools" class="menu-panel-content hidden">
+                <div class="menu-grid-2">
+                    <div class="menu-card">
+                        <h3>Özel Harita</h3>
+                        <p class="menu-card-copy">Hazır düzenler, açılış sahiplikleri ve encounter tanımları içeren custom map dosyalarını buradan aç.</p>
+                        <div class="menu-card-actions">
+                            <button id="importMapBtn" class="primary-btn">Özel Harita Yükle</button>
+                            <button id="exportMapBtn" class="secondary-btn">Haritayı Dışa Aktar</button>
+                        </div>
+                        <div id="customMapStatus" class="menu-status-note">Custom map yükleyip başlangıç düzenini, anomalileri ve açılış node sahipliklerini sabitleyebilirsin. Yüklenen haritayı online oda olarak da açabilirsin.</div>
+                    </div>
+                    <div class="menu-card">
+                        <h3>Replay ve Liderlik</h3>
+                        <p class="menu-card-copy">Kaydedilmiş maçları tekrar izle veya günlük challenge liderliğini kontrol et.</p>
+                        <div class="menu-card-actions">
+                            <button id="loadReplayBtn" class="secondary-btn">Replay Yükle</button>
+                            <button id="leaderboardBtn" class="secondary-btn">Liderlik</button>
+                        </div>
+                    </div>
+                    <div class="menu-card">
+                        <h3>Yardım</h3>
+                        <p class="menu-card-copy">Kontrolleri ve sistemleri oyuna girmeden önce hızlıca gözden geçir.</p>
+                        <div class="menu-card-actions">
+                            <button id="howToPlayBtn" class="secondary-btn">Nasıl Oynanır?</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div id="leaderboardOverlay" class="overlay hidden">
                 <div class="menu-panel"><h3>Liderlik Tablosu</h3><div id="leaderboardList"></div><button id="leaderboardClose" class="secondary-btn">Kapat</button></div>
             </div>
@@ -1988,14 +2990,14 @@
     </div>
     <div id="scenarioOverlay" class="overlay hidden">
         <div class="menu-panel scenario-modal">
-            <h2>Senaryo Bolumleri</h2>
+            <h2>Senaryo Bölümleri</h2>
             <div class="scenario-box">
                 <div id="scenarioProgress" class="scenario-progress">Senaryo ilerleme</div>
                 <div id="scenarioBubbleList" class="scenario-bubbles"></div>
                 <div id="scenarioMission" class="scenario-mission"></div>
             </div>
             <div class="scenario-actions">
-                <button id="scenarioStartBtn" class="primary-btn">Bolum Baslat</button>
+                <button id="scenarioStartBtn" class="primary-btn">Bölüm Başlat</button>
                 <button id="scenarioCloseBtn" class="secondary-btn">Kapat</button>
             </div>
         </div>
@@ -2004,179 +3006,179 @@
         <div class="menu-panel tutorial-modal">
             <div class="tutorial-header">
                 <h2>Stellar Conquest</h2>
-                <p class="tutorial-subtitle">Yildizlari fethet. Akisi yonet.</p>
+                <p class="tutorial-subtitle">Yıldızları fethet. Akışı yönet.</p>
             </div>
             <nav class="tutorial-nav">
                 <a href="#tut-modlar">Modlar</a>
                 <a href="#tut-kontroller">Kontroller</a>
-                <a href="#tut-kisayollar">Kisayollar</a>
+                <a href="#tut-kisayollar">Kısayollar</a>
                 <a href="#tut-flow">Flow</a>
                 <a href="#tut-asimilasyon">Asimilasyon</a>
-                <a href="#tut-savas">Savas & Uretim</a>
+                <a href="#tut-savas">Savaş & Üretim</a>
                 <a href="#tut-gezegenler">Gezegenler</a>
                 <a href="#tut-harita">Harita</a>
                 <a href="#tut-hud">HUD</a>
             </nav>
             <div class="tutorial-body">
                 <div class="tutorial-section" id="tut-modlar">
-                    <h3>1) Oyun Modlari ve Baslangic</h3>
+                    <h3>1) Oyun Modları ve Başlangıç</h3>
                     <ul>
-                        <li><b>Tek Oyunculu:</b> Seed (harita tohumu), Node sayisi ve zorluk secip <b>Oyuna Basla</b> ile basla. Ayni seed ayni haritayi uretir.</li>
-                        <li><b>Senaryo:</b> <b>Senaryoyu Baslat</b> ile bolum menusu acilir. Numara baloncuklarindan bolum sec, <b>Bolum Baslat</b> ile giris yap. Bolumler sirali acilir.</li>
-                        <li><b>Cok Oyunculu:</b> Nick gir, <b>Oda Kur</b> ile yeni oda ac veya 5 haneli <b>Oda Kodu</b> ile mevcut odaya katil. Maci sadece host <b>Oyunu Baslat (Host)</b> ile baslatir.</li>
+                        <li><b>Hızlı Başlat:</b> Ana ekrandaki <b>Hemen Başla</b> tek tıkla standart local maç açar. Seed ve playlist gibi detaylar <b>Oyunu Özelleştir</b> panelindedir.</li>
+                        <li><b>Senaryo ve Challenge:</b> Bu bölümde seçili kampanya bölümünü görebilir, <b>Bölümleri Gözden Geçir</b> ile tam senaryo menüsü açabilir ve günlük challenge'ı ayrı akıştan başlatabilirsin.</li>
+                        <li><b>Çok Oyunculu:</b> Nick gir, <b>Oda Kur</b> ile kayıtlı host ayarlarını kullan veya <b>Oda Kurulumu</b> panelinde detayları değiştir. 5 haneli <b>Oda Kodu</b> ile mevcut odaya katıl.</li>
                     </ul>
-                    <div class="tutorial-tip"><strong>Ipuci:</strong> Seed alanindaki RND butonu rastgele harita uretir.</div>
+                    <div class="tutorial-tip"><strong>İpucu:</strong> Seed alanındaki RND butonu rastgele harita üretir.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-kontroller">
                     <h3>2) Temel Kontroller (PC)</h3>
                     <ul>
-                        <li><b>Sol tik:</b> Kendi gezegenini secer. <b>Shift + sol tik</b> ile coklu secim yap (secime ekler).</li>
-                        <li><b>Bos alanda surukle:</b> Dikdortgen kutu secimi yapar; icindeki kendi gezegenlerini secer.</li>
-                        <li><b>Ctrl + bos alanda surukle:</b> Secili kaynaklardan hedefe birakinca toplu birlik gonderir. Cok hizli hamle icin idealdir.</li>
-                        <li><b>Seciliyken hedefe sol tik:</b> Secili gezegenlerden hedefe, HUD'daki <b>Send %</b> kadar birlik yollar (ornegin %50 = yarisi).</li>
-                        <li><b>Transfer:</b> Secili grup icindeyken baska kendi gezegenine sol tikla birlik transferi yapabilirsin. Dolu hedefe fazla takviye basarsan bir kisim geri donmeye calisir.</li>
-                        <li><b>Sag tik (kendi gezegen):</b> Hedef seciliyse savunma modunu ac/kapat. Baska kendi kaynaklarin seciliyken secili olmayan kendi hedefe sag tik, otomatik transferi (flow) ac/kapatir.</li>
-                        <li><b>Sag tik (dusman veya tarafsiz):</b> Secili kaynaklardan hedefe <b>Flow</b> baglantisi ac/kapat. Bu, tek saldiri degil, surekli baski emridir.</li>
-                        <li><b>HUD orta bilgi satiri:</b> Secili node icin upgrade maliyeti, defense tradeoff'u, supply indirimi, savunma alani, gate ve aktif pulse bonuslari gosterilir.</li>
-                        <li><b>Yeni savunma kurali:</b> Asimile olmus sahipli gezegenler yakin bir savunma alani uretir; icine giren dusman filolari yavas yavas eritir. Defense modu bu alani da guclendirir.</li>
-                        <li><b>Barrier haritasi:</b> Bariyeri acan gezegenler <b>GATE</b> etiketiyle gosterilir. Sadece fethetmek yetmez; gecis asimilasyon tamamlaninca acilir.</li>
-                        <li><b>Orta tus + surukle:</b> Kamerayi kaydir. <b>Mouse tekeri:</b> Zoom in/out.</li>
-                        <li><b>Mobil:</b> Tek parmakla sec ve surukle. Iki parmakla haritayi pan/zoom yap.</li>
+                        <li><b>Sol tık:</b> Kendi gezegenini seçer. <b>Shift + sol tık</b> ile çoklu seçim yap (seçime ekler).</li>
+                        <li><b>Boş alanda sürükle:</b> Dikdörtgen kutu seçimi yapar; içindeki kendi gezegenlerini seçer.</li>
+                        <li><b>Ctrl + boş alanda sürükle:</b> Seçili kaynaklardan hedefe bırakınca toplu birlik gönderir. Çok hızlı hamle için idealdir.</li>
+                        <li><b>Seçiliyken hedefe sol tık:</b> Seçili gezegenlerden hedefe, HUD'daki <b>Send %</b> kadar birlik yollar (örneğin %50 = yarısı).</li>
+                        <li><b>Transfer:</b> Seçili grup içindeyken başka kendi gezegenine sol tıkla birlik transferi yapabilirsin. Dolu hedefe fazla takviye basarsan bir kısım geri dönmeye çalışır.</li>
+                        <li><b>Sağ tık (kendi gezegen):</b> Hedef seçiliyse savunma modunu aç/kapat. Başka kendi kaynakların seçiliyken seçili olmayan kendi hedefe sağ tık, otomatik transferi (flow) aç/kapatır.</li>
+                        <li><b>Sağ tık (düşman veya tarafsız):</b> Seçili kaynaklardan hedefe <b>Flow</b> bağlantısı aç/kapat. Bu, tek saldırı değil, sürekli baskı emridir.</li>
+                        <li><b>HUD orta bilgi satırı:</b> Seçili node için upgrade maliyeti, defense tradeoff'u, supply indirimi, savunma alanı, gate ve aktif pulse bonusları gösterilir.</li>
+                        <li><b>Yeni savunma kuralı:</b> Asimile olmuş sahipli gezegenler yakın bir savunma alanı üretir; içine giren düşman filoları yavaş yavaş eritir. Defense modu bu alanı da güçlendirir.</li>
+                        <li><b>Barrier haritası:</b> Bariyeri açan gezegenler <b>GATE</b> etiketiyle gösterilir. Sadece fethetmek yetmez; geçiş asimilasyon tamamlanınca açılır.</li>
+                        <li><b>Orta tuş + sürükle:</b> Kamerayı kaydır. <b>Mouse tekeri:</b> Zoom in/out.</li>
+                        <li><b>Mobil:</b> Tek parmakla seç ve sürükle. İki parmakla haritayı pan/zoom yap.</li>
                     </ul>
                 </div>
 
                 <div class="tutorial-section" id="tut-kisayollar">
-                    <h3>3) Kisayollar</h3>
+                    <h3>3) Kısayollar</h3>
                     <div class="tutorial-shortcut-grid">
                         <div class="shortcut-item"><span class="shortcut-key">1-0</span> Send % (10-100)</div>
                         <div class="shortcut-item"><span class="shortcut-key">U</span> Upgrade</div>
-                        <div class="shortcut-item"><span class="shortcut-key">A</span> Tum gezegenler</div>
+                        <div class="shortcut-item"><span class="shortcut-key">A</span> Tüm gezegenler</div>
                         <div class="shortcut-item"><span class="shortcut-key">Esc</span> Duraklat</div>
                         <div class="shortcut-item"><span class="shortcut-key">P</span> Devam</div>
                     </div>
                     <ul>
-                        <li><b>1-9, 0:</b> Gonderim yuzdesini sirasiyla %10, %20, ... %100 yapar.</li>
-                        <li><b>U:</b> Secili gezegenleri upgrade eder (yeterli birlik ve seviye kosulu varsa).</li>
-                        <li><b>A:</b> Tum kendi gezegenlerini tek seferde secer.</li>
-                        <li><b>Esc / P:</b> Tek oyunculuda oyunu duraklatir veya devam ettirir.</li>
-                        <li><b>Hiz butonu (1x):</b> Tek oyunculuda 1x / 2x / 4x oyun hizi.</li>
+                        <li><b>1-9, 0:</b> Gönderim yüzdesini sırasıyla %10, %20, ... %100 yapar.</li>
+                        <li><b>U:</b> Seçili gezegenleri upgrade eder (yeterli birlik ve seviye koşulu varsa).</li>
+                        <li><b>A:</b> Tüm kendi gezegenlerini tek seferde seçer.</li>
+                        <li><b>Esc / P:</b> Tek oyunculuda oyunu duraklatır veya devam ettirir.</li>
+                        <li><b>Hız butonu (1x):</b> Tek oyunculuda 1x / 2x / 4x oyun hızı.</li>
                     </ul>
                 </div>
 
                 <div class="tutorial-section" id="tut-flow">
-                    <h3>4) Flow (Otomatik Akis)</h3>
-                    <p>Flow, bir gezegenden digerine periyodik otomatik birlik transferi saglar. Tek tik saldiri yerine "bu hatti surekli besle" emridir.</p>
+                    <h3>4) Flow (Otomatik Akış)</h3>
+                    <p>Flow, bir gezegenden diğerine periyodik otomatik birlik transferi sağlar. Tek tık saldırı yerine "bu hattı sürekli besle" emridir.</p>
                     <ul>
-                        <li><b>Nasil calisir:</b> Her birkac tick'te kaynak gezegenden hedefe birlik gonderilir (yaklasik %8 oraninda). Kaynak zayiflarsa akis da kendiliginden kuculur.</li>
-                        <li><b>Ne zaman kullan:</b> Uzun mesafe destek, asimilasyon bittikten sonra cephe besleme ve wormhole/relay hattina surekli trafik kurmak icin idealdir.</li>
-                        <li><b>Ne zaman kapat:</b> Hedef doluysa, cephe degistiyse veya yeni fetihte garnizon kaciyorsa flow'u kapat. Aksi halde kendi ekonomini bosaltirsin.</li>
-                        <li><b>Relay gezegenleri:</b> Flow verimini ve filo hizini artirir; hizli lojistik omurgasi kurmak icin en iyi tiptir.</li>
+                        <li><b>Nasıl çalışır:</b> Her birkaç tick'te kaynak gezegenden hedefe birlik gönderilir (yaklaşık %8 oranında). Kaynak zayıflarsa akış da kendiliğinden küçülür.</li>
+                        <li><b>Ne zaman kullan:</b> Uzun mesafe destek, asimilasyon bittikten sonra cephe besleme ve wormhole/relay hattına sürekli trafik kurmak için idealdir.</li>
+                        <li><b>Ne zaman kapat:</b> Hedef doluysa, cephe değiştiyse veya yeni fetihte garnizon kaçıyorsa flow'u kapat. Aksi halde kendi ekonomini boşaltırsın.</li>
+                        <li><b>Relay gezegenleri:</b> Flow verimini ve filo hızını artırır; hızlı lojistik omurgası kurmak için en iyi tiptir.</li>
                     </ul>
-                    <div class="tutorial-tip"><strong>Strateji:</strong> Once node'u normal saldiriyla al, sonra ayni hatti Flow'a cevir. Fetih sonrasi garnizon dusuyorsa flow'u hemen kapat.</div>
+                    <div class="tutorial-tip"><strong>Strateji:</strong> Önce node'u normal saldırıyla al, sonra aynı hattı Flow'a çevir. Fetih sonrası garnizon düşüyorsa flow'u hemen kapat.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-asimilasyon">
-                    <h3>5) Asimilasyon (Fetih Sonrasi Kontrol)</h3>
-                    <p>Bir gezegeni fethettiginde hemen tam uretim yapamazsin. Iki asamali surec vardir:</p>
+                    <h3>5) Asimilasyon (Fetih Sonrası Kontrol)</h3>
+                    <p>Bir gezegeni fethettiğinde hemen tam üretim yapamazsın. İki aşamalı süreç vardır:</p>
                     <ul>
-                        <li><b>Kilit asamasi (~6 saniye):</b> Fetih sonrasi gezegen kilitte bekler; bu surede uretim yok, savunma alani yok, gate acilmaz.</li>
-                        <li><b>Asimilasyon asamasi:</b> Kilit bittikten sonra ilerleme cubugu dolana kadar kismi kontrol vardir. Tam dolunca uretim, gate ve savunma alani tamamen acilir.</li>
-                        <li><b>Garnizon etkisi:</b> Gezegendeki birlik orani ne kadar yuksekse asimilasyon o kadar hizli. Birlik gondermek garnizonu dusurur, asimilasyonu yavaslatir.</li>
-                        <li><b>Defense etkisi:</b> Defense modu asimilasyonu hizlandirir ama uretimi keser. Yeni fetihte kisa sureli defense acmak genelde dogrudur.</li>
-                        <li><b>Direnc:</b> Yuksek seviye gezegenler ve Bulwark tipi daha yavas asimile olur. Turret istasyonlari ise ele gecirmesi ayri olarak daha zordur.</li>
+                        <li><b>Kilit aşaması (~6 saniye):</b> Fetih sonrası gezegen kilitte bekler; bu sürede üretim yok, savunma alanı yok, gate açılmaz.</li>
+                        <li><b>Asimilasyon aşaması:</b> Kilit bittikten sonra ilerleme çubuğu dolana kadar kısmi kontrol vardır. Tam dolunca üretim, gate ve savunma alanı tamamen açılır.</li>
+                        <li><b>Garnizon etkisi:</b> Gezegendeki birlik oranı ne kadar yüksekse asimilasyon o kadar hızlı. Birlik göndermek garnizonu düşürür, asimilasyonu yavaşlatır.</li>
+                        <li><b>Defense etkisi:</b> Defense modu asimilasyonu hızlandırır ama üretimi keser. Yeni fetihte kısa süreli defense açmak genelde doğrudur.</li>
+                        <li><b>Direnç:</b> Yüksek seviye gezegenler ve Bulwark tipi daha yavaş asimile olur. Turret istasyonları ise ele geçirmesi ayrı olarak daha zordur.</li>
                     </ul>
-                    <div class="tutorial-warning">Fethettikten hemen sonra cok birlik gondermek en yaygin hata. Once node'u oturt, sonra ileri hatta asker cek.</div>
+                    <div class="tutorial-warning">Fethettikten hemen sonra çok birlik göndermek en yaygın hata. Önce node'u oturt, sonra ileri hatta asker çek.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-savas">
-                    <h3>6) Savas, Uretim ve Tedarik</h3>
+                    <h3>6) Savaş, Üretim ve Tedarik</h3>
                     <ul>
-                        <li><b>Savunma modu:</b> Savunma gucu %25 artar, asimilasyon hizlanir; uretim %25 ceza alir. Yeni fetihte ve dar bogazda cok gucludur.</li>
-                        <li><b>Savunma alani:</b> Asimile olmus sahipli gezegenler yakin cevresindeki dusman filolari eritir. Bu alan cepheyi yumusatir ama tek basina dev armadayi durdurmaz.</li>
-                        <li><b>Turretler:</b> Daha uzun menzilli, daha yuksek hasarli ve ele gecirmesi zor istasyonlardir. Tek bir dalga yerine toplu kusatma gerekir.</li>
-                        <li><b>Tedarik hatti:</b> Baskente veya bagli gezegenlere 220 birim mesafede bagli olmayan node'lar %40 uretim cezasi alir. Supply altindaki node'lar daha ucuza upgrade olur.</li>
-                        <li><b>Cap strain:</b> Toplam birlik sayin capin %82'sine yaklasinca uretim yavaslar. Dolu beklemek yerine birlikleri cepheye, flow'a veya upgrade'e cevir.</li>
-                        <li><b>Upgrade:</b> Gezegen seviyesi 2 ve 3'e cikar; uretim, kapasite ve savunma etkisi artar. Supply altinda yapmak daha verimlidir.</li>
-                        <li><b>Zafer:</b> Tum rakiplerin hem node'larini hem aktif filolarini bitiren oyuncu kazanir.</li>
+                        <li><b>Savunma modu:</b> Savunma gücü %25 artar, asimilasyon hızlanır; üretim %25 ceza alır. Yeni fetihte ve dar boğazda çok güçlüdür.</li>
+                        <li><b>Savunma alanı:</b> Asimile olmuş sahipli gezegenler yakın çevresindeki düşman filoları eritir. Bu alan cepheyi yumuşatır ama tek başına dev armadayı durdurmaz.</li>
+                        <li><b>Turretler:</b> Daha uzun menzilli, daha yüksek hasarlı ve ele geçirmesi zor istasyonlardır. Tek bir dalga yerine toplu kuşatma gerekir.</li>
+                        <li><b>Tedarik hattı:</b> Başkente veya bağlı gezegenlere 220 birim mesafede bağlı olmayan node'lar %40 üretim cezası alır. Supply altındaki node'lar daha ucuza upgrade olur.</li>
+                        <li><b>Cap strain:</b> Toplam birlik sayın cap'in %82'sine yaklaşınca üretim yavaşlar. Dolu beklemek yerine birlikleri cepheye, flow'a veya upgrade'e çevir.</li>
+                        <li><b>Upgrade:</b> Gezegen seviyesi 2 ve 3'e çıkar; üretim, kapasite ve savunma etkisi artar. Supply altında yapmak daha verimlidir.</li>
+                        <li><b>Zafer:</b> Tüm rakiplerin hem node'larını hem aktif filolarını bitiren oyuncu kazanır.</li>
                     </ul>
                 </div>
 
                 <div class="tutorial-section" id="tut-gezegenler">
-                    <h3>7) Gezegen Siniflari</h3>
-                    <p>Her gezegen bir tip ile dogar. Harf kodu ve rengi haritada gorunur.</p>
+                    <h3>7) Gezegen Sınıfları</h3>
+                    <p>Her gezegen bir tip ile doğar. Harf kodu ve rengi haritada görünür.</p>
                     <div class="node-types">
                         <div class="node-type-card">
                             <strong class="color-core">C - Core</strong>
-                            <p>Dengeli temel gezegen. Uretim, savunma ve kapasite 1.0x.</p>
+                            <p>Dengeli temel gezegen. Üretim, savunma ve kapasite 1.0x.</p>
                         </div>
                         <div class="node-type-card">
                             <strong class="color-forge">F - Forge</strong>
-                            <p>Uretim +35%, savunma -10%, kapasite -10%. Hizli uretim icin.</p>
+                            <p>Üretim +35%, savunma -10%, kapasite -10%. Hızlı üretim için.</p>
                         </div>
                         <div class="node-type-card">
                             <strong class="color-bulwark">B - Bulwark</strong>
-                            <p>Savunma +45%, uretim -25%, kapasite +25%. Kaleler icin ideal.</p>
+                            <p>Savunma +45%, üretim -25%, kapasite +25%. Kaleler için ideal.</p>
                         </div>
                         <div class="node-type-card">
                             <strong class="color-relay">R - Relay</strong>
-                            <p>Flow +35%, filo hizi +35%, kapasite -15%. Akis ve hareket odakli.</p>
+                            <p>Flow +35%, filo hızı +35%, kapasite -15%. Akış ve hareket odaklı.</p>
                         </div>
                         <div class="node-type-card">
                             <strong class="color-nexus">N - Nexus</strong>
-                            <p>Tum alanlarda +10-15% bonus. En dengeli ozel tip.</p>
+                            <p>Tüm alanlarda +10-15% bonus. En dengeli özel tip.</p>
                         </div>
                         <div class="node-type-card">
                             <strong class="color-relay">T - Turret</strong>
-                            <p>Uretim yapmaz ama agir savunur. Kusatmadan once cevresini temizle, tek filo gonderip eritme.</p>
+                            <p>Üretim yapmaz ama ağır savunur. Kuşatmadan önce çevresini temizle, tek filo gönderip eritme.</p>
                         </div>
                     </div>
                 </div>
 
                 <div class="tutorial-section" id="tut-harita">
-                    <h3>8) Harita Olaylari</h3>
+                    <h3>8) Harita Olayları</h3>
                     <ul>
-                        <li><b>Wormhole:</b> Bagli iki nokta arasinda filolar 2.0x hizla gider. Haritanin en iyi baskin ve yardim koridorudur.</li>
-                        <li><b>Gravity alan:</b> Merkezdeki ~170 birim yaricaptaki alandan gecen filolar 1.35x hiz kazanir. Uzun yolu kisaltmak icin rotayi icinden gecir.</li>
-                        <li><b>Barrier:</b> Haritayi ikiye ayirir. Karsi tarafa gecmek icin <b>GATE</b> etiketli gezegeni alip asimilasyonun bitmesini beklersin.</li>
-                        <li><b>Stratejik noktalar:</b> Altin cerceveli gezegenler pulse adayidir. Pulse aktifken o node gecici uretim, hiz, asimilasyon ve cap bonusu verir.</li>
+                        <li><b>Wormhole:</b> Bağlı iki nokta arasında filolar 2.0x hızla gider. Haritanın en iyi baskın ve yardım koridorudur.</li>
+                        <li><b>Gravity alan:</b> Merkezdeki ~170 birim yarıçaptaki alandan geçen filolar 1.35x hız kazanır. Uzun yolu kısaltmak için rotayı içinden geçir.</li>
+                        <li><b>Barrier:</b> Haritayı ikiye ayırır. Karşı tarafa geçmek için <b>GATE</b> etiketli gezegeni alıp asimilasyonun bitmesini beklersin.</li>
+                        <li><b>Stratejik noktalar:</b> Altın çerçeveli gezegenler pulse adayıdır. Pulse aktifken o node geçici üretim, hız, asimilasyon ve cap bonusu verir.</li>
                     </ul>
-                    <div class="tutorial-tip"><strong>Strateji:</strong> Harita ozelligi neyse ilk planini onun etrafinda kur. Wormhole, GATE ve pulse genelde "ilk buyuk hedef" olmalidir.</div>
+                    <div class="tutorial-tip"><strong>Strateji:</strong> Harita özelliği neyse ilk planını onun etrafında kur. Wormhole, GATE ve pulse genelde "ilk büyük hedef" olmalıdır.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-hud">
                     <h3>9) HUD ve Bilgi Panelleri</h3>
                     <ul>
-                        <li><b>Power paneli (sag ust):</b> Oyuncularin anlik guc siralamasini gosterir. Renkler oyuncuya gore.</li>
-                        <li><b>Send % / Slider:</b> Her tiklamada gonderilecek birlik orani. 1-0 tuslariyla da degistirilebilir.</li>
-                        <li><b>Tick / Ping:</b> Oyun temposu, pulse suresi ve (cok oyunculuda) ag gecikmesi.</li>
-                        <li><b>Cap satiri:</b> Toplam birlik/cap oranini ve strain baslangicini gosterir. Yuzde yukseliyorsa ekonomi daraliyor demektir.</li>
-                        <li><b>Orta bilgi satiri:</b> Secili node'un upgrade maliyeti, field menzili, gate durumu, asimilasyon yuzdesi ve pulse bonuslarini tek satirda okursun.</li>
-                        <li><b>Minimap:</b> Genel durumu hizli okumak icin. CHAT ile sohbet paneli acilir.</li>
-                        <li><b>THEME:</b> Acik/koyu tema degistirir.</li>
+                        <li><b>Power paneli (sağ üst):</b> Oyuncuların anlık güç sıralamasını gösterir. Renkler oyuncuya göre.</li>
+                        <li><b>Send % / Slider:</b> Her tıklamada gönderilecek birlik oranı. 1-0 tuşlarıyla da değiştirilebilir.</li>
+                        <li><b>Tick / Ping:</b> Oyun temposu, pulse süresi ve (çok oyunculuda) ağ gecikmesi.</li>
+                        <li><b>Cap satırı:</b> Toplam birlik/cap oranını ve strain başlangıcını gösterir. Yüzde yükseliyorsa ekonomi daralıyor demektir.</li>
+                        <li><b>Orta bilgi satırı:</b> Seçili node'un upgrade maliyeti, field menzili, gate durumu, asimilasyon yüzdesi ve pulse bonuslarını tek satırda okursun.</li>
+                        <li><b>Minimap:</b> Genel durumu hızlı okumak için. CHAT ile sohbet paneli açılır.</li>
+                        <li><b>THEME:</b> Açık/koyu tema değiştirir.</li>
                     </ul>
                 </div>
 
                 <div class="tutorial-footer-btn">
-                    <button id="closeHowToPlayBtn" class="primary-btn">Tamam, Anladim</button>
+                    <button id="closeHowToPlayBtn" class="primary-btn">Tamam, Anladım</button>
                 </div>
             </div>
         </div>
     </div>
     <div id="pauseOverlay" class="overlay hidden">
         <div class="menu-panel pause-menu-panel">
-            <h2 id="pauseTitle">Duraklatildi</h2>
+            <h2 id="pauseTitle">Duraklatıldı</h2>
             <p id="pauseHint" class="menu-status-note hidden"></p>
             <div class="pause-menu-grid">
                 <button id="resumeBtn" class="primary-btn">Devam</button>
-                <button id="quitBtn" class="secondary-btn">Ana Menu</button>
+                <button id="quitBtn" class="secondary-btn">Ana Menü</button>
             </div>
             <div class="pause-menu-meta">
                 <div class="pause-menu-grid">
-                    <button id="audioToggleBtn" class="secondary-btn">Ses: Acik</button>
-                    <button id="hudInfoToggleBtn" class="secondary-btn">Tick: Kapali</button>
-                    <button id="hintToggleBtn" class="secondary-btn">Ipucu: Acik</button>
-                    <button id="pauseHowToPlayBtn" class="secondary-btn">Nasil Oynanir?</button>
+                    <button id="audioToggleBtn" class="secondary-btn">Ses: Açık</button>
+                    <button id="hudInfoToggleBtn" class="secondary-btn">Tick: Kapalı</button>
+                    <button id="hintToggleBtn" class="secondary-btn">İpucu: Açık</button>
+                    <button id="pauseHowToPlayBtn" class="secondary-btn">Nasıl Oynanır?</button>
                 </div>
             </div>
         </div>
@@ -2187,21 +3189,21 @@
             <p id="gameOverMsg"></p>
             <div id="gameOverStats" class="game-stats"></div>
             <button id="rematchBtn" class="primary-btn" style="display:none">Tekrar Oyna</button>
-            <button id="nextLevelBtn" class="primary-btn" style="display:none">Sonraki Bolum</button>
-            <button id="replayBtn" class="primary-btn">Replay Izle</button><button
-                id="exportReplayBtn" class="secondary-btn">Replay Disa Aktar</button><button id="restartBtn"
+            <button id="nextLevelBtn" class="primary-btn" style="display:none">Sonraki Bölüm</button>
+            <button id="replayBtn" class="primary-btn">Replay İzle</button><button
+                id="exportReplayBtn" class="secondary-btn">Replay Dışa Aktar</button><button id="restartBtn"
                 class="secondary-btn">Yeni Oyun</button>
         </div>
     </div>
     <div id="replayBar" class="hidden"><span id="replayLabel">REPLAY</span><button id="replaySlower">&lt;&lt;</button><button
             id="replayPause">||</button><button id="replayFaster">&gt;&gt;</button><span id="replaySpeedLabel">1x</span><span
-            id="replayTickLabel">Tick: 0</span><button id="replayStop" class="secondary-btn">Replay'den Cik</button></div>
+            id="replayTickLabel">Tick: 0</span><button id="replayStop" class="secondary-btn">Replay'den Çık</button></div>
     <div id="minimap" class="minimap hidden">
         <canvas id="minimapCanvas"></canvas>
     </div>
     <div id="campaignMissionHud" class="hidden" aria-live="polite"></div>
     <div id="powerSidebar" class="hidden">
-        <div id="powerTitle">Guc</div>
+        <div id="powerTitle">Güç</div>
         <div id="powerList"></div>
     </div>
     <div id="chatPanel" class="chat-panel hidden">
@@ -2225,9 +3227,9 @@
         </div>
         <div id="hudCenter">
             <div id="hudTelemetryRow" class="hud-center-top"><span id="hudTick">Tick: 0</span><span id="hudCap">Cap 0/0</span><span id="pingDisplay" class="ping-display"></span></div>
-            <span id="hudMeta">Secili node bilgisi burada gorunur.</span>
+            <span id="hudMeta">Seçili node bilgisi burada görünür.</span>
         </div>
-        <div id="hudRight"><button id="pauseBtn" title="Duraklat">||</button><button id="speedBtn" title="Hiz">1x</button><button id="doctrineBtn" title="Doctrine">DOC</button><button id="themeBtn" title="Tema">TEMA</button><button id="chatToggle" title="Sohbet">SOHBET</button><button id="exportMapHudBtn" title="Haritayi Disa Aktar">MAP</button>
+        <div id="hudRight"><button id="pauseBtn" title="Duraklat">||</button><button id="speedBtn" title="Hız">1x</button><button id="doctrineBtn" title="Doctrine">DOC</button><button id="themeBtn" title="Tema">TEMA</button><button id="chatToggle" title="Sohbet">SOHBET</button><button id="exportMapHudBtn" title="Haritayı Dışa Aktar">MAP</button>
         </div>
     </div>
     <div id="tuningPanel" class="hidden">
