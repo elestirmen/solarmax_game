@@ -289,9 +289,17 @@ Geliştirme zamanı kısıtlıysa önerilen sıra:
 
 Bu sıra; mevcut mekanikleri yeniden kullanan, oyunun kimliğini belirginleştiren ve teknik riski nispeten düşük olan özellikleri öncelemektedir.
 
+### Güncel Durum Notu
+
+Bu bölümdeki durum satırları `10 Mart 2026` itibarıyla repo içindeki gerçek uygulama seviyesini özetler.
+
 ### Kısa Vadeli Odak
 
 #### 1. Bölge 2.0 ve Çatışmalı Cepheler
+
+**Durum**
+
+- büyük ölçüde tamamlandı; contested zone, border bonus blokajı, parked fleet farkı ve local/server parity çalışıyor
 
 **Amaç**
 
@@ -324,6 +332,10 @@ Bu sıra; mevcut mekanikleri yeniden kullanan, oyunun kimliğini belirginleştir
 
 #### 2. Sektör Mutatörleri v1
 
+**Durum**
+
+- tamamlandı (v1); `Iyon Firtinasi` ve `Karartma Bolgesi` deterministik, replay/network/snapshot akışına bağlı
+
 **Amaç**
 
 - her maçın aynı hissedilmesini engellemek için harita başına tek baskın çevresel kural eklemek
@@ -353,6 +365,10 @@ Bu sıra; mevcut mekanikleri yeniden kullanan, oyunun kimliğini belirginleştir
 - mutatör sadece sayısal buff değil, rota ve tempo kararı üretmeli
 
 #### 3. AI Cephe Farkındalığı
+
+**Durum**
+
+- büyük ölçüde tamamlandı; AI contested/safe farkını anlıyor, staging kuruyor ve turret drip-feed davranışını azaltıyor
 
 **Amaç**
 
@@ -384,6 +400,10 @@ Bu sıra; mevcut mekanikleri yeniden kullanan, oyunun kimliğini belirginleştir
 
 #### 4. Görsel Okunabilirlik Geçişi
 
+**Durum**
+
+- büyük ölçüde tamamlandı; contested görünümü, mutator/encounter göstergeleri, mission HUD ve doctrine durumları eklendi
+
 **Amaç**
 
 - büyüyen sistem derinliğini görsel karmaşaya dönüşmeden okunur tutmak
@@ -410,6 +430,10 @@ Bu sıra; mevcut mekanikleri yeniden kullanan, oyunun kimliğini belirginleştir
 
 #### 5. Komutan / Doktrin Sistemi
 
+**Durum**
+
+- tamamlandı (v1); `Logistics`, `Assimilation` ve `Siege` doktrinleri, aktif/pasif etkiler, lobby/UI ve AI eşleşmesi çalışıyor
+
 **Amaç**
 
 - oyuncuya maç öncesi stratejik kimlik vermek
@@ -433,6 +457,10 @@ Bu sıra; mevcut mekanikleri yeniden kullanan, oyunun kimliğini belirginleştir
 
 #### 6. Kampanya Genişlemesi
 
+**Durum**
+
+- kısmi; objective tabanlı yeni campaign bölümleri, survival ve boss odaklı görevler eklendi ama eskort/koruma ve daha geniş çok aşamalı set henüz yok
+
 **Amaç**
 
 - kampanyayı sadece artan zorlukta skirmish zinciri olmaktan çıkarmak
@@ -452,6 +480,10 @@ Bu sıra; mevcut mekanikleri yeniden kullanan, oyunun kimliğini belirginleştir
 - oyuncu görevleri “harita 12” diye değil, “relay savunma görevi” gibi hatırlamalı
 
 #### 7. PvE Hedefleri ve Boss Karşılaşmaları
+
+**Durum**
+
+- kısmi; `Mega Turret` ve `Relay Core` encounter çatısı hazır, ancak zamanlı savunma olayları ve ortak tehditli özel haritalar henüz yok
 
 **Amaç**
 
@@ -475,6 +507,10 @@ Bu sıra; mevcut mekanikleri yeniden kullanan, oyunun kimliğini belirginleştir
 - sadece “daha çok unit biriktir” hissi vermemeli
 
 #### 8. Mod Sarmalayıcıları ve Çalma Listeleri
+
+**Durum**
+
+- kısmi; `Chaos`, `Ironman`, `Puzzle Sector`, `Zen` ve `Frontier` var, ancak `Ranked` playlist ve buna bağlı rekabet akışı henüz yok
 
 **Amaç**
 
@@ -502,6 +538,10 @@ Bu sıra; mevcut mekanikleri yeniden kullanan, oyunun kimliğini belirginleştir
 
 #### 9. Rekabet Katmanı
 
+**Durum**
+
+- başlangıç seviyesinde; authoritative sync, reconnect ve temel leaderboard/persistence var ama Elo/MMR, sezon, spectator, replay tarayıcı ve maç geçmişi henüz yok
+
 **Amaç**
 
 - çok oyunculuyu kalıcı bir ilerleme ve takip alanına çevirmek
@@ -527,6 +567,10 @@ Bu sıra; mevcut mekanikleri yeniden kullanan, oyunun kimliğini belirginleştir
 
 #### 10. Faksiyon Kimliği
 
+**Durum**
+
+- henüz başlanmadı; doktrin farkları var ama gerçek anlamda faksiyon sistemi yok
+
 **Amaç**
 
 - asimetri eklemek ama okunabilirliği bozmamak
@@ -549,6 +593,10 @@ Bu sıra; mevcut mekanikleri yeniden kullanan, oyunun kimliğini belirginleştir
 - aynı input sistemi korunurken taraflar stratejik olarak farklı hissedilmeli
 
 #### 11. Sosyal ve Topluluk Özellikleri
+
+**Durum**
+
+- henüz başlanmadı; daily leaderboard ve custom map export gibi çekirdek parçalar var ama paylaşım/vitrin/topluluk katmanı yok
 
 **Amaç**
 
