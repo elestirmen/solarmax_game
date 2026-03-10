@@ -378,7 +378,7 @@ export var CAMPAIGN_LEVELS = [
         endOnObjectives: true,
         hint: 'Bu kez tum haritayi temizlemek zorunda degilsin. Relay Core\'u alip asimilasyon bitene kadar tut; objective seni cikisa tasir.',
         objectives: [
-            { id: 'relay-core-capture', type: 'encounter_captured', encounterType: 'relay_core', target: 1, label: 'Relay Core\'u ele gecir', remindAt: 210, coach: 'Bariyer ortasindaki acikligi kullan; once Core etrafinda staging yap.' },
+            { id: 'relay-core-capture', type: 'encounter_captured', encounterType: 'relay_core', target: 1, label: 'Relay Core\'u ele gecir ve asimilasyonu tamamla', remindAt: 210, coach: 'Bariyer ortasindaki acikligi kullan; once Core etrafinda staging yap.' },
             { id: 'relay-core-hold', type: 'encounter_control_ticks', encounterType: 'relay_core', target: 210, label: 'Relay Core kontrolunu 7s tut', remindAt: 300, coach: 'Relay Core alindiktan sonra savunma ac ve supply zincirini arkaya bagla.' },
         ],
     },
@@ -401,7 +401,7 @@ export var CAMPAIGN_LEVELS = [
         endOnObjectives: true,
         hint: 'Mega Turret\'e tek akinda girme. Guvenli hatta bir staging noktasi kurup Yarma\'yi tam kusatma aninda ac.',
         objectives: [
-            { id: 'mega-turret-capture', type: 'encounter_captured', encounterType: 'mega_turret', target: 1, label: 'Mega Turret\'i dusur', remindAt: 240, coach: 'Karartma yok ama iyon firtinasi var; staging hattini firtinanin disina kur.' },
+            { id: 'mega-turret-capture', type: 'encounter_captured', encounterType: 'mega_turret', target: 1, label: 'Mega Turret\'i ele gecir ve asimilasyonu tamamla', remindAt: 240, coach: 'Karartma yok ama iyon firtinasi var; staging hattini firtinanin disina kur.' },
             { id: 'hold-six-22', type: 'owned_nodes', target: 6, label: '6 node tut', optional: true },
         ],
     },
@@ -428,7 +428,7 @@ export var CAMPAIGN_LEVELS = [
         hint: 'Ilk hedef her zaman ayni degil. Relay Core tempoyu, Mega Turret gecidi aciyor; gravity hattina gore sira sec.',
         objectives: [
             { id: 'core-then-hold-23', type: 'encounter_control_ticks', encounterType: 'relay_core', target: 180, label: 'Relay Core kontrolunu 6s tut', remindAt: 240, coach: 'Merkez gravity alani staging ve takviye arasindaki gecis suresini kisaltir.' },
-            { id: 'gun-break-23', type: 'encounter_captured', encounterType: 'mega_turret', target: 1, label: 'Mega Turret\'i dusur', remindAt: 330, coach: 'Core bonusunu aldiktan sonra kusatmaya don; iki objective zincirleme calisiyor.' },
+            { id: 'gun-break-23', type: 'encounter_captured', encounterType: 'mega_turret', target: 1, label: 'Mega Turret\'i ele gecir ve asimilasyonu tamamla', remindAt: 330, coach: 'Core bonusunu aldiktan sonra kusatmaya don; iki objective zincirleme calisiyor.' },
         ],
     },
     {
@@ -500,7 +500,7 @@ export var CAMPAIGN_LEVELS = [
         hint: 'Burada galibiyet sirayla gelir: once Relay Core ile omurga kur, sonra Mega Turret\'i dusurup acilan koridordan bitir.',
         objectives: [
             { id: 'relay-seven-26', type: 'encounter_control_ticks', encounterType: 'relay_core', target: 210, label: 'Relay Core kontrolunu 7s tut', remindAt: 240, coach: 'Core bonusu gelmeden son objective\'e atlama; omurga once kurulacak.' },
-            { id: 'mega-capture-26', type: 'encounter_captured', encounterType: 'mega_turret', target: 1, label: 'Mega Turret\'i ele gecir', remindAt: 360, coach: 'Kusatma aktif oldugunda staging filolarini tek dalga halinde bosalt.' },
+            { id: 'mega-capture-26', type: 'encounter_captured', encounterType: 'mega_turret', target: 1, label: 'Mega Turret\'i ele gecir ve asimilasyonu tamamla', remindAt: 360, coach: 'Kusatma aktif oldugunda staging filolarini tek dalga halinde bosalt.' },
             { id: 'fast-finish-26', type: 'survive_until_tick', target: 1320, label: '1320 ticke kadar dayan', optional: true },
         ],
     },

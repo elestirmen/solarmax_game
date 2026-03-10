@@ -364,7 +364,7 @@ var G = {
     rec: { events: [], seed: 0, nc: 0, diff: 'normal' },
     rep: null, aiTicks: [], flowId: 0, fleetSerial: 0,
     aiProfiles: [], mapFeature: { type: 'none' }, mapMutator: { type: 'none' }, wormholes: [],
-    playlist: 'standard', doctrineId: '', doctrines: [], doctrineStates: [], encounters: [], encounterContext: {}, endOnObjectives: false,
+    playlist: 'standard', doctrineId: '', doctrines: [], doctrineStates: [], encounters: [], encounterContext: {}, objectives: [], endOnObjectives: false,
     stats: { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0, doctrineActivations: 0 },
     particles: [], turretBeams: [], fieldBeams: [], shockwaves: [], mapMode: 'random',
     playerCapital: {}, strategicNodes: [],
@@ -942,6 +942,7 @@ function initGame(seedStr, nc, diff, opts) {
     G.fleetSerial = 0;
     G.playlist = String(playlistConfig.playlist || 'standard');
     G.doctrineId = playlistConfig.doctrineId && playlistConfig.doctrineId !== 'auto' ? playlistConfig.doctrineId : '';
+    G.objectives = JSON.parse(JSON.stringify(Array.isArray(opts.objectives) ? opts.objectives : []));
     G.endOnObjectives = opts.endOnObjectives === true;
     G.stats = {
         nodesCaptured: 0,
@@ -1018,6 +1019,8 @@ function initGame(seedStr, nc, diff, opts) {
         playlist: G.playlist || 'standard',
         doctrineId: G.doctrineId || '',
         encounters: JSON.parse(JSON.stringify(G.encounters || [])),
+        objectives: JSON.parse(JSON.stringify(G.objectives || [])),
+        endOnObjectives: G.endOnObjectives === true,
         };
     if (!keepReplay) G.rep = null;
     G.state = keepReplay ? 'replay' : 'playing';
@@ -4046,14 +4049,28 @@ function currentCampaignLevel() {
     return CAMPAIGN_LEVELS[G.campaign.levelIndex] || null;
 }
 
+function currentObjectiveMissionDefinition() {
+    if (!Array.isArray(G.objectives) || !G.objectives.length) return null;
+    return {
+        name: 'Hedef Maci',
+        title: 'Hedef Maci',
+        blurb: '',
+        playlist: G.playlist || 'standard',
+        doctrineId: humanDoctrineId() || G.doctrineId || '',
+        objectives: G.objectives,
+        endOnObjectives: G.endOnObjectives === true,
+    };
+}
+
 function currentMissionDefinition() {
     if (G.daily.active && G.daily.challenge) return G.daily.challenge;
-    return currentCampaignLevel();
+    return currentCampaignLevel() || currentObjectiveMissionDefinition();
 }
 
 function currentMissionMode() {
     if (G.daily.active && G.daily.challenge) return 'daily';
     if (currentCampaignLevel()) return 'campaign';
+    if (currentObjectiveMissionDefinition()) return 'objective';
     return '';
 }
 
@@ -4077,13 +4094,16 @@ function currentCampaignObjectiveRows() {
 
 function currentMissionPanelTitle(level) {
     if (!level) return 'Misyon';
-    if (currentMissionMode() === 'daily') return 'Gunluk Challenge';
-    return 'Bolum ' + level.id + ': ' + level.name;
+    var mode = currentMissionMode();
+    if (mode === 'daily') return 'Gunluk Challenge';
+    if (mode === 'campaign') return 'Bolum ' + level.id + ': ' + level.name;
+    return level.title || level.name || 'Misyon';
 }
 
 function currentMissionPanelSubtitle(level) {
     if (!level) return '';
-    if (currentMissionMode() === 'daily') {
+    var mode = currentMissionMode();
+    if (mode === 'daily') {
         var statusBits = [];
         statusBits.push(level.title || 'Gunluk');
         statusBits.push(level.blurb || '');
@@ -4104,7 +4124,7 @@ function refreshCampaignMissionPanels() {
     var rows = level ? currentCampaignObjectiveRows() : [];
 
     if (campaignMissionHud) {
-        if (!level || G.state !== 'playing') {
+        if (!level || (G.state !== 'playing' && G.state !== 'replay')) {
             campaignMissionHud.classList.add('hidden');
         } else {
             campaignMissionHud.classList.remove('hidden');
@@ -4154,7 +4174,7 @@ function maybeShowCampaignObjectiveReminder() {
 function maybeResolveMissionObjectiveVictory() {
     var level = currentMissionDefinition();
     if (!level || level.endOnObjectives !== true) return;
-    if (G.state !== 'playing') return;
+    if (G.state !== 'playing' && G.state !== 'replay') return;
     if (!currentMissionIsComplete()) return;
     G.winner = G.human;
     G.state = 'gameOver';
@@ -4306,6 +4326,8 @@ function captureSyncSnapshot() {
         doctrines: JSON.parse(JSON.stringify(G.doctrines || [])),
         doctrineStates: JSON.parse(JSON.stringify(G.doctrineStates || [])),
         encounters: JSON.parse(JSON.stringify(G.encounters || [])),
+        objectives: JSON.parse(JSON.stringify(G.objectives || [])),
+        endOnObjectives: G.endOnObjectives === true,
         playerCapital: JSON.parse(JSON.stringify(G.playerCapital || {})),
         strategicNodes: Array.isArray(G.strategicNodes) ? G.strategicNodes.slice() : [],
         strategicPulse: JSON.parse(JSON.stringify(G.strategicPulse || {})),
@@ -4445,6 +4467,8 @@ function applySyncSnapshot(snapshot) {
     G.doctrines = JSON.parse(JSON.stringify(Array.isArray(snapshot.doctrines) ? snapshot.doctrines : G.doctrines || []));
     G.doctrineStates = ensureDoctrineStates(G.doctrines, Array.isArray(snapshot.doctrineStates) ? snapshot.doctrineStates : G.doctrineStates || []);
     G.encounters = JSON.parse(JSON.stringify(Array.isArray(snapshot.encounters) ? snapshot.encounters : G.encounters || []));
+    G.objectives = JSON.parse(JSON.stringify(Array.isArray(snapshot.objectives) ? snapshot.objectives : G.objectives || []));
+    G.endOnObjectives = snapshot.endOnObjectives === true;
     G.encounterContext = {};
     G.playerCapital = JSON.parse(JSON.stringify(snapshot.playerCapital || {}));
     G.strategicNodes = Array.isArray(snapshot.strategicNodes) ? snapshot.strategicNodes.slice() : [];
@@ -4971,6 +4995,8 @@ function ensureSocket() {
             playlist: payload.playlist || 'standard',
             doctrineId: payload.doctrineId || 'auto',
             encounters: payload.encounters || [],
+            objectives: payload.objectives || [],
+            endOnObjectives: payload.endOnObjectives === true,
         });
         G.campaign.active = false;
         G.campaign.levelIndex = -1;
@@ -5078,6 +5104,8 @@ function normalizeReplay(raw) {
         playlist: raw.playlist || 'standard',
         doctrineId: raw.doctrineId || '',
         encounters: Array.isArray(raw.encounters) ? raw.encounters : [],
+        objectives: Array.isArray(raw.objectives) ? raw.objectives : [],
+        endOnObjectives: raw.endOnObjectives === true,
         events: raw.events.map(function (e) {
             return { tick: Number(e.tick) || 0, type: e.type, data: e.data || {} };
         }),
@@ -5097,6 +5125,8 @@ function startReplayFromData(raw) {
         playlist: rep.playlist || 'standard',
         doctrineId: rep.doctrineId || '',
         encounters: rep.encounters || [],
+        objectives: rep.objectives || [],
+        endOnObjectives: rep.endOnObjectives === true,
     });
     G.campaign.active = false;
     G.campaign.levelIndex = -1;
@@ -5510,6 +5540,7 @@ function startDailyChallengeGame() {
         playlist: challenge.playlist || 'standard',
         doctrineId: challenge.doctrineId || 'auto',
         encounters: challenge.encounters || [],
+        objectives: challenge.objectives || [],
         endOnObjectives: challenge.endOnObjectives === true,
     });
     G.campaign.active = false;
@@ -5540,6 +5571,7 @@ function startCustomMapGame(customMap) {
         playlist: normalized.playlist || 'standard',
         doctrineId: normalized.doctrineId || 'auto',
         encounters: normalized.encounters || [],
+        objectives: normalized.objectives || [],
         endOnObjectives: normalized.endOnObjectives === true,
     });
     finalizeLocalGameStart(normalized.fogEnabled);
@@ -5608,6 +5640,7 @@ function startCampaignLevel(levelIndex) {
         playlist: lvl.playlist || 'standard',
         doctrineId: lvl.doctrineId || 'auto',
         encounters: lvl.encounters || [],
+        objectives: lvl.objectives || [],
         endOnObjectives: lvl.endOnObjectives === true,
     });
     G.campaign.active = true;

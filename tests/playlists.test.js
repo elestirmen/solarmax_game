@@ -39,6 +39,15 @@ test('resolvePlaylistConfig preserves explicit sizing when playlist overrides ar
     assert.equal(resolved.encounters.length, 2);
 });
 
+test('resolvePlaylistConfig preserves explicit tune overrides when playlist overrides are not forced', function () {
+    var resolved = resolvePlaylistConfig({
+        playlist: 'puzzle',
+        tuneOverrides: { aiAgg: 1.02, aiBuf: 6, aiInt: 30, flowInt: 15 },
+    });
+
+    assert.deepEqual(resolved.tuneOverrides, { aiAgg: 1.02, aiBuf: 6, aiInt: 30, flowInt: 15 });
+});
+
 test('playlistName returns a readable label', function () {
     assert.equal(playlistName('puzzle'), 'Puzzle Sector');
 });

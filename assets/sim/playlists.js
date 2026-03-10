@@ -12,6 +12,10 @@ function mergeTuneOverrides(base, extra) {
     return Object.keys(base).length ? base : null;
 }
 
+function hasTuneOverrides(value) {
+    return !!(value && typeof value === 'object' && Object.keys(value).length);
+}
+
 export var PLAYLIST_DEFS = {
     standard: {
         id: 'standard',
@@ -131,7 +135,10 @@ export function resolvePlaylistConfig(config) {
     if (def.rulesMode && (forceOverrides || !resolved.rulesMode)) resolved.rulesMode = def.rulesMode;
     if (def.mapFeature !== undefined && (forceOverrides || !resolved.mapFeature || resolved.mapFeature === 'none' || resolved.mapFeature.type === 'none')) resolved.mapFeature = cloneValue(def.mapFeature);
     if (def.mapMutator !== undefined && (forceOverrides || !resolved.mapMutator || resolved.mapMutator === 'none' || resolved.mapMutator === 'auto' || resolved.mapMutator.type === 'none')) resolved.mapMutator = cloneValue(def.mapMutator);
-    resolved.tuneOverrides = mergeTuneOverrides(resolved.tuneOverrides, def.tuneOverrides);
+    if (def.tuneOverrides && typeof def.tuneOverrides === 'object') {
+        if (forceOverrides) resolved.tuneOverrides = mergeTuneOverrides(resolved.tuneOverrides, def.tuneOverrides);
+        else if (!hasTuneOverrides(resolved.tuneOverrides)) resolved.tuneOverrides = cloneValue(def.tuneOverrides);
+    }
     if (!resolved.doctrineId || resolved.doctrineId === 'auto') resolved.doctrineId = def.doctrineId || resolved.doctrineId;
     if (!Array.isArray(resolved.encounters) || !resolved.encounters.length) resolved.encounters = cloneValue(def.encounters || []);
     return resolved;

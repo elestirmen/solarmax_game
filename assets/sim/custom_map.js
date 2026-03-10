@@ -1,7 +1,7 @@
 import { normalizeMapMutator, resolveMapMutator } from './mutator.js';
 import { normalizeDoctrineId } from './doctrine.js';
 import { buildEncounterState, normalizeEncounterList } from './encounters.js';
-import { normalizePlaylistId } from './playlists.js';
+import { normalizePlaylistId, resolvePlaylistConfig } from './playlists.js';
 
 var MAP_W = 1600;
 var MAP_H = 1000;
@@ -189,6 +189,15 @@ export function normalizeCustomMapConfig(rawMap) {
 
     var playerCapital = sanitizePlayerCapital(rawMap.playerCapital, nodes, playerCount);
 
+    var explicitTuneOverrides = sanitizeTuneOverrides(rawMap.tuneOverrides || rawMap.tune);
+    var explicitDoctrineId = rawMap.doctrineId && rawMap.doctrineId !== 'auto' ? normalizeDoctrineId(rawMap.doctrineId) : '';
+    var playlistResolved = resolvePlaylistConfig({
+        playlist: normalizePlaylistId(rawMap.playlist || rawMap.playlistId || 'standard'),
+        doctrineId: explicitDoctrineId || 'auto',
+        encounters: normalizeEncounterList(rawMap.encounters, nodes, rawMap.seed || 'custom-map'),
+        tuneOverrides: explicitTuneOverrides,
+    });
+
     return {
         version: 1,
         kind: 'stellar-custom-map',
@@ -204,10 +213,10 @@ export function normalizeCustomMapConfig(rawMap) {
         mapMutator: normalizeMapMutator(rawMap.mapMutator || rawMap.mutator),
         strategicNodes: strategicNodes,
         playerCapital: playerCapital,
-        tuneOverrides: sanitizeTuneOverrides(rawMap.tuneOverrides || rawMap.tune),
-        playlist: normalizePlaylistId(rawMap.playlist || rawMap.playlistId || 'standard'),
-        doctrineId: rawMap.doctrineId && rawMap.doctrineId !== 'auto' ? normalizeDoctrineId(rawMap.doctrineId) : '',
-        encounters: normalizeEncounterList(rawMap.encounters, nodes, rawMap.seed || 'custom-map'),
+        tuneOverrides: sanitizeTuneOverrides(playlistResolved.tuneOverrides),
+        playlist: playlistResolved.playlist || 'standard',
+        doctrineId: playlistResolved.doctrineId && playlistResolved.doctrineId !== 'auto' ? normalizeDoctrineId(playlistResolved.doctrineId) : '',
+        encounters: normalizeEncounterList(playlistResolved.encounters, nodes, rawMap.seed || 'custom-map'),
         endOnObjectives: rawMap.endOnObjectives === true,
     };
 }

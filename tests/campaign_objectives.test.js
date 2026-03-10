@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { describeCampaignObjectives, evaluateCampaignObjectives } from '../assets/campaign/objectives.js';
+import { describeCampaignObjectives, evaluateCampaignObjectives, formatObjectiveLabel } from '../assets/campaign/objectives.js';
 
 test('evaluateCampaignObjectives completes numeric progress goals', function () {
     var level = {
@@ -103,4 +103,11 @@ test('evaluateCampaignObjectives resolves encounter and survival goals', functio
     assert.equal(rows[0].complete, true);
     assert.equal(rows[1].progressText, '7s / 6s');
     assert.equal(rows[2].complete, true);
+});
+
+test('formatObjectiveLabel clarifies that encounter capture requires assimilation', function () {
+    assert.equal(
+        formatObjectiveLabel({ type: 'encounter_captured', encounterType: 'mega_turret' }, 30),
+        'Mega Turret\'i ele gecir ve asimilasyonu tamamla'
+    );
 });

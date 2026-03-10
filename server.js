@@ -739,6 +739,8 @@ function buildMatchStartedPayload(room, socketId) {
         playlistBlurb: room.matchManifest.playlistBlurb || '',
         doctrineId: room.matchManifest.doctrineId || '',
         encounters: Array.isArray(room.matchManifest.encounters) ? room.matchManifest.encounters : [],
+        objectives: Array.isArray(room.matchManifest.objectives) ? room.matchManifest.objectives : [],
+        endOnObjectives: room.matchManifest.endOnObjectives === true,
         humanCount: humanSlots,
         aiCount: room.matchManifest.aiCount,
         customMap: room.matchManifest.mode === 'custom' ? room.matchManifest.customMap : null,

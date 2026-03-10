@@ -69,11 +69,14 @@ test('buildRoomMatchManifest returns custom manifest with sanitized map metadata
                 fogEnabled: true,
                 rulesMode: 'classic',
                 playerCount: 4,
+                playlist: 'frontier',
                 nodes: [
                     { x: 100, y: 120, owner: 0, units: 20 },
                     { x: 280, y: 240, owner: 1, units: 20 },
                     { x: 500, y: 380, owner: 2, units: 18 },
                     { x: 760, y: 520, owner: 3, units: 18 },
+                    { x: 620, y: 240, owner: -1, units: 14 },
+                    { x: 380, y: 520, owner: -1, units: 14 },
                 ],
                 mapFeature: { type: 'gravity', nodeId: 2, x: 0, y: 0, r: 180 },
                 mapMutator: { type: 'ion_storm', x: 420, y: 340, r: 150, speedMult: 0.7 },
@@ -87,4 +90,8 @@ test('buildRoomMatchManifest returns custom manifest with sanitized map metadata
     assert.equal(manifest.aiCount, 2);
     assert.equal(manifest.mapFeature.type, 'gravity');
     assert.equal(manifest.mapMutator.type, 'ion_storm');
+    assert.equal(manifest.doctrineId, 'siege');
+    assert.equal(Array.isArray(manifest.encounters), true);
+    assert.equal(manifest.encounters.length, 2);
+    assert.deepEqual(manifest.tuneOverrides, { aiAgg: 1.18, aiBuf: 4, flowInt: 13 });
 });

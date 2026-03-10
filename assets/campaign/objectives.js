@@ -28,6 +28,13 @@ function encounterLabelBase(objective) {
     return 'Encounter';
 }
 
+function encounterLabelAccusative(objective) {
+    var type = String(objective && objective.encounterType || '').toLowerCase();
+    if (type === 'relay_core') return 'Relay Core\'u';
+    if (type === 'mega_turret') return 'Mega Turret\'i';
+    return encounterLabelBase(objective) + '\'i';
+}
+
 export function formatObjectiveLabel(objective, tickRate) {
     objective = objective || {};
     tickRate = tickRate || 30;
@@ -46,7 +53,7 @@ export function formatObjectiveLabel(objective, tickRate) {
         case 'peak_cap_pressure_below': return 'Strain zirvesini %' + Math.round(target * 100) + ' altinda tut';
         case 'win_before_tick': return target + ' tickten once kazan';
         case 'survive_until_tick': return target + ' tick hayatta kal';
-        case 'encounter_captured': return encounterLabelBase(objective) + '\'u ele gecir';
+        case 'encounter_captured': return encounterLabelAccusative(objective) + ' ele gecir ve asimilasyonu tamamla';
         case 'encounter_control_ticks': return encounterLabelBase(objective) + ' kontrolunu ' + secondsFromTicks(target, tickRate) + 's tut';
         default: return 'Gorev';
     }

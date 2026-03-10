@@ -48,6 +48,23 @@ test('buildAuthoritativeState normalizes snapshot and capture stays hashable', f
     assert.match(computeAuthoritativeSnapshotHash(state), /^[a-f0-9]{8,32}$/);
 });
 
+test('captureAuthoritativeSnapshot preserves objective metadata for sync clients', function () {
+    var state = buildAuthoritativeState(baseSnapshot(), {
+        manifest: {
+            seed: 'sim-seed',
+            difficulty: 'normal',
+            rulesMode: 'advanced',
+            fogEnabled: false,
+            objectives: [{ type: 'owned_nodes', target: 3 }],
+            endOnObjectives: true,
+        },
+    });
+    var snapshot = captureAuthoritativeSnapshot(state);
+
+    assert.deepEqual(snapshot.objectives, [{ type: 'owned_nodes', target: 3 }]);
+    assert.equal(snapshot.endOnObjectives, true);
+});
+
 test('applyCommandToAuthoritativeState dispatches a fleet for send commands', function () {
     var state = buildAuthoritativeState(baseSnapshot(), {
         manifest: { seed: 'sim-seed', difficulty: 'normal', rulesMode: 'advanced', fogEnabled: false },

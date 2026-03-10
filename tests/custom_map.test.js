@@ -90,3 +90,21 @@ test('buildCustomMapSnapshot keeps player slots and feature-normalized coordinat
     assert.equal(snapshot.encounters.length, 1);
     assert.equal(snapshot.nodes[1].encounterType, 'relay_core');
 });
+
+test('normalizeCustomMapConfig fills missing doctrine, encounter, and tune data from playlist defaults', function () {
+    var normalized = normalizeCustomMapConfig({
+        name: 'Frontier Shell',
+        playlist: 'frontier',
+        nodes: [
+            { x: 100, y: 100, owner: 0, units: 20 },
+            { x: 260, y: 100, owner: 1, units: 20 },
+            { x: 420, y: 100, owner: -1, units: 12 },
+            { x: 580, y: 100, owner: -1, units: 12 },
+        ],
+    });
+
+    assert.equal(normalized.playlist, 'frontier');
+    assert.equal(normalized.doctrineId, 'siege');
+    assert.equal(normalized.encounters.length, 2);
+    assert.deepEqual(normalized.tuneOverrides, { aiAgg: 1.18, aiBuf: 4, flowInt: 13 });
+});
