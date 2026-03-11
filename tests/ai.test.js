@@ -49,13 +49,13 @@ function buildState(diff, nodes, powerByPlayer, extra) {
         nodes: nodes,
         fleets: extra.fleets || [],
         flows: extra.flows || [],
-        fog: buildFog(nodes),
         aiProfiles: [],
         tune: {
             aiAssist: true,
             aiAgg: diffCfg.aiAggBase,
             aiBuf: diffCfg.aiBuffer,
             def: 1.2,
+            fogEnabled: extra.fogEnabled === true,
         },
         mapFeature: { type: 'none' },
         strategicPulse: { active: false, nodeId: -1 },
@@ -64,6 +64,7 @@ function buildState(diff, nodes, powerByPlayer, extra) {
         powerByPlayer: powerByPlayer,
         unitByPlayer: powerByPlayer,
         capByPlayer: { 0: 220, 1: 220 },
+        fog: extra.fog || buildFog(nodes),
     };
 }
 
@@ -98,6 +99,19 @@ test('hard difficulty prioritizes the human capital over a nearby neutral pickup
 
     assert.ok(firstSend);
     assert.equal(firstSend.data.tgtId, 0);
+});
+
+test('ai does not reuse a nearly depleted source for a second opening send in the same tick', function () {
+    var nodes = [
+        node(0, -1, 160, 0, 8, 'core'),
+        node(1, -1, 220, 44, 7, 'core'),
+        node(2, 1, 0, 0, 34, 'core'),
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 60, 1: 96 }), 1);
+    var sends = commands.filter(function (command) { return command.type === 'send'; });
+
+    assert.equal(sends.length, 1);
+    assert.deepEqual(sends[0].data.sources, [2]);
 });
 
 test('ai avoids low-odds turret pokes when a softer target is available', function () {
@@ -337,4 +351,42 @@ test('siege doctrine lets ai trigger doctrine activation before a turret assault
     }), 1);
 
     assert.equal(commands[0].type, 'activateDoctrine');
+});
+
+test('hard ai ignores fog memory when the match itself has fog disabled', function () {
+    var nodes = [
+        node(0, 0, 0, 0, 50, 'core'),
+        node(1, 1, 420, 0, 52, 'core'),
+        node(2, -1, 540, 0, 6, 'core'),
+    ];
+    var fog = buildFog(nodes);
+    fog.vis[1][2] = false;
+    fog.ls[1][2] = { units: 0 };
+
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 70, 1: 96 }, {
+        fog: fog,
+        fogEnabled: false,
+    }), 1);
+    var firstSend = commands.find(function (command) { return command.type === 'send'; });
+
+    assert.ok(firstSend);
+    assert.equal(firstSend.data.tgtId, 2);
+});
+
+test('ai does not auto-fortify a fresh capture when local pressure is low', function () {
+    var frontier = node(2, 1, 520, 40, 16, 'core');
+    frontier.assimilationProgress = 0.2;
+    frontier.assimilationLock = 0;
+
+    var nodes = [
+        node(0, 0, 0, 0, 18, 'core'),
+        node(1, 1, 600, 0, 56, 'core'),
+        frontier,
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 62, 1: 108 }), 1);
+    var defenseToggle = commands.find(function (command) {
+        return command.type === 'toggleDefense' && command.data && command.data.nodeId === 2;
+    });
+
+    assert.equal(defenseToggle, undefined);
 });

@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="tr">
 
 <head>
@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover" />
     <title>Stellar Conquest</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Orbitron:wght@500;700;900&display=swap');
 
         *,
         *::before,
@@ -56,10 +56,10 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: rgba(4, 6, 14, 0.85);
-            backdrop-filter: blur(8px);
+            background: rgba(2, 4, 10, 0.92);
+            backdrop-filter: blur(10px);
             z-index: 100;
-            animation: fadeIn .3s ease
+            animation: fadeIn .4s ease
         }
 
         .overlay.hidden {
@@ -171,6 +171,72 @@
             }
         }
 
+        @keyframes titleShimmer {
+            0%, 100% {
+                background-position: 0% 50%;
+                filter: drop-shadow(0 0 24px rgba(74, 142, 255, 0.25));
+            }
+
+            50% {
+                background-position: 100% 50%;
+                filter: drop-shadow(0 0 48px rgba(99, 102, 241, 0.45));
+            }
+        }
+
+        @keyframes ctaPulse {
+            0%, 100% {
+                box-shadow: 0 4px 20px rgba(74, 142, 255, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+            }
+
+            50% {
+                box-shadow: 0 4px 32px rgba(74, 142, 255, 0.6), 0 0 0 5px rgba(74, 142, 255, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+            }
+        }
+
+        @keyframes menuSlideUp {
+            from {
+                opacity: 0;
+                transform: translateY(22px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes twinkle {
+            0%, 70%, 100% {
+                opacity: 0;
+                transform: scale(0.8);
+            }
+
+            35% {
+                opacity: 1;
+                transform: scale(1.2);
+            }
+        }
+
+        @keyframes borderGlow {
+            0%, 100% {
+                border-color: rgba(118, 162, 255, 0.26);
+            }
+
+            50% {
+                border-color: rgba(118, 162, 255, 0.48);
+            }
+        }
+
+        @keyframes heroCardShine {
+            0% {
+                transform: translateX(-100%) rotate(12deg);
+            }
+
+            100% {
+                transform: translateX(200%) rotate(12deg);
+            }
+        }
+
         #mainMenu {
             overflow: hidden;
         }
@@ -191,71 +257,90 @@
 
         .menu-nebula {
             inset: auto;
-            width: 42vw;
-            height: 42vw;
+            width: 60vw;
+            height: 60vw;
             border-radius: 50%;
-            filter: blur(18px);
-            opacity: 0.34;
+            filter: blur(40px);
+            opacity: 0.5;
             animation: nebulaFloat 22s ease-in-out infinite alternate;
         }
 
         .menu-nebula-a {
-            left: -10vw;
-            top: -8vw;
-            background: radial-gradient(circle, rgba(74, 142, 255, 0.28), rgba(74, 142, 255, 0) 66%);
+            left: -18vw;
+            top: -14vw;
+            background: radial-gradient(circle, rgba(74, 142, 255, 0.4), rgba(74, 142, 255, 0) 60%);
         }
 
         .menu-nebula-b {
-            right: -8vw;
-            bottom: -12vw;
-            width: 36vw;
-            height: 36vw;
-            background: radial-gradient(circle, rgba(106, 84, 255, 0.2), rgba(106, 84, 255, 0) 62%);
+            right: -14vw;
+            bottom: -18vw;
+            width: 55vw;
+            height: 55vw;
+            background: radial-gradient(circle, rgba(139, 92, 246, 0.35), rgba(106, 84, 255, 0) 55%);
             animation-duration: 28s;
         }
 
+        .menu-nebula-c {
+            right: 5vw;
+            top: 5vw;
+            width: 40vw;
+            height: 40vw;
+            background: radial-gradient(circle, rgba(125, 211, 252, 0.2), rgba(125, 211, 252, 0) 50%);
+            animation-duration: 35s;
+            animation-direction: alternate-reverse;
+        }
+
         .menu-starfield {
-            opacity: 0.38;
+            opacity: 0.6;
             animation: starfieldDrift 40s linear infinite;
             background-image:
-                radial-gradient(circle at 12% 18%, rgba(255, 255, 255, 0.92) 0, rgba(255, 255, 255, 0.92) 1px, transparent 1.8px),
-                radial-gradient(circle at 72% 28%, rgba(163, 198, 255, 0.9) 0, rgba(163, 198, 255, 0.9) 1.2px, transparent 2px),
-                radial-gradient(circle at 34% 78%, rgba(255, 255, 255, 0.72) 0, rgba(255, 255, 255, 0.72) 1px, transparent 2px),
-                radial-gradient(circle at 86% 66%, rgba(120, 169, 255, 0.72) 0, rgba(120, 169, 255, 0.72) 1.1px, transparent 2px),
-                radial-gradient(circle at 48% 46%, rgba(255, 255, 255, 0.65) 0, rgba(255, 255, 255, 0.65) 1px, transparent 2px);
-            background-size: 340px 340px, 480px 480px, 420px 420px, 520px 520px, 390px 390px;
+                radial-gradient(circle at 12% 18%, #fff 0, #fff 1.2px, transparent 2px),
+                radial-gradient(circle at 72% 28%, #a3c6ff 0, #a3c6ff 1.4px, transparent 2.4px),
+                radial-gradient(circle at 34% 78%, #fff 0, #fff 1px, transparent 2px),
+                radial-gradient(circle at 86% 66%, #78a9ff 0, #78a9ff 1.2px, transparent 2.2px),
+                radial-gradient(circle at 48% 46%, #fff 0, #fff 1px, transparent 1.8px),
+                radial-gradient(circle at 62% 12%, #a78bfa 0, #a78bfa 1px, transparent 1.8px),
+                radial-gradient(circle at 22% 52%, #7dd3fc 0, #7dd3fc 1.1px, transparent 2px),
+                radial-gradient(circle at 8% 88%, #fff 0, #fff 1px, transparent 1.6px),
+                radial-gradient(circle at 92% 42%, #c4b5fd 0, #c4b5fd 1px, transparent 1.8px),
+                radial-gradient(circle at 55% 8%, #fff 0, #fff 0.8px, transparent 1.4px);
+            background-size: 260px 260px, 380px 380px, 320px 320px, 440px 440px, 290px 290px, 460px 460px, 340px 340px, 520px 520px, 400px 400px, 300px 300px;
             background-repeat: repeat;
         }
 
         .menu-starfield-far {
-            opacity: 0.16;
+            opacity: 0.3;
             animation-duration: 65s;
-            transform: scale(1.05);
+            transform: scale(1.08);
+        }
+
+        .menu-starfield-near {
+            opacity: 0.7;
         }
 
         .menu-atmosphere-grid {
-            opacity: 0.12;
+            opacity: 0.08;
             background-image:
-                linear-gradient(rgba(96, 140, 255, 0.12) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(96, 140, 255, 0.12) 1px, transparent 1px);
-            background-size: 96px 96px;
-            mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.86), transparent 82%);
+                linear-gradient(rgba(96, 140, 255, 0.18) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(96, 140, 255, 0.18) 1px, transparent 1px);
+            background-size: 80px 80px;
+            mask-image: radial-gradient(circle at center, rgba(0, 0, 0, 0.7), transparent 75%);
         }
 
         .menu-panel {
             background: var(--panel-bg);
             border: 1px solid var(--panel-border);
-            border-radius: 16px;
+            border-radius: 18px;
             padding: 40px 48px;
             min-width: 340px;
             max-height: min(92vh, 900px);
             overflow-y: auto;
             text-align: center;
-            box-shadow: 0 24px 70px rgba(6, 12, 28, 0.44);
+            box-shadow: 0 28px 80px rgba(4, 8, 20, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.02);
             position: relative;
             z-index: 2;
             isolation: isolate;
-            backdrop-filter: blur(18px)
+            backdrop-filter: blur(22px);
         }
 
         .menu-panel::before {
@@ -264,8 +349,9 @@
             inset: 0;
             border-radius: inherit;
             background:
-                radial-gradient(circle at top right, rgba(118, 168, 255, 0.12), transparent 28%),
-                linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0));
+                radial-gradient(circle at top right, rgba(118, 168, 255, 0.14), transparent 30%),
+                radial-gradient(circle at bottom left, rgba(99, 102, 241, 0.06), transparent 28%),
+                linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0));
             pointer-events: none;
             z-index: -1;
         }
@@ -294,23 +380,59 @@
         }
 
         .game-title {
-            font-size: 2.7rem;
-            font-weight: 700;
-            background: linear-gradient(135deg, #4a8eff, #a78bfa);
+            font-family: 'Orbitron', var(--font);
+            font-size: 3.8rem;
+            font-weight: 900;
+            background: linear-gradient(135deg, #5fa2ff 0%, #a78bfa 40%, #7dd3fc 70%, #c4b5fd 100%);
+            background-size: 300% 300%;
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
-            margin-bottom: 6px;
-            letter-spacing: 0.03em;
-            text-shadow: 0 0 30px rgba(74, 142, 255, 0.16)
+            margin-bottom: 2px;
+            letter-spacing: 0.08em;
+            animation: titleShimmer 6s ease-in-out infinite;
+            position: relative;
+            line-height: 1.15;
+        }
+
+        .game-title::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 140%;
+            height: 400%;
+            background: radial-gradient(ellipse, rgba(74, 142, 255, 0.2), transparent 55%);
+            pointer-events: none;
+            z-index: -1;
+            animation: titleGlowPulse 4s ease-in-out infinite;
+        }
+
+        .game-title::after {
+            content: '';
+            position: absolute;
+            bottom: -4px;
+            left: 10%;
+            right: 10%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, rgba(74, 142, 255, 0.6), rgba(167, 139, 250, 0.6), transparent);
+            border-radius: 999px;
+        }
+
+        @keyframes titleGlowPulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
         }
 
         .tagline {
-            font-size: .8rem;
-            color: var(--text-dim);
-            margin-bottom: 24px;
+            font-family: 'Orbitron', var(--font);
+            font-size: .72rem;
+            color: rgba(200, 214, 229, 0.6);
+            margin-bottom: 32px;
             text-transform: uppercase;
-            letter-spacing: .22em
+            letter-spacing: .35em;
+            font-weight: 500;
         }
 
         .menu-field {
@@ -391,7 +513,7 @@
         .primary-btn {
             display: block;
             width: 100%;
-            padding: 12px;
+            padding: 13px;
             margin-top: 20px;
             background: linear-gradient(135deg, #4a8eff, #6366f1);
             border: none;
@@ -401,12 +523,32 @@
             font-size: 1rem;
             font-weight: 600;
             cursor: pointer;
-            transition: transform .15s, box-shadow .2s
+            transition: transform .15s, box-shadow .25s, background .2s;
+            box-shadow: 0 4px 16px rgba(74, 142, 255, 0.2);
         }
 
         .primary-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 20px var(--accent-glow)
+            transform: translateY(-2px);
+            box-shadow: 0 6px 28px rgba(74, 142, 255, 0.45);
+            background: linear-gradient(135deg, #5a9eff, #7577f5);
+        }
+
+        .primary-btn:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 12px rgba(74, 142, 255, 0.3);
+        }
+
+        .menu-hero-actions .primary-btn {
+            padding: 15px 24px;
+            font-size: 1.08rem;
+            letter-spacing: 0.03em;
+            animation: ctaPulse 3s ease-in-out infinite;
+            border-radius: 10px;
+        }
+
+        .menu-hero-actions .primary-btn:hover {
+            animation: none;
+            box-shadow: 0 6px 32px rgba(74, 142, 255, 0.55);
         }
 
         .secondary-btn {
@@ -421,11 +563,18 @@
             font-family: var(--font);
             font-size: .9rem;
             cursor: pointer;
-            transition: background .2s
+            transition: background .2s, border-color .2s, transform .15s, box-shadow .2s;
         }
 
         .secondary-btn:hover {
-            background: rgba(255, 255, 255, 0.1)
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(80, 140, 255, 0.35);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+        }
+
+        .secondary-btn:active {
+            transform: translateY(0);
         }
 
         .scenario-box {
@@ -679,30 +828,235 @@
         .menu-hub {
             display: flex;
             flex-direction: column;
+            gap: 20px;
+        }
+
+        .menu-hub > * {
+            animation: menuSlideUp 0.6s ease-out both;
+        }
+
+        .menu-hub > *:nth-child(1) { animation-delay: 0.05s; }
+        .menu-hub > *:nth-child(2) { animation-delay: 0.15s; }
+        .menu-hub > *:nth-child(3) { animation-delay: 0.3s; }
+        .menu-hub > *:nth-child(4) { animation-delay: 0.45s; }
+
+        .menu-landing {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 380px;
+            padding: 56px 24px;
+            margin: -40px -48px 0;
+            overflow: hidden;
+        }
+
+        .menu-landing-bg {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+
+        @keyframes ringRotate {
+            from { transform: translate(-50%, -50%) rotate(0deg); }
+            to { transform: translate(-50%, -50%) rotate(360deg); }
+        }
+
+        .menu-ring {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            border-radius: 50%;
+            border: 1px solid rgba(118, 162, 255, 0.12);
+        }
+
+        .menu-ring-1 {
+            width: 220px;
+            height: 220px;
+            animation: ringRotate 20s linear infinite;
+            border-color: rgba(118, 162, 255, 0.18);
+        }
+
+        .menu-ring-1::before {
+            content: '';
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #5fa2ff;
+            box-shadow: 0 0 16px rgba(95, 162, 255, 0.9), 0 0 40px rgba(95, 162, 255, 0.3);
+            top: -4px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .menu-ring-2 {
+            width: 360px;
+            height: 360px;
+            animation: ringRotate 35s linear infinite reverse;
+            border-style: dashed;
+            border-color: rgba(167, 139, 250, 0.12);
+        }
+
+        .menu-ring-2::before {
+            content: '';
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #a78bfa;
+            box-shadow: 0 0 14px rgba(167, 139, 250, 0.8), 0 0 36px rgba(167, 139, 250, 0.25);
+            bottom: -3px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .menu-ring-2::after {
+            content: '';
+            position: absolute;
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: #7dd3fc;
+            box-shadow: 0 0 12px rgba(125, 211, 252, 0.7);
+            top: 50%;
+            right: -3px;
+            transform: translateY(-50%);
+        }
+
+        .menu-ring-3 {
+            width: 520px;
+            height: 520px;
+            animation: ringRotate 55s linear infinite;
+            border-color: rgba(118, 162, 255, 0.06);
+        }
+
+        .menu-landing-center {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
             gap: 16px;
+            text-align: center;
+        }
+
+        .menu-play-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px 64px;
+            margin-top: 4px;
+            background: linear-gradient(135deg, #4a8eff 0%, #6366f1 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 14px;
+            color: #fff;
+            font-family: 'Orbitron', var(--font);
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            transition: transform .2s, box-shadow .3s;
+            box-shadow:
+                0 8px 32px rgba(74, 142, 255, 0.4),
+                0 0 0 1px rgba(74, 142, 255, 0.1),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
+            animation: ctaPulse 3s ease-in-out infinite;
+            text-transform: uppercase;
+        }
+
+        .menu-play-btn:hover {
+            transform: translateY(-3px) scale(1.03);
+            box-shadow:
+                0 14px 48px rgba(74, 142, 255, 0.55),
+                0 0 0 2px rgba(74, 142, 255, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
+            animation: none;
+        }
+
+        .menu-play-btn:active {
+            transform: translateY(0) scale(0.98);
+        }
+
+        .menu-customize-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 28px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(118, 162, 255, 0.2);
+            border-radius: 10px;
+            color: var(--text);
+            font-family: var(--font);
+            font-size: .85rem;
+            cursor: pointer;
+            transition: background .2s, border-color .2s, transform .15s;
+        }
+
+        .menu-customize-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(118, 162, 255, 0.4);
+            transform: translateY(-1px);
+        }
+
+        .menu-landing-chips {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-top: 4px;
+        }
+
+        .menu-landing-status {
+            padding: 7px 18px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(118, 162, 255, 0.1);
+            color: rgba(200, 214, 229, 0.6);
+            font-size: .76rem;
+            letter-spacing: .04em;
+            font-variant-numeric: tabular-nums;
         }
 
         .menu-hero-card {
             position: relative;
             overflow: hidden;
-            padding: 24px;
-            border: 1px solid rgba(118, 162, 255, 0.26);
-            border-radius: 22px;
+            padding: 32px;
+            border: 1px solid rgba(118, 162, 255, 0.35);
+            border-radius: 24px;
             background:
-                radial-gradient(circle at top right, rgba(99, 102, 241, 0.2), transparent 34%),
-                linear-gradient(135deg, rgba(74, 142, 255, 0.16), rgba(255, 255, 255, 0.02)),
-                rgba(9, 15, 28, 0.94);
+                radial-gradient(ellipse at 90% 10%, rgba(139, 92, 246, 0.3), transparent 40%),
+                radial-gradient(ellipse at 5% 90%, rgba(74, 142, 255, 0.2), transparent 35%),
+                radial-gradient(ellipse at 50% 50%, rgba(99, 102, 241, 0.08), transparent 60%),
+                linear-gradient(160deg, rgba(15, 23, 42, 0.98), rgba(8, 14, 26, 0.98));
             text-align: left;
-            box-shadow: 0 26px 52px rgba(9, 15, 29, 0.26);
+            box-shadow:
+                0 32px 64px rgba(0, 0, 0, 0.4),
+                0 0 0 1px rgba(255, 255, 255, 0.03),
+                inset 0 1px 0 rgba(255, 255, 255, 0.06);
+            animation: borderGlow 5s ease-in-out infinite;
         }
 
         .menu-hero-card::before {
             content: '';
             position: absolute;
-            inset: 0;
-            background:
-                linear-gradient(90deg, rgba(118, 162, 255, 0.12), transparent 28%),
-                linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 34%);
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent 10%, rgba(118, 162, 255, 0.6) 30%, rgba(167, 139, 250, 0.6) 70%, transparent 90%);
+            pointer-events: none;
+        }
+
+        .menu-hero-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 50%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.04), transparent);
+            animation: heroCardShine 8s ease-in-out infinite;
             pointer-events: none;
         }
 
@@ -722,24 +1076,39 @@
         .menu-eyebrow {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
-            padding: 5px 10px;
+            gap: 8px;
+            padding: 6px 14px;
             border-radius: 999px;
-            background: rgba(74, 142, 255, 0.12);
-            border: 1px solid rgba(123, 170, 255, 0.2);
+            background: rgba(74, 142, 255, 0.18);
+            border: 1px solid rgba(123, 170, 255, 0.3);
             color: #dbe8ff;
-            font-size: .7rem;
+            font-family: 'Orbitron', var(--font);
+            font-size: .62rem;
             font-weight: 700;
-            letter-spacing: .08em;
+            letter-spacing: .12em;
             text-transform: uppercase;
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            box-shadow: 0 0 20px rgba(74, 142, 255, 0.15);
+        }
+
+        .menu-eyebrow::before {
+            content: '';
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #5fa2ff;
+            box-shadow: 0 0 12px rgba(95, 162, 255, 0.8);
+            animation: twinkle 2s ease-in-out infinite;
+            flex-shrink: 0;
         }
 
         .menu-hero-title {
-            margin: 14px 0 8px;
-            font-size: 1.72rem;
-            line-height: 1.1;
+            margin: 14px 0 10px;
+            font-family: 'Orbitron', var(--font);
+            font-size: 1.5rem;
+            font-weight: 700;
+            line-height: 1.2;
             color: #eef4ff;
+            letter-spacing: 0.02em;
         }
 
         .menu-hero-copy {
@@ -760,25 +1129,32 @@
         .menu-hero-chip {
             display: inline-flex;
             align-items: center;
-            padding: 5px 10px;
+            padding: 5px 11px;
             border-radius: 999px;
-            border: 1px solid rgba(126, 170, 255, 0.16);
-            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(126, 170, 255, 0.18);
+            background: rgba(255, 255, 255, 0.05);
             color: #dce8ff;
             font-size: .72rem;
             letter-spacing: .04em;
-            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+            transition: background .2s, border-color .2s;
+        }
+
+        .menu-hero-chip:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(126, 170, 255, 0.3);
         }
 
         .menu-hero-status {
             margin-top: 16px;
             padding: 12px 14px;
-            border-left: 3px solid rgba(113, 168, 255, 0.7);
+            border-left: 3px solid rgba(113, 168, 255, 0.75);
             border-radius: 0 14px 14px 0;
-            background: rgba(8, 14, 27, 0.55);
+            background: linear-gradient(90deg, rgba(74, 142, 255, 0.08), rgba(8, 14, 27, 0.55));
             color: #d7e5ff;
             font-size: .82rem;
             letter-spacing: .03em;
+            font-variant-numeric: tabular-nums;
         }
 
         .menu-hero-actions {
@@ -796,7 +1172,7 @@
 
         .menu-sector-stage {
             position: relative;
-            min-height: 280px;
+            min-height: 300px;
             border-radius: 18px;
             border: 1px solid rgba(116, 164, 255, 0.2);
             background:
@@ -831,17 +1207,17 @@
             left: -40%;
             top: -40%;
             border-radius: 50%;
-            background: conic-gradient(from 0deg, rgba(118, 162, 255, 0.18), rgba(118, 162, 255, 0) 18%, rgba(118, 162, 255, 0) 100%);
-            opacity: 0.52;
-            animation: signalSweep 10s linear infinite;
+            background: conic-gradient(from 0deg, rgba(118, 162, 255, 0.28), rgba(118, 162, 255, 0) 15%, rgba(118, 162, 255, 0) 100%);
+            opacity: 0.6;
+            animation: signalSweep 8s linear infinite;
             mix-blend-mode: screen;
         }
 
         .menu-sector-route {
             height: 2px;
             border-radius: 999px;
-            background: linear-gradient(90deg, rgba(102, 157, 255, 0.14), rgba(149, 205, 255, 0.95), rgba(102, 157, 255, 0.12));
-            box-shadow: 0 0 14px rgba(92, 154, 255, 0.24);
+            background: linear-gradient(90deg, rgba(102, 157, 255, 0.1), rgba(149, 205, 255, 0.85), rgba(102, 157, 255, 0.1));
+            box-shadow: 0 0 18px rgba(92, 154, 255, 0.35), 0 0 4px rgba(149, 205, 255, 0.2);
         }
 
         .menu-sector-route.route-a {
@@ -866,13 +1242,25 @@
         }
 
         .menu-sector-node {
-            width: 16px;
-            height: 16px;
+            width: 20px;
+            height: 20px;
             border-radius: 50%;
-            background: radial-gradient(circle, rgba(214, 235, 255, 0.96), rgba(87, 155, 255, 0.96));
-            border: 1px solid rgba(198, 225, 255, 0.84);
-            box-shadow: 0 0 18px rgba(89, 154, 255, 0.34);
+            background: radial-gradient(circle, rgba(230, 245, 255, 1), rgba(87, 155, 255, 0.96));
+            border: 2px solid rgba(198, 225, 255, 0.9);
+            box-shadow: 0 0 28px rgba(89, 154, 255, 0.55), 0 0 8px rgba(255, 255, 255, 0.3), 0 0 56px rgba(89, 154, 255, 0.15);
             animation: nodePulse 4.6s ease-in-out infinite;
+        }
+
+        .menu-sector-node.node-b {
+            background: radial-gradient(circle, rgba(255, 230, 200, 1), rgba(251, 146, 60, 0.9));
+            border-color: rgba(255, 200, 150, 0.9);
+            box-shadow: 0 0 28px rgba(251, 146, 60, 0.5), 0 0 8px rgba(255, 220, 180, 0.3);
+        }
+
+        .menu-sector-node.node-c {
+            background: radial-gradient(circle, rgba(220, 255, 230, 1), rgba(52, 211, 153, 0.9));
+            border-color: rgba(180, 255, 210, 0.9);
+            box-shadow: 0 0 28px rgba(52, 211, 153, 0.5), 0 0 8px rgba(200, 255, 220, 0.3);
         }
 
         .menu-sector-node span {
@@ -931,11 +1319,11 @@
         }
 
         .menu-sector-fleet {
-            width: 10px;
-            height: 10px;
+            width: 12px;
+            height: 12px;
             border-radius: 50%;
-            background: rgba(214, 237, 255, 0.95);
-            box-shadow: 0 0 16px rgba(146, 201, 255, 0.42);
+            background: rgba(220, 240, 255, 1);
+            box-shadow: 0 0 20px rgba(146, 201, 255, 0.6), 0 0 40px rgba(146, 201, 255, 0.2);
         }
 
         .menu-sector-fleet::after {
@@ -943,10 +1331,11 @@
             position: absolute;
             right: 6px;
             top: 50%;
-            width: 18px;
-            height: 2px;
-            background: linear-gradient(90deg, rgba(150, 210, 255, 0.7), rgba(150, 210, 255, 0));
+            width: 26px;
+            height: 3px;
+            background: linear-gradient(90deg, rgba(150, 210, 255, 0.8), rgba(150, 210, 255, 0));
             transform: translateY(-50%);
+            border-radius: 999px;
         }
 
         .menu-sector-fleet.fleet-a {
@@ -965,7 +1354,7 @@
         }
 
         .menu-spotlight-card {
-            padding: 16px 18px;
+            padding: 18px 20px;
             border-radius: 18px;
             border: 1px solid rgba(118, 162, 255, 0.18);
             background:
@@ -974,42 +1363,79 @@
             text-align: left;
             position: relative;
             overflow: hidden;
+            transition: transform .2s ease, border-color .2s ease, box-shadow .2s ease;
+        }
+
+        .menu-spotlight-card:hover {
+            transform: translateY(-2px);
+            border-color: rgba(118, 162, 255, 0.3);
+            box-shadow: 0 12px 28px rgba(8, 14, 28, 0.3);
         }
 
         .menu-spotlight-card::before {
             content: '';
             position: absolute;
             inset: auto 0 0 0;
-            height: 1px;
-            background: linear-gradient(90deg, rgba(118, 162, 255, 0), rgba(118, 162, 255, 0.68), rgba(118, 162, 255, 0));
-            opacity: 0.8;
+            height: 2px;
+            background: linear-gradient(90deg, rgba(118, 162, 255, 0), rgba(118, 162, 255, 0.72), rgba(118, 162, 255, 0));
+            opacity: 0.85;
         }
 
         .menu-spotlight-daily {
             background:
-                radial-gradient(circle at top left, rgba(255, 167, 90, 0.16), transparent 32%),
+                radial-gradient(circle at top left, rgba(251, 146, 60, 0.22), transparent 36%),
                 linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
-                rgba(8, 13, 24, 0.82);
+                rgba(8, 13, 24, 0.88);
+            border-color: rgba(251, 146, 60, 0.2);
+        }
+
+        .menu-spotlight-daily:hover {
+            border-color: rgba(251, 146, 60, 0.4);
+        }
+
+        .menu-spotlight-daily::before {
+            background: linear-gradient(90deg, rgba(251, 146, 60, 0), rgba(251, 146, 60, 0.75), rgba(251, 146, 60, 0));
         }
 
         .menu-spotlight-campaign {
             background:
-                radial-gradient(circle at top left, rgba(39, 174, 96, 0.14), transparent 30%),
+                radial-gradient(circle at top left, rgba(52, 211, 153, 0.18), transparent 34%),
                 linear-gradient(135deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
-                rgba(8, 13, 24, 0.82);
+                rgba(8, 13, 24, 0.88);
+            border-color: rgba(52, 211, 153, 0.2);
+        }
+
+        .menu-spotlight-campaign:hover {
+            border-color: rgba(52, 211, 153, 0.4);
+        }
+
+        .menu-spotlight-campaign::before {
+            background: linear-gradient(90deg, rgba(52, 211, 153, 0), rgba(52, 211, 153, 0.75), rgba(52, 211, 153, 0));
         }
 
         .menu-spotlight-kicker {
-            font-size: .66rem;
-            letter-spacing: .16em;
+            font-family: 'Orbitron', var(--font);
+            font-size: .62rem;
+            font-weight: 500;
+            letter-spacing: .18em;
             text-transform: uppercase;
             color: #d6e4ff;
             margin-bottom: 8px;
         }
 
+        .menu-spotlight-daily .menu-spotlight-kicker {
+            color: #fbbf7a;
+        }
+
+        .menu-spotlight-campaign .menu-spotlight-kicker {
+            color: #6ee7b7;
+        }
+
         .menu-spotlight-card strong {
             display: block;
-            font-size: 1.04rem;
+            font-family: 'Orbitron', var(--font);
+            font-size: .95rem;
+            font-weight: 700;
             color: #eef4ff;
         }
 
@@ -1040,17 +1466,17 @@
             gap: 8px;
             width: 100%;
             min-height: 190px;
-            padding: 18px;
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 18px;
+            padding: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
             background:
-                linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018)),
-                rgba(8, 13, 24, 0.82);
+                linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.015)),
+                rgba(8, 13, 24, 0.88);
             color: var(--text);
             cursor: pointer;
             text-align: left;
             font-family: var(--font);
-            transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease, background .18s ease;
+            transition: transform .22s ease, border-color .22s ease, box-shadow .22s ease, background .22s ease;
         }
 
         .menu-overview-card::before {
@@ -1060,17 +1486,30 @@
             top: 0;
             width: 100%;
             height: 3px;
-            background: linear-gradient(90deg, rgba(118, 162, 255, 0), rgba(118, 162, 255, 0.82), rgba(118, 162, 255, 0));
-            opacity: 0.82;
+            background: linear-gradient(90deg, rgba(118, 162, 255, 0), rgba(118, 162, 255, 0.9), rgba(118, 162, 255, 0));
+            opacity: 0.9;
+        }
+
+        .menu-overview-card::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            right: 0;
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(74, 142, 255, 0.08), transparent 70%);
+            transform: translate(30%, -30%);
+            pointer-events: none;
         }
 
         .menu-overview-card:hover {
-            transform: translateY(-3px);
-            border-color: rgba(123, 170, 255, 0.28);
-            box-shadow: 0 18px 32px rgba(11, 18, 34, 0.24);
+            transform: translateY(-6px) scale(1.02);
+            border-color: rgba(123, 170, 255, 0.45);
+            box-shadow: 0 24px 48px rgba(0, 0, 0, 0.35), 0 0 24px rgba(74, 142, 255, 0.08);
             background:
-                linear-gradient(180deg, rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.024)),
-                rgba(10, 16, 29, 0.9);
+                linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+                rgba(12, 18, 32, 0.95);
         }
 
         .menu-overview-card-live {
@@ -1103,16 +1542,21 @@
         }
 
         .menu-overview-kicker {
-            font-size: .64rem;
-            letter-spacing: .18em;
+            font-family: 'Orbitron', var(--font);
+            font-size: .6rem;
+            font-weight: 500;
+            letter-spacing: .2em;
             text-transform: uppercase;
-            color: #d6e4ff;
-            margin-bottom: 2px;
+            color: rgba(167, 139, 250, 0.85);
+            margin-bottom: 4px;
         }
 
         .menu-overview-card strong {
-            font-size: 1rem;
+            font-family: 'Orbitron', var(--font);
+            font-size: .95rem;
+            font-weight: 700;
             color: #eef4ff;
+            letter-spacing: 0.01em;
         }
 
         .menu-overview-card span {
@@ -2169,37 +2613,41 @@
             }
 
             .game-title {
-                font-size: 1.95rem;
+                font-size: 2rem;
             }
 
             .tagline {
                 margin-bottom: 18px;
-                font-size: 0.8rem;
+                font-size: 0.65rem;
+                letter-spacing: .2em;
+            }
+
+            .menu-hero-title {
+                font-size: 1.2rem;
             }
 
             .menu-overview-grid,
             .menu-grid-2,
             .menu-form-grid,
-            .menu-action-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .menu-hero-layout,
+            .menu-action-grid,
             .menu-command-strip {
                 grid-template-columns: 1fr;
             }
 
-            .menu-hero-card {
-                padding: 18px;
+            .menu-landing {
+                min-height: 280px;
+                padding: 36px 12px;
+                margin: -18px -14px 0;
             }
 
-            .menu-hero-title {
-                font-size: 1.28rem;
+            .menu-play-btn {
+                padding: 16px 36px;
+                font-size: 0.9rem;
             }
 
-            .menu-sector-stage {
-                min-height: 220px;
-            }
+            .menu-ring-3 { display: none; }
+            .menu-ring-2 { width: 260px; height: 260px; }
+            .menu-ring-1 { width: 170px; height: 170px; }
 
             .menu-spotlight-card p {
                 min-height: 0;
@@ -2208,14 +2656,13 @@
             .seed-row,
             .room-row,
             .scenario-actions,
-            .menu-subheader,
-            .menu-hero-actions {
+            .menu-subheader {
                 flex-direction: column;
                 align-items: stretch;
             }
 
-            .menu-hero-chip-row {
-                gap: 6px;
+            .menu-landing-chips {
+                gap: 5px;
             }
 
             .menu-back-btn,
@@ -2224,9 +2671,7 @@
             .scenario-actions .primary-btn,
             .scenario-actions .secondary-btn,
             .menu-card-actions .primary-btn,
-            .menu-card-actions .secondary-btn,
-            .menu-hero-actions .primary-btn,
-            .menu-hero-actions .secondary-btn {
+            .menu-card-actions .secondary-btn {
                 width: 100%;
             }
 
@@ -2531,11 +2976,26 @@
             }
 
             .game-title {
-                font-size: 1.95rem;
+                font-size: 1.65rem;
+            }
+
+            .game-title::before,
+            .game-title::after {
+                display: none;
             }
 
             .tagline {
-                letter-spacing: .16em;
+                letter-spacing: .12em;
+                font-size: 0.58rem;
+            }
+
+            .menu-hero-title {
+                font-size: 1.1rem;
+            }
+
+            .menu-hero-actions .primary-btn {
+                font-size: 1rem;
+                padding: 13px 18px;
             }
 
             .menu-hero-title {
@@ -2672,6 +3132,7 @@
         <div class="menu-atmosphere" aria-hidden="true">
             <div class="menu-nebula menu-nebula-a"></div>
             <div class="menu-nebula menu-nebula-b"></div>
+            <div class="menu-nebula menu-nebula-c"></div>
             <div class="menu-starfield menu-starfield-far"></div>
             <div class="menu-starfield menu-starfield-near"></div>
             <div class="menu-atmosphere-grid"></div>
@@ -2681,74 +3142,60 @@
             <p class="tagline">Conquer the stars. Command the flow.</p>
             <div id="menuHubView" class="menu-panel-content">
                 <div class="menu-hub">
-                    <div class="menu-hero-card">
-                        <div class="menu-hero-layout">
-                            <div class="menu-hero-copy-block">
-                                <div class="menu-eyebrow">Command Relay</div>
-                                <h2 class="menu-hero-title">Sektöre gir, akışı ele geçir ve hattını tek darbeyle kur.</h2>
-                                <p class="menu-hero-copy">Ana ekran artık sadece temiz değil; bir sonraki hamlenin nereye taşınacağını hissettirmeli. Serbest maç ayarları ikinci katmanda, ama savaş tiyatrosu burada başlıyor.</p>
-                                <div class="menu-hero-chip-row">
-                                    <span id="menuSeedChip" class="menu-hero-chip">Seed 42</span>
-                                    <span id="menuPlaylistChip" class="menu-hero-chip">Standart</span>
-                                    <span id="menuDoctrineChip" class="menu-hero-chip">Doctrine Auto</span>
-                                    <span id="menuModeChip" class="menu-hero-chip">Advanced</span>
-                                    <span id="menuFogChip" class="menu-hero-chip">Fog OFF</span>
-                                </div>
-                                <div id="menuQuickStatus" class="menu-hero-status">16 node | NORMAL | Standart akışı hazır</div>
-                                <div class="menu-hero-actions">
-                                    <button id="startBtn" class="primary-btn">Hemen Başla</button>
-                                    <button id="menuCustomizeBtn" class="secondary-btn">Oyunu Özelleştir</button>
-                                </div>
+                    <div class="menu-landing">
+                        <div class="menu-landing-bg" aria-hidden="true">
+                            <div class="menu-ring menu-ring-1"></div>
+                            <div class="menu-ring menu-ring-2"></div>
+                            <div class="menu-ring menu-ring-3"></div>
+                        </div>
+                        <div class="menu-landing-center">
+                            <div class="menu-eyebrow">Operasyon Hazır</div>
+                            <button id="startBtn" class="menu-play-btn">Operasyona Başla</button>
+                            <button id="menuCustomizeBtn" class="menu-customize-btn">Oyunu Özelleştir</button>
+                            <div class="menu-landing-chips">
+                                <span id="menuSeedChip" class="menu-hero-chip">Seed 42</span>
+                                <span id="menuPlaylistChip" class="menu-hero-chip">Standart</span>
+                                <span id="menuDoctrineChip" class="menu-hero-chip">Doctrine Auto</span>
+                                <span id="menuModeChip" class="menu-hero-chip">Advanced</span>
+                                <span id="menuFogChip" class="menu-hero-chip">Fog OFF</span>
                             </div>
-                            <div class="menu-sector-stage">
-                                <div class="menu-sector-grid"></div>
-                                <div class="menu-sector-sweep"></div>
-                                <div class="menu-sector-route route-a"></div>
-                                <div class="menu-sector-route route-b"></div>
-                                <div class="menu-sector-route route-c"></div>
-                                <div class="menu-sector-fleet fleet-a"></div>
-                                <div class="menu-sector-fleet fleet-b"></div>
-                                <div class="menu-sector-node node-a"><span>CAP</span></div>
-                                <div class="menu-sector-node node-b"><span>RELAY</span></div>
-                                <div class="menu-sector-node node-c"><span>FRONT</span></div>
-                                <div class="menu-sector-node node-d"><span>EDGE</span></div>
-                                <div id="menuStagePlaylistLabel" class="menu-sector-label menu-sector-label-top">PLAYLIST // STANDARD</div>
-                                <div id="menuStageDoctrineLabel" class="menu-sector-label menu-sector-label-bottom">DOCTRINE // AUTO</div>
-                            </div>
+                            <div id="menuQuickStatus" class="menu-landing-status">16 node | NORMAL | Standart akışı hazır</div>
                         </div>
                     </div>
+                    <div id="menuStagePlaylistLabel" style="display:none">PLAYLIST // STANDARD</div>
+                    <div id="menuStageDoctrineLabel" style="display:none">DOCTRINE // AUTO</div>
                     <div class="menu-command-strip">
                         <div class="menu-spotlight-card menu-spotlight-daily">
-                            <div class="menu-spotlight-kicker">Today</div>
-                            <strong id="menuDailySpotlightTitle">Günlük challenge hazır</strong>
-                            <p id="menuDailySpotlightCopy">Bugünün operasyonda yeni bir sektör baskısı seni bekliyor.</p>
-                            <button id="menuHubDailyBtn" class="secondary-btn">Günlük Challenge</button>
+                            <div class="menu-spotlight-kicker">Bugünün Operasyonu</div>
+                            <strong id="menuDailySpotlightTitle">Günlük Challenge</strong>
+                            <p id="menuDailySpotlightCopy">Her gün yeni kurallar, yeni sektör.</p>
+                            <button id="menuHubDailyBtn" class="secondary-btn">Challenge'a Gir</button>
                         </div>
                         <div class="menu-spotlight-card menu-spotlight-campaign">
-                            <div class="menu-spotlight-kicker">Campaign</div>
+                            <div class="menu-spotlight-kicker">Kampanya</div>
                             <strong id="menuCampaignSpotlightTitle">Seçili bölüm hazır</strong>
-                            <p id="menuCampaignSpotlightCopy">Açık bölümler arasından seçili olan görev tek tıkla başlatılabilir.</p>
-                            <button id="menuHubCampaignBtn" class="secondary-btn">Seçili Bölüm</button>
+                            <p id="menuCampaignSpotlightCopy">Sıradaki görevini başlat.</p>
+                            <button id="menuHubCampaignBtn" class="secondary-btn">Bölüme Gir</button>
                         </div>
                     </div>
                     <div class="menu-overview-grid">
                         <button id="menuOpenContentBtn" class="menu-overview-card" type="button">
-                            <div class="menu-overview-kicker">CONTENT TRACK</div>
-                            <strong>Senaryo ve Challenge</strong>
-                            <span>Kampanya ilerlemeni, seçili bölümünü ve bugünün challenge'ını aynı yerde gör.</span>
-                            <span id="menuContentCardMeta" class="menu-overview-meta">Kampanya ve günlük akışı hazır</span>
+                            <div class="menu-overview-kicker">CONTENT</div>
+                            <strong>Senaryo & Challenge</strong>
+                            <span>Kampanya ve günlük challenge.</span>
+                            <span id="menuContentCardMeta" class="menu-overview-meta">Kampanya ve günlük akış hazır</span>
                         </button>
                         <button id="menuOpenMultiplayerBtn" class="menu-overview-card menu-overview-card-live" type="button">
-                            <div class="menu-overview-kicker">LIVE LOBBY</div>
+                            <div class="menu-overview-kicker">LIVE</div>
                             <strong>Çok Oyunculu</strong>
-                            <span>Nick seç, aktif odaları tara, koda katıl ya da kayıtlı host ayarlarıyla oda kur.</span>
+                            <span>Oda kur veya maça katıl.</span>
                             <span id="menuMultiCardMeta" class="menu-overview-meta">Lobi taraması bekleniyor</span>
                         </button>
                         <button id="menuOpenToolsBtn" class="menu-overview-card" type="button">
                             <div class="menu-overview-kicker">ARCHIVE</div>
                             <strong>Araçlar</strong>
-                            <span>Özel harita, replay, liderlik ve nasıl oynanır yardımını ana akıştan ayrı tut.</span>
-                            <span class="menu-overview-meta">Custom map, replay, liderlik, yardım</span>
+                            <span>Harita, replay, rehber.</span>
+                            <span class="menu-overview-meta">Custom map, replay, yardım</span>
                         </button>
                     </div>
                 </div>
@@ -3009,25 +3456,28 @@
                 <p class="tutorial-subtitle">Yıldızları fethet. Akışı yönet.</p>
             </div>
             <nav class="tutorial-nav">
-                <a href="#tut-modlar">Modlar</a>
+                <a href="#tut-modlar">Başlangıç</a>
                 <a href="#tut-kontroller">Kontroller</a>
                 <a href="#tut-kisayollar">Kısayollar</a>
-                <a href="#tut-flow">Flow</a>
+                <a href="#tut-flow">Flow & Park</a>
                 <a href="#tut-asimilasyon">Asimilasyon</a>
-                <a href="#tut-savas">Savaş & Üretim</a>
+                <a href="#tut-savas">Savaş</a>
+                <a href="#tut-doktrin">Doktrin</a>
                 <a href="#tut-gezegenler">Gezegenler</a>
                 <a href="#tut-harita">Harita</a>
                 <a href="#tut-hud">HUD</a>
             </nav>
             <div class="tutorial-body">
                 <div class="tutorial-section" id="tut-modlar">
-                    <h3>1) Oyun Modları ve Başlangıç</h3>
+                    <h3>1) Başlangıç Akışı</h3>
                     <ul>
-                        <li><b>Hızlı Başlat:</b> Ana ekrandaki <b>Hemen Başla</b> tek tıkla standart local maç açar. Seed ve playlist gibi detaylar <b>Oyunu Özelleştir</b> panelindedir.</li>
-                        <li><b>Senaryo ve Challenge:</b> Bu bölümde seçili kampanya bölümünü görebilir, <b>Bölümleri Gözden Geçir</b> ile tam senaryo menüsü açabilir ve günlük challenge'ı ayrı akıştan başlatabilirsin.</li>
-                        <li><b>Çok Oyunculu:</b> Nick gir, <b>Oda Kur</b> ile kayıtlı host ayarlarını kullan veya <b>Oda Kurulumu</b> panelinde detayları değiştir. 5 haneli <b>Oda Kodu</b> ile mevcut odaya katıl.</li>
+                        <li><b>Hızlı Başlat:</b> Ana ekrandaki <b>Hemen Başla</b> tek tıkla standart local maç açar. İlk deneme için en temiz akış budur.</li>
+                        <li><b>Oyunu Özelleştir:</b> Seed, node sayısı, zorluk, playlist, doktrin, oyun modu ve sis ayarları bu paneldedir. Aynı ayarlar standart çok oyunculu host kurulumunda da kullanılır.</li>
+                        <li><b>Senaryo ve Challenge:</b> Kampanya bölümleri ve günlük challenge burada toplanır. Günlük challenge serbest maçtan ayrı kurallarla açılır.</li>
+                        <li><b>Çok Oyunculu:</b> Nick gir, <b>Oda Kur</b> ile kayıtlı ayarlarla hemen host ol veya <b>Oda Kurulumu</b> panelinde detayları değiştir. 5 haneli <b>Oda Kodu</b> ile mevcut odaya katıl.</li>
+                        <li><b>Araçlar:</b> Özel harita yükleme, replay açma, liderlik ve yardım içerikleri ana başlatma akışından ayrıdır.</li>
                     </ul>
-                    <div class="tutorial-tip"><strong>İpucu:</strong> Seed alanındaki RND butonu rastgele harita üretir.</div>
+                    <div class="tutorial-tip"><strong>İpucu:</strong> İlk turlarda <b>Standart</b> veya <b>Zen</b> playlist ile başlamak sistemi daha rahat okutuyor.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-kontroller">
@@ -3035,14 +3485,13 @@
                     <ul>
                         <li><b>Sol tık:</b> Kendi gezegenini seçer. <b>Shift + sol tık</b> ile çoklu seçim yap (seçime ekler).</li>
                         <li><b>Boş alanda sürükle:</b> Dikdörtgen kutu seçimi yapar; içindeki kendi gezegenlerini seçer.</li>
-                        <li><b>Ctrl + boş alanda sürükle:</b> Seçili kaynaklardan hedefe bırakınca toplu birlik gönderir. Çok hızlı hamle için idealdir.</li>
+                        <li><b>Ctrl + boş alanda sürükle:</b> Seçili kaynaklardan hedefe bırakınca toplu birlik gönderir. Bıraktığın yer boş uzaysa orada park filosu oluşturursun.</li>
                         <li><b>Seçiliyken hedefe sol tık:</b> Seçili gezegenlerden hedefe, HUD'daki <b>Send %</b> kadar birlik yollar (örneğin %50 = yarısı).</li>
                         <li><b>Transfer:</b> Seçili grup içindeyken başka kendi gezegenine sol tıkla birlik transferi yapabilirsin. Dolu hedefe fazla takviye basarsan bir kısım geri dönmeye çalışır.</li>
+                        <li><b>Park filosu:</b> Boş uzayda bekleyen park filosuna yeniden emir verebilir, onu başka bir node'a veya başka bir boş noktaya fırlatabilirsin.</li>
                         <li><b>Sağ tık (kendi gezegen):</b> Hedef seçiliyse savunma modunu aç/kapat. Başka kendi kaynakların seçiliyken seçili olmayan kendi hedefe sağ tık, otomatik transferi (flow) aç/kapatır.</li>
                         <li><b>Sağ tık (düşman veya tarafsız):</b> Seçili kaynaklardan hedefe <b>Flow</b> bağlantısı aç/kapat. Bu, tek saldırı değil, sürekli baskı emridir.</li>
-                        <li><b>HUD orta bilgi satırı:</b> Seçili node için upgrade maliyeti, defense tradeoff'u, supply indirimi, savunma alanı, gate ve aktif pulse bonusları gösterilir.</li>
-                        <li><b>Yeni savunma kuralı:</b> Asimile olmuş sahipli gezegenler yakın bir savunma alanı üretir; içine giren düşman filoları yavaş yavaş eritir. Defense modu bu alanı da güçlendirir.</li>
-                        <li><b>Barrier haritası:</b> Bariyeri açan gezegenler <b>GATE</b> etiketiyle gösterilir. Sadece fethetmek yetmez; geçiş asimilasyon tamamlanınca açılır.</li>
+                        <li><b>HUD orta bilgi satırı:</b> Seçili node için upgrade maliyeti, defense tradeoff'u, supply indirimi, savunma alanı, gate, mutatör ve aktif pulse bonusları gösterilir.</li>
                         <li><b>Orta tuş + sürükle:</b> Kamerayı kaydır. <b>Mouse tekeri:</b> Zoom in/out.</li>
                         <li><b>Mobil:</b> Tek parmakla seç ve sürükle. İki parmakla haritayı pan/zoom yap.</li>
                     </ul>
@@ -3054,6 +3503,7 @@
                         <div class="shortcut-item"><span class="shortcut-key">1-0</span> Send % (10-100)</div>
                         <div class="shortcut-item"><span class="shortcut-key">U</span> Upgrade</div>
                         <div class="shortcut-item"><span class="shortcut-key">A</span> Tüm gezegenler</div>
+                        <div class="shortcut-item"><span class="shortcut-key">Q</span> Doktrin aktif</div>
                         <div class="shortcut-item"><span class="shortcut-key">Esc</span> Duraklat</div>
                         <div class="shortcut-item"><span class="shortcut-key">P</span> Devam</div>
                     </div>
@@ -3061,38 +3511,43 @@
                         <li><b>1-9, 0:</b> Gönderim yüzdesini sırasıyla %10, %20, ... %100 yapar.</li>
                         <li><b>U:</b> Seçili gezegenleri upgrade eder (yeterli birlik ve seviye koşulu varsa).</li>
                         <li><b>A:</b> Tüm kendi gezegenlerini tek seferde seçer.</li>
+                        <li><b>Q:</b> İnsan oyuncunun doktrin aktif becerisini tetikler. Aynı işlev HUD'daki <b>DOC</b> düğmesindedir.</li>
                         <li><b>Esc / P:</b> Tek oyunculuda oyunu duraklatır veya devam ettirir.</li>
                         <li><b>Hız butonu (1x):</b> Tek oyunculuda 1x / 2x / 4x oyun hızı.</li>
                     </ul>
                 </div>
 
                 <div class="tutorial-section" id="tut-flow">
-                    <h3>4) Flow (Otomatik Akış)</h3>
-                    <p>Flow, bir gezegenden diğerine periyodik otomatik birlik transferi sağlar. Tek tık saldırı yerine "bu hattı sürekli besle" emridir.</p>
+                    <h3>4) Flow ve Park Filoları</h3>
+                    <p>Flow, bir gezegenden diğerine periyodik otomatik birlik transferi sağlar. Park filosu ise boş uzayda staging kurup dalga saldırısı hazırlamana yarar.</p>
                     <ul>
                         <li><b>Nasıl çalışır:</b> Her birkaç tick'te kaynak gezegenden hedefe birlik gönderilir (yaklaşık %8 oranında). Kaynak zayıflarsa akış da kendiliğinden küçülür.</li>
                         <li><b>Ne zaman kullan:</b> Uzun mesafe destek, asimilasyon bittikten sonra cephe besleme ve wormhole/relay hattına sürekli trafik kurmak için idealdir.</li>
                         <li><b>Ne zaman kapat:</b> Hedef doluysa, cephe değiştiyse veya yeni fetihte garnizon kaçıyorsa flow'u kapat. Aksi halde kendi ekonomini boşaltırsın.</li>
+                        <li><b>Park filosu kullanımı:</b> Cepheye girmeden önce boş uzayda filo biriktirip tek dalga halinde yeniden gönderebilirsin. Turret ve dar geçit saldırılarında bu çok değerlidir.</li>
+                        <li><b>Risk:</b> Park filoları güvenli, tedarikli territory içinde daha emniyetlidir. Çatışmalı bölgede, karartma alanında veya tedarik dışındaysa daha kırılgan kalırlar.</li>
                         <li><b>Relay gezegenleri:</b> Flow verimini ve filo hızını artırır; hızlı lojistik omurgası kurmak için en iyi tiptir.</li>
                     </ul>
-                    <div class="tutorial-tip"><strong>Strateji:</strong> Önce node'u normal saldırıyla al, sonra aynı hattı Flow'a çevir. Fetih sonrası garnizon düşüyorsa flow'u hemen kapat.</div>
+                    <div class="tutorial-tip"><strong>Strateji:</strong> Önce node'u normal saldırıyla al, sonra aynı hattı Flow'a çevir. Turret veya boss öncesinde park filosu ile staging kurup tek dalga vur.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-asimilasyon">
-                    <h3>5) Asimilasyon (Fetih Sonrası Kontrol)</h3>
-                    <p>Bir gezegeni fethettiğinde hemen tam üretim yapamazsın. İki aşamalı süreç vardır:</p>
+                    <h3>5) Asimilasyon ve Cephe</h3>
+                    <p>Bir gezegeni fethettiğinde hemen tam üretim yapamazsın. Asimilasyon tamamlanana kadar ekonomi, gate ve border etkileri tam açılmaz.</p>
                     <ul>
                         <li><b>Kilit aşaması (~6 saniye):</b> Fetih sonrası gezegen kilitte bekler; bu sürede üretim yok, savunma alanı yok, gate açılmaz.</li>
                         <li><b>Asimilasyon aşaması:</b> Kilit bittikten sonra ilerleme çubuğu dolana kadar kısmi kontrol vardır. Tam dolunca üretim, gate ve savunma alanı tamamen açılır.</li>
                         <li><b>Garnizon etkisi:</b> Gezegendeki birlik oranı ne kadar yüksekse asimilasyon o kadar hızlı. Birlik göndermek garnizonu düşürür, asimilasyonu yavaşlatır.</li>
                         <li><b>Defense etkisi:</b> Defense modu asimilasyonu hızlandırır ama üretimi keser. Yeni fetihte kısa süreli defense açmak genelde doğrudur.</li>
+                        <li><b>Çatışmalı bölge:</b> İki rakibin tam asimile territory sınırları çakışırsa <b>cephe / contested zone</b> oluşur. Bu alanda border bonusu çalışmaz.</li>
+                        <li><b>Park filo etkisi:</b> Çatışmalı bölge ve karartma alanı, park filolarının border korumasını düşürür. Cephede staging yaparken bunu hesaba kat.</li>
                         <li><b>Direnç:</b> Yüksek seviye gezegenler ve Bulwark tipi daha yavaş asimile olur. Turret istasyonları ise ele geçirmesi ayrı olarak daha zordur.</li>
                     </ul>
                     <div class="tutorial-warning">Fethettikten hemen sonra çok birlik göndermek en yaygın hata. Önce node'u oturt, sonra ileri hatta asker çek.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-savas">
-                    <h3>6) Savaş, Üretim ve Tedarik</h3>
+                    <h3>6) Savaş, Tedarik ve Zafer</h3>
                     <ul>
                         <li><b>Savunma modu:</b> Savunma gücü %25 artar, asimilasyon hızlanır; üretim %25 ceza alır. Yeni fetihte ve dar boğazda çok güçlüdür.</li>
                         <li><b>Savunma alanı:</b> Asimile olmuş sahipli gezegenler yakın çevresindeki düşman filoları eritir. Bu alan cepheyi yumuşatır ama tek başına dev armadayı durdurmaz.</li>
@@ -3100,12 +3555,32 @@
                         <li><b>Tedarik hattı:</b> Başkente veya bağlı gezegenlere 220 birim mesafede bağlı olmayan node'lar %40 üretim cezası alır. Supply altındaki node'lar daha ucuza upgrade olur.</li>
                         <li><b>Cap strain:</b> Toplam birlik sayın cap'in %82'sine yaklaşınca üretim yavaşlar. Dolu beklemek yerine birlikleri cepheye, flow'a veya upgrade'e çevir.</li>
                         <li><b>Upgrade:</b> Gezegen seviyesi 2 ve 3'e çıkar; üretim, kapasite ve savunma etkisi artar. Supply altında yapmak daha verimlidir.</li>
-                        <li><b>Zafer:</b> Tüm rakiplerin hem node'larını hem aktif filolarını bitiren oyuncu kazanır.</li>
+                        <li><b>Zafer koşulu:</b> Serbest maçta tüm rakiplerin hem node'larını hem aktif filolarını bitiren oyuncu kazanır.</li>
+                        <li><b>Objective maçları:</b> Campaign, günlük challenge ve bazı playlist akışlarında görev panelindeki zorunlu objective'ler maçı doğrudan bitirebilir. Her zaman tam harita temizlemek gerekmez.</li>
                     </ul>
                 </div>
 
+                <div class="tutorial-section" id="tut-doktrin">
+                    <h3>7) Playlist ve Doktrin</h3>
+                    <ul>
+                        <li><b>Standart:</b> Varsayılan kurallar. Harita tohumu oyunun kimliğini belirler.</li>
+                        <li><b>Chaos:</b> Daha hızlı tempo, daha sert baskı ve genelde kuşatma odaklı açılışlar üretir.</li>
+                        <li><b>Ironman:</b> Sis, karartma ve daha sert ekonomiyle hata payını azaltır.</li>
+                        <li><b>Puzzle Sector:</b> Daha küçük, daha okunur ve objective odaklı sektörler sunar.</li>
+                        <li><b>Zen:</b> Daha yavaş açılış ve daha sakin ritim verir; sistemi öğrenmek için uygundur.</li>
+                        <li><b>Frontier:</b> Daha büyük sektör, daha fazla baskı noktası ve çoğu zaman birden fazla objective içerir.</li>
+                    </ul>
+                    <ul>
+                        <li><b>Lojistik:</b> Supply altında ekonomi ve akış gücünü artırır. Uzun lojistik omurgaları için güçlüdür.</li>
+                        <li><b>Asimilasyon:</b> Yeni fetihleri daha hızlı oturtur. Cepheyi genişletmek ve objective almak için etkilidir.</li>
+                        <li><b>Kuşatma:</b> Savunmalı hedefleri ve turret hatlarını kırmaya odaklanır. Ekonomisi biraz daha serttir.</li>
+                        <li><b>Aktif kullanım:</b> Doktrinin aktif becerisi <b>Q</b> veya <b>DOC</b> düğmesiyle açılır. Süre ve bekleme durumu HUD'da görünür.</li>
+                    </ul>
+                    <div class="tutorial-tip"><strong>Seçim mantığı:</strong> Öğrenirken <b>Zen + Lojistik</b>, objective odaklı senaryolarda <b>Puzzle + Asimilasyon</b>, savunmalı hatları kırarken <b>Frontier/Chaos + Kuşatma</b> iyi başlangıç kombinasyonlarıdır.</div>
+                </div>
+
                 <div class="tutorial-section" id="tut-gezegenler">
-                    <h3>7) Gezegen Sınıfları</h3>
+                    <h3>8) Gezegen Sınıfları</h3>
                     <p>Her gezegen bir tip ile doğar. Harf kodu ve rengi haritada görünür.</p>
                     <div class="node-types">
                         <div class="node-type-card">
@@ -3136,24 +3611,30 @@
                 </div>
 
                 <div class="tutorial-section" id="tut-harita">
-                    <h3>8) Harita Olayları</h3>
+                    <h3>9) Harita, Mutatör ve Objective</h3>
                     <ul>
                         <li><b>Wormhole:</b> Bağlı iki nokta arasında filolar 2.0x hızla gider. Haritanın en iyi baskın ve yardım koridorudur.</li>
                         <li><b>Gravity alan:</b> Merkezdeki ~170 birim yarıçaptaki alandan geçen filolar 1.35x hız kazanır. Uzun yolu kısaltmak için rotayı içinden geçir.</li>
                         <li><b>Barrier:</b> Haritayı ikiye ayırır. Karşı tarafa geçmek için <b>GATE</b> etiketli gezegeni alıp asimilasyonun bitmesini beklersin.</li>
                         <li><b>Stratejik noktalar:</b> Altın çerçeveli gezegenler pulse adayıdır. Pulse aktifken o node geçici üretim, hız, asimilasyon ve cap bonusu verir.</li>
+                        <li><b>İyon Fırtınası:</b> Alan içindeki filoları yavaşlatır. Uzun, açık rota yerine güvenli açı ve staging daha değerlidir.</li>
+                        <li><b>Karartma Bölgesi:</b> Alan içinde territory bonusu ve park filo koruması çalışmaz. Güvenli sandığın bölge bir anda nötrleşebilir.</li>
+                        <li><b>CORE işareti:</b> Bu node genelde <b>Relay Core</b>'dur. Ele geçirilip asimile edilirse supply omurgasına tempo kazandırır.</li>
+                        <li><b>BOSS işareti:</b> Bu node genelde <b>Mega Turret</b>'tir. Geniş menzilli, ağır savunmalı bir objective olarak düşün.</li>
                     </ul>
-                    <div class="tutorial-tip"><strong>Strateji:</strong> Harita özelliği neyse ilk planını onun etrafında kur. Wormhole, GATE ve pulse genelde "ilk büyük hedef" olmalıdır.</div>
+                    <div class="tutorial-tip"><strong>Strateji:</strong> Harita özelliği neyse ilk planını onun etrafında kur. Wormhole, GATE, CORE ve pulse çoğu maçta ilk büyük karar alanını belirler.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-hud">
-                    <h3>9) HUD ve Bilgi Panelleri</h3>
+                    <h3>10) HUD ve Görev Panelleri</h3>
                     <ul>
                         <li><b>Power paneli (sağ üst):</b> Oyuncuların anlık güç sıralamasını gösterir. Renkler oyuncuya göre.</li>
                         <li><b>Send % / Slider:</b> Her tıklamada gönderilecek birlik oranı. 1-0 tuşlarıyla da değiştirilebilir.</li>
                         <li><b>Tick / Ping:</b> Oyun temposu, pulse süresi ve (çok oyunculuda) ağ gecikmesi.</li>
                         <li><b>Cap satırı:</b> Toplam birlik/cap oranını ve strain başlangıcını gösterir. Yüzde yükseliyorsa ekonomi daralıyor demektir.</li>
-                        <li><b>Orta bilgi satırı:</b> Seçili node'un upgrade maliyeti, field menzili, gate durumu, asimilasyon yüzdesi ve pulse bonuslarını tek satırda okursun.</li>
+                        <li><b>Görev paneli:</b> Campaign ve challenge modlarında zorunlu ve bonus objective'leri gösterir. Maçı neyin bitireceğini buradan okursun.</li>
+                        <li><b>Orta bilgi satırı:</b> Seçili node'un upgrade maliyeti, field menzili, gate durumu, asimilasyon yüzdesi, mutatör etkisi ve pulse bonuslarını tek satırda okursun.</li>
+                        <li><b>DOC düğmesi:</b> Doktrinin aktif becerisini açar. Hazır değilse cooldown durumunu yazar.</li>
                         <li><b>Minimap:</b> Genel durumu hızlı okumak için. CHAT ile sohbet paneli açılır.</li>
                         <li><b>THEME:</b> Açık/koyu tema değiştirir.</li>
                     </ul>

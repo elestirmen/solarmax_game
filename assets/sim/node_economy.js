@@ -124,6 +124,10 @@ export function stepNodeEconomy(params) {
         }
 
         node.supplied = supplyMult === 1;
+        if (node.kind === 'turret') {
+            node.prodAcc = 0;
+            continue;
+        }
         if (ownerUnitCount >= ownerCap) continue;
 
         var prodMult = strategicPulseAppliesToNode(node.id) ? strategicPulseProd : 1;

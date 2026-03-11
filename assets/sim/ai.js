@@ -87,7 +87,7 @@ export function decideAiCommands(state, playerIndex) {
 
     var profile = state.aiProfiles && state.aiProfiles[playerIndex] ? state.aiProfiles[playerIndex] : AI_ARCHETYPES[1];
     var diffCfg = state.diffCfg || difficultyConfig(state.diff);
-    var useFog = !!diffCfg.aiUsesFog;
+    var useFog = !!(diffCfg.aiUsesFog && state.tune && state.tune.fogEnabled);
     var power = state.powerByPlayer || {};
     var myPower = Number(power[playerIndex]) || 1;
     var humanPower = strongestHumanPower(state, playerIndex, power);
@@ -147,12 +147,12 @@ export function decideAiCommands(state, playerIndex) {
         capPerNodeFactor: state.rules ? state.rules.capPerNodeFactor : 42,
     });
     var capPressure = myCap > 0 ? myUnits / myCap : 0;
-    if (capPressure > 0.85) reserve = Math.max(1, Math.floor(reserve * 0.72));
+    if (capPressure > 0.75) reserve = Math.max(1, Math.floor(reserve * (capPressure > 0.9 ? 0.55 : 0.72)));
     reserve = Math.max(1, Math.floor(reserve * aiReserveScale));
     var maxSupportAssets = maxSources + 1;
     var turretSiegeMinBurst = 72;
-    var plannedNodeCommit = {};
-    var plannedFleetCommit = {};
+    var plannedNodeRemaining = {};
+    var plannedFleetRemaining = {};
     var territoryCache = {};
     var turretThreatCache = {};
     var hostileTurrets = [];
@@ -210,28 +210,48 @@ export function decideAiCommands(state, playerIndex) {
         if (ownTerritoryState[node.id] === undefined) ownTerritoryState[node.id] = territoryStateForPoint(node.pos);
         var territoryState = ownTerritoryState[node.id];
         var nodeReserve = reserve;
-        if (!isNodeAssimilated(node)) nodeReserve += 7;
-        else if (territoryState.contested) nodeReserve += 4;
+        if (!isNodeAssimilated(node)) {
+            if (territoryState.contested) nodeReserve += 7;
+            else if (!territoryState.friendlySafe) nodeReserve += 5;
+            else nodeReserve += 3;
+        } else if (territoryState.contested) nodeReserve += 4;
         else if (!territoryState.friendlySafe) nodeReserve += 2;
         if (node.gate) nodeReserve += 4;
         if (node.defense) nodeReserve += 2;
         if (node.kind === 'turret') nodeReserve += 3;
+        if (isNodeAssimilated(node) && !isFrontierNode(node)) {
+            nodeReserve = Math.max(1, Math.floor(nodeReserve * 0.35));
+        }
         return nodeReserve;
     }
 
     function availableNodeUnits(node) {
-        return Math.max(0, (Number(node && node.units) || 0) - sourceReserveForNode(node) - (plannedNodeCommit[node.id] || 0));
+        if (!node) return 0;
+        var remaining = plannedNodeRemaining[node.id];
+        if (!Number.isFinite(remaining)) remaining = Number(node.units) || 0;
+        return Math.max(0, remaining - sourceReserveForNode(node));
+    }
+
+    function canReusePlannedNode(node, minAvailable) {
+        if (!node) return false;
+        if (plannedNodeRemaining[node.id] === undefined) return true;
+        return availableNodeUnits(node) >= Math.max(1, Number(minAvailable) || 1);
     }
 
     function availableFleetUnits(fleet) {
-        return Math.max(0, (Number(fleet && fleet.count) || 0) - (plannedFleetCommit[fleet.id] || 0));
+        if (!fleet) return 0;
+        var remaining = plannedFleetRemaining[fleet.id];
+        if (!Number.isFinite(remaining)) remaining = Number(fleet.count) || 0;
+        return Math.max(0, remaining);
     }
 
     function estimateSendCountFromNode(node, pct) {
-        var available = availableNodeUnits(node);
-        if (available <= 1) return 0;
+        if (!node) return 0;
+        var remaining = plannedNodeRemaining[node.id];
+        if (!Number.isFinite(remaining)) remaining = Number(node.units) || 0;
+        if (remaining <= 1) return 0;
         return computeSendCount({
-            srcUnits: available,
+            srcUnits: remaining,
             pct: pct,
             flowMult: nodeTypeOf(node).flow,
         }).sendCount;
@@ -247,7 +267,14 @@ export function decideAiCommands(state, playerIndex) {
         for (var si = 0; si < sourceIds.length; si++) {
             var sourceNode = state.nodes[sourceIds[si]];
             if (!sourceNode) continue;
-            plannedNodeCommit[sourceNode.id] = (plannedNodeCommit[sourceNode.id] || 0) + estimateSendCountFromNode(sourceNode, pct);
+            var nodeRemaining = plannedNodeRemaining[sourceNode.id];
+            if (!Number.isFinite(nodeRemaining)) nodeRemaining = Number(sourceNode.units) || 0;
+            var nodeSend = computeSendCount({
+                srcUnits: nodeRemaining,
+                pct: pct,
+                flowMult: nodeTypeOf(sourceNode).flow,
+            }).sendCount;
+            plannedNodeRemaining[sourceNode.id] = Math.max(0, nodeRemaining - nodeSend);
         }
         for (var fi = 0; fi < fleetIds.length; fi++) {
             var fleet = null;
@@ -258,7 +285,9 @@ export function decideAiCommands(state, playerIndex) {
                 }
             }
             if (!fleet) continue;
-            plannedFleetCommit[fleet.id] = (plannedFleetCommit[fleet.id] || 0) + estimateSendCountFromFleet(fleet, pct);
+            var fleetRemaining = plannedFleetRemaining[fleet.id];
+            if (!Number.isFinite(fleetRemaining)) fleetRemaining = Number(fleet.count) || 0;
+            plannedFleetRemaining[fleet.id] = Math.max(0, fleetRemaining - computeFleetSendCount(fleetRemaining, pct));
         }
     }
 
@@ -291,6 +320,24 @@ export function decideAiCommands(state, playerIndex) {
 
     for (var ht = 0; ht < state.nodes.length; ht++) {
         if (isHostileTurretThreat(state.nodes[ht])) hostileTurrets.push(state.nodes[ht]);
+    }
+
+    var frontierCache = {};
+    function isFrontierNode(nodeToCheck) {
+        if (!nodeToCheck || !nodeToCheck.pos) return true;
+        if (frontierCache[nodeToCheck.id] !== undefined) return frontierCache[nodeToCheck.id];
+        var front = false;
+        for (var fn = 0; fn < state.nodes.length; fn++) {
+            var otherNode = state.nodes[fn];
+            if (!otherNode || !otherNode.pos || otherNode.owner === playerIndex) continue;
+            if (otherNode.owner === -1 && (Number(otherNode.units) || 0) <= 4) continue;
+            if (dist(nodeToCheck.pos, otherNode.pos) < SIM_CONSTANTS.SUPPLY_DIST * 1.2) {
+                front = true;
+                break;
+            }
+        }
+        frontierCache[nodeToCheck.id] = front;
+        return front;
     }
 
     function turretThreatForPoint(point) {
@@ -642,6 +689,11 @@ export function decideAiCommands(state, playerIndex) {
         score += Math.max(0, 55 - targetUnits * targetDefense) * 2.1;
         score += (Number(node.radius) || 0) * 0.75;
         if (node.owner === -1) score += 34;
+        if (node.owner === -1) {
+            if (own.length <= 2) score += 28;
+            else if (own.length <= 4) score += 18;
+            else if (own.length <= 6) score += 8;
+        }
         if (node.owner === -1 && myPower > humanPower * 1.08) score -= 12;
         if (node.kind === 'forge') score += 20;
         if (node.kind === 'relay') score += 12;
@@ -668,6 +720,15 @@ export function decideAiCommands(state, playerIndex) {
         if (doctrineId === 'siege' && (node.kind === 'turret' || node.defense)) score += 32;
         if (pressureGap > 0) score -= Math.min(48, pressureGap * 0.35);
         else score += Math.min(18, (Math.max(localSupport, localFriendlyPressure) - localEnemyPressure) * 0.12);
+        if (node.owner >= 0) {
+            var ownerTransitUnits = 0;
+            for (var ctf = 0; ctf < state.fleets.length; ctf++) {
+                var counterFleet = state.fleets[ctf];
+                if (!counterFleet || !counterFleet.active || counterFleet.owner !== node.owner) continue;
+                ownerTransitUnits += Math.max(0, Math.floor(Number(counterFleet.count) || 0));
+            }
+            if (ownerTransitUnits > 0) score += Math.min(38, ownerTransitUnits * 0.35);
+        }
         if ((turretThreat.covered || routeThreat.crossed) && node.kind !== 'turret') score -= humanCapitalTarget ? 28 : 84;
         if (node.kind === 'turret') {
             var turretPressureNeed = targetUnits * targetDefense + 23 + (Number(node.level) || 1) * 3;
@@ -702,7 +763,8 @@ export function decideAiCommands(state, playerIndex) {
     if (capPressure > 0.9) attackCount += 1;
     attackCount = Math.min(attackCount, targets.length, diffCfg.maxAttackTargets);
 
-    for (var ti = 0; ti < attackCount; ti++) {
+    var committedTargetCount = 0;
+    for (var ti = 0; ti < targets.length && committedTargetCount < attackCount; ti++) {
         var target = targets[ti];
         var targetNode = state.nodes[target.id];
         var sources = [];
@@ -734,6 +796,7 @@ export function decideAiCommands(state, playerIndex) {
                 if (turretThreatForPoint(siegeCandidate.pos).covered) continue;
                 var siegeNodeAvail = availableNodeUnits(siegeCandidate);
                 if (siegeNodeAvail <= 4) continue;
+                if (!canReusePlannedNode(siegeCandidate, 7)) continue;
                 siegeCandidatesForBurst.push({
                     node: siegeCandidate,
                     available: siegeNodeAvail,
@@ -777,6 +840,7 @@ export function decideAiCommands(state, playerIndex) {
                 var siegeBurstPct = (siegeBurstSources.length + siegeBurstFleetIds.length) <= 1 ? 1 : clamp(burstLaunchThreshold * 1.15 / Math.max(siegeBurstTotal, 1), 0.75, 0.95);
                 commands.push({ type: 'send', data: { sources: siegeBurstSources, fleetIds: siegeBurstFleetIds, tgtId: targetNode.id, pct: siegeBurstPct } });
                 markCommittedAssets(siegeBurstSources, siegeBurstFleetIds, siegeBurstPct);
+                committedTargetCount++;
                 continue;
             }
 
@@ -791,6 +855,7 @@ export function decideAiCommands(state, playerIndex) {
             var ownNode = own[cj];
             var availableNode = availableNodeUnits(ownNode);
             if (availableNode <= 1) continue;
+            if (!canReusePlannedNode(ownNode, 7)) continue;
             if (!isNodeAssimilated(ownNode) && !target.territory.friendlySafe) continue;
             if (!canDispatchAI(ownNode, targetNode)) continue;
             assetCandidates.push({
@@ -877,6 +942,7 @@ export function decideAiCommands(state, playerIndex) {
         if (shouldFlow) commands.push({ type: 'flow', data: { srcId: sources[0], tgtId: targetNode.id } });
         commands.push({ type: 'send', data: { sources: sources, fleetIds: fleetIds, tgtId: targetNode.id, pct: pct } });
         markCommittedAssets(sources, fleetIds, pct);
+        committedTargetCount++;
     }
 
     var upgradeGate = ((state.tick + playerIndex * 11) % aiUpgradePeriod) === 0;
@@ -904,8 +970,10 @@ export function decideAiCommands(state, playerIndex) {
     for (var di = 0; di < own.length && defenseCommands < 2; di++) {
         var defenseNode = own[di];
         var pulseHold = strategicPulseAppliesToNode(state, defenseNode.id);
+        var defensePressure = computeLocalPressure(defenseNode.pos);
+        var contestedHold = defensePressure.enemy > Math.max(10, defensePressure.friendly * 0.92);
         var shouldFortify = !defenseNode.defense && (
-            (!isNodeAssimilated(defenseNode) && defenseNode.units < defenseNode.maxUnits * 0.72) ||
+            (!isNodeAssimilated(defenseNode) && contestedHold && defenseNode.units < defenseNode.maxUnits * 0.72) ||
             (pulseHold && defenseNode.units < defenseNode.maxUnits * 0.78) ||
             (defenseNode.gate && defenseNode.units < defenseNode.maxUnits * 0.62)
         );
@@ -923,6 +991,51 @@ export function decideAiCommands(state, playerIndex) {
         if (shouldReleaseDefense) {
             commands.push({ type: 'toggleDefense', data: { nodeId: defenseNode.id } });
             defenseCommands++;
+        }
+    }
+
+    var reinforceCount = 0;
+    for (var tri = 0; tri < own.length && reinforceCount < 2; tri++) {
+        var threatenedNode = own[tri];
+        var incomingEnemyUnits = 0;
+        for (var tef = 0; tef < state.fleets.length; tef++) {
+            var threatFleet = state.fleets[tef];
+            if (!threatFleet || !threatFleet.active || threatFleet.holding || threatFleet.owner === playerIndex) continue;
+            if (Math.floor(Number(threatFleet.tgtId)) !== threatenedNode.id) continue;
+            incomingEnemyUnits += Math.max(0, Math.floor(Number(threatFleet.count) || 0));
+        }
+        if (incomingEnemyUnits <= 3) continue;
+        var currentGarrison = Number(threatenedNode.units) || 0;
+        var friendlyIncoming = incomingByTarget[threatenedNode.id] || 0;
+        var effectiveDefense = (currentGarrison + friendlyIncoming) * (nodeTypeOf(threatenedNode).def || 1) * (threatenedNode.defense ? SIM_CONSTANTS.DEFENSE_BONUS : 1);
+        var reinforceDeficit = incomingEnemyUnits - effectiveDefense + 6;
+        if (reinforceDeficit <= 0) continue;
+
+        var reinforceSrcs = [];
+        var reinforceGathered = 0;
+        var reinforceCands = [];
+        for (var rcn = 0; rcn < own.length; rcn++) {
+            var rcNode = own[rcn];
+            if (!rcNode || rcNode.id === threatenedNode.id) continue;
+            if (availableNodeUnits(rcNode) <= 3) continue;
+            if (!canDispatchAI(rcNode, threatenedNode)) continue;
+            reinforceCands.push(rcNode);
+        }
+        reinforceCands.sort(function (a, b) {
+            return dist(a.pos, threatenedNode.pos) - dist(b.pos, threatenedNode.pos);
+        });
+        for (var rci = 0; rci < reinforceCands.length && reinforceSrcs.length < maxSources; rci++) {
+            var rAvail = availableNodeUnits(reinforceCands[rci]);
+            if (rAvail <= 0) continue;
+            reinforceSrcs.push(reinforceCands[rci].id);
+            reinforceGathered += rAvail;
+            if (reinforceGathered >= reinforceDeficit) break;
+        }
+        if (reinforceSrcs.length > 0 && reinforceGathered >= Math.max(reinforceDeficit * 0.4, 4)) {
+            var reinforcePct = clamp(reinforceDeficit / Math.max(reinforceGathered, 1), 0.25, 0.65);
+            commands.push({ type: 'send', data: { sources: reinforceSrcs, tgtId: threatenedNode.id, pct: reinforcePct } });
+            markCommittedAssets(reinforceSrcs, [], reinforcePct);
+            reinforceCount++;
         }
     }
 

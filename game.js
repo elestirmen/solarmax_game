@@ -72,7 +72,7 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     TURRET_RANGE = 220,
     TURRET_DPS = 16,
     TURRET_MIN_GARRISON = 8,
-    TURRET_CAPTURE_RESIST = 1.35,
+    TURRET_CAPTURE_RESIST = 1.7,
     DEFENSE_FIELD_RANGE_PAD = 24,
     DEFENSE_FIELD_LEVEL_RANGE = 4,
     DEFENSE_FIELD_DPS = 2.6,
@@ -3153,8 +3153,21 @@ function render(ctx, cv, tick) {
 
         // unit count text
         ctx.font = 'bold ' + Math.max(11, n.radius * 0.5) + 'px Outfit,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        if (!vis && n.owner !== G.human) { ctx.fillStyle = dUnits === '?' ? '#555' : '#777'; }
-        else { ctx.fillStyle = '#fff'; }
+        var unitFill = '#fff';
+        var unitStroke = 'rgba(6,10,16,0.78)';
+        if (!vis && n.owner !== G.human) {
+            unitFill = dUnits === '?' ? '#555' : '#777';
+            unitStroke = 'rgba(6,10,16,0.45)';
+        } else if (n.kind === 'turret') {
+            unitFill = '#f7fbff';
+            unitStroke = 'rgba(4,8,14,0.96)';
+        }
+        ctx.lineJoin = 'round';
+        ctx.miterLimit = 2;
+        ctx.lineWidth = n.kind === 'turret' ? 4.5 : 3.2;
+        ctx.strokeStyle = unitStroke;
+        ctx.strokeText(dUnits, n.pos.x, n.pos.y);
+        ctx.fillStyle = unitFill;
         ctx.fillText(dUnits, n.pos.x, n.pos.y); ctx.shadowBlur = 0;
 
         if (vis || n.owner === G.human) {

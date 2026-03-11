@@ -125,3 +125,63 @@ test('stepNodeEconomy advances assimilation before production and keeps unassimi
     assert.equal(nodes[0].supplied, false);
     assert.equal(nodes[0].units, 12);
 });
+
+test('stepNodeEconomy prevents turrets from producing and clears stored production', function () {
+    var nodes = [
+        {
+            id: 7,
+            owner: 1,
+            kind: 'turret',
+            level: 1,
+            radius: 24,
+            units: 14,
+            maxUnits: 20,
+            prodAcc: 3.4,
+            assimilationProgress: 1,
+            assimilationLock: 0,
+            defense: false,
+        },
+    ];
+    var stats = { unitsProduced: 0 };
+
+    stepNodeEconomy({
+        nodes: nodes,
+        humanIndex: 0,
+        powerByPlayer: { 0: 30, 1: 30 },
+        supplyByPlayer: { 1: new Set([7]) },
+        ownerUnits: { 1: 14 },
+        ownerCaps: { 1: 50 },
+        tune: { prod: 10, aiAssist: false },
+        diffCfg: { humanProdMult: 1, aiProdMult: 1 },
+        rules: { applyExtraPenalties: true },
+        stats: stats,
+        constants: {
+            baseProd: 1,
+            nodeRadiusMax: 36,
+            isolatedProdPenalty: 0.4,
+            capSoftStart: 0.8,
+            capSoftFloor: 0.2,
+            ddaMaxBoost: 0.5,
+            defenseProdPenalty: 0.7,
+            strategicPulseProd: 1.5,
+            strategicPulseAssim: 1.2,
+            defenseAssimBonus: 1.1,
+            assimBaseRate: 0.001,
+            assimUnitBonus: 0.0001,
+            assimGarrisonFloor: 0.35,
+            assimLevelResist: 0.3,
+        },
+        callbacks: {
+            clamp: clamp,
+            nodeTypeOf: function () { return { prod: 2.5, def: 2.25 }; },
+            nodeCapacity: function () { return 20; },
+            nodeLevelProdMult: function () { return 1.2; },
+            strategicPulseAppliesToNode: function () { return true; },
+            isNodeAssimilated: function () { return true; },
+        },
+    });
+
+    assert.equal(nodes[0].units, 14);
+    assert.equal(nodes[0].prodAcc, 0);
+    assert.equal(stats.unitsProduced, 0);
+});
