@@ -1953,7 +1953,9 @@
 
         #hudRight {
             display: flex;
-            gap: 8px
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end
         }
 
         #hudCenter {
@@ -2006,6 +2008,15 @@
         #hudRight button:disabled {
             opacity: 0.45;
             cursor: not-allowed;
+        }
+
+        #hudRight button.active {
+            background: rgba(74, 142, 255, 0.28);
+            border-color: rgba(74, 142, 255, 0.45);
+        }
+
+        #hudRight .hud-mobile-action {
+            display: none;
         }
 
         #hudRight button.hud-exit-btn {
@@ -2096,52 +2107,6 @@
             color: var(--text);
             font-weight: 700;
             font-variant-numeric: tabular-nums;
-        }
-
-        #replayBar {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 8px 16px;
-            background: rgba(230, 60, 60, 0.15);
-            border-bottom: 1px solid rgba(230, 60, 60, 0.3);
-            z-index: 55;
-            font-size: .85rem
-        }
-
-        #replayBar.hidden {
-            display: none
-        }
-
-        #replayLabel {
-            font-weight: 700;
-            color: var(--danger);
-            letter-spacing: .08em
-        }
-
-        #replayBar button {
-            padding: 4px 10px;
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid var(--panel-border);
-            border-radius: var(--radius);
-            color: var(--text);
-            cursor: pointer;
-            font-size: .85rem
-        }
-
-        #replayBar button:hover {
-            background: rgba(255, 255, 255, 0.12)
-        }
-
-        #replayBar .secondary-btn {
-            display: inline;
-            width: auto;
-            margin: 0;
-            margin-left: auto
         }
 
         #tuningPanel {
@@ -2865,7 +2830,7 @@
             #hudRight {
                 order: 3;
                 display: grid;
-                grid-template-columns: repeat(5, minmax(0, 1fr));
+                grid-template-columns: repeat(4, minmax(0, 1fr));
                 gap: 6px;
                 justify-content: stretch;
             }
@@ -2875,6 +2840,10 @@
                 min-height: 42px;
                 padding: 8px 4px;
                 font-size: 0.72rem;
+            }
+
+            #hudRight .hud-mobile-action {
+                display: block;
             }
 
             #powerSidebar {
@@ -2958,16 +2927,6 @@
                 backdrop-filter: blur(10px);
             }
 
-            #replayBar {
-                flex-wrap: wrap;
-                gap: 8px;
-                padding: 8px 10px;
-            }
-
-            #replayBar .secondary-btn {
-                margin-left: 0;
-                width: 100%;
-            }
         }
 
         @media (max-width: 640px) {
@@ -3066,7 +3025,7 @@
             }
 
             #hudRight {
-                grid-template-columns: repeat(5, minmax(0, 1fr));
+                grid-template-columns: repeat(4, minmax(0, 1fr));
                 gap: 4px;
             }
 
@@ -3074,6 +3033,10 @@
                 min-height: 34px;
                 padding: 6px 2px;
                 font-size: 0.62rem;
+            }
+
+            #hudRight .hud-mobile-action {
+                display: block;
             }
 
             #powerSidebar {
@@ -3155,15 +3118,15 @@
                             <div class="menu-landing-chips">
                                 <span id="menuSeedChip" class="menu-hero-chip">Seed 42</span>
                                 <span id="menuPlaylistChip" class="menu-hero-chip">Standart</span>
-                                <span id="menuDoctrineChip" class="menu-hero-chip">Doctrine Auto</span>
-                                <span id="menuModeChip" class="menu-hero-chip">Advanced</span>
-                                <span id="menuFogChip" class="menu-hero-chip">Fog OFF</span>
+                                <span id="menuDoctrineChip" class="menu-hero-chip">Doktrin Otomatik</span>
+                                <span id="menuModeChip" class="menu-hero-chip">Gelişmiş</span>
+                                <span id="menuFogChip" class="menu-hero-chip">Sis Kapalı</span>
                             </div>
-                            <div id="menuQuickStatus" class="menu-landing-status">16 node | NORMAL | Standart akışı hazır</div>
+                            <div id="menuQuickStatus" class="menu-landing-status">16 node | Normal | Standart akışı hazır</div>
                         </div>
                     </div>
-                    <div id="menuStagePlaylistLabel" style="display:none">PLAYLIST // STANDARD</div>
-                    <div id="menuStageDoctrineLabel" style="display:none">DOCTRINE // AUTO</div>
+                    <div id="menuStagePlaylistLabel" style="display:none">OYUN LISTESI // STANDART</div>
+                    <div id="menuStageDoctrineLabel" style="display:none">DOKTRIN // OTOMATIK</div>
                     <div class="menu-command-strip">
                         <div class="menu-spotlight-card menu-spotlight-daily">
                             <div class="menu-spotlight-kicker">Bugünün Operasyonu</div>
@@ -3194,8 +3157,8 @@
                         <button id="menuOpenToolsBtn" class="menu-overview-card" type="button">
                             <div class="menu-overview-kicker">ARCHIVE</div>
                             <strong>Araçlar</strong>
-                            <span>Harita, replay, rehber.</span>
-                            <span class="menu-overview-meta">Custom map, replay, yardım</span>
+                            <span>Harita, liderlik, rehber.</span>
+                            <span class="menu-overview-meta">Custom map, liderlik, yardım</span>
                         </button>
                     </div>
                 </div>
@@ -3229,22 +3192,22 @@
                             </div>
                         </div>
                         <div id="menuDifficultyField" class="menu-field">
-                            <label for="difficultySelect">Difficulty</label>
+                            <label for="difficultySelect">Zorluk</label>
                             <select id="difficultySelect">
-                                <option value="easy">Easy</option>
+                                <option value="easy">Kolay</option>
                                 <option value="normal" selected>Normal</option>
-                                <option value="hard">Hard</option>
+                                <option value="hard">Zor</option>
                             </select>
                         </div>
                         <div class="menu-field">
-                            <label for="gameModeSelect">Game Mode</label>
+                            <label for="gameModeSelect">Oyun Modu</label>
                             <select id="gameModeSelect">
-                                <option value="classic">Classic</option>
-                                <option value="advanced" selected>Advanced</option>
+                                <option value="classic">Klasik</option>
+                                <option value="advanced" selected>Gelişmiş</option>
                             </select>
                         </div>
                         <div class="menu-field">
-                            <label for="playlistSelect">Playlist</label>
+                            <label for="playlistSelect">Oyun Listesi</label>
                             <select id="playlistSelect">
                                 <option value="standard" selected>Standart</option>
                                 <option value="chaos">Chaos</option>
@@ -3255,7 +3218,7 @@
                             </select>
                         </div>
                         <div class="menu-field">
-                            <label for="doctrineSelect">Doctrine</label>
+                            <label for="doctrineSelect">Doktrin</label>
                             <select id="doctrineSelect">
                                 <option value="auto" selected>Playlist Varsayılanı</option>
                                 <option value="logistics">Lojistik</option>
@@ -3345,14 +3308,14 @@
                             </select>
                         </div>
                         <div class="menu-field">
-                            <label for="multiModeSelect">Game Mode</label>
+                            <label for="multiModeSelect">Oyun Modu</label>
                             <select id="multiModeSelect">
-                                <option value="classic">Classic</option>
-                                <option value="advanced" selected>Advanced</option>
+                                <option value="classic">Klasik</option>
+                                <option value="advanced" selected>Gelişmiş</option>
                             </select>
                         </div>
                         <div class="menu-field">
-                            <label for="multiPlaylistSelect">Playlist</label>
+                            <label for="multiPlaylistSelect">Oyun Listesi</label>
                             <select id="multiPlaylistSelect">
                                 <option value="standard" selected>Standart</option>
                                 <option value="chaos">Chaos</option>
@@ -3363,9 +3326,9 @@
                             </select>
                         </div>
                         <div class="menu-field">
-                            <label for="multiDoctrineSelect">Doctrine</label>
+                            <label for="multiDoctrineSelect">Doktrin</label>
                             <select id="multiDoctrineSelect">
-                                <option value="auto" selected>Doctrine Auto</option>
+                                <option value="auto" selected>Doktrin Otomatik</option>
                                 <option value="logistics">Lojistik</option>
                                 <option value="assimilation">Asimilasyon</option>
                                 <option value="siege">Kuşatma</option>
@@ -3376,11 +3339,11 @@
                             <input type="text" id="multiSeedInput" value="42" placeholder="Seed" />
                         </div>
                         <div class="menu-field">
-                            <label for="multiDiffSelect">Difficulty</label>
+                            <label for="multiDiffSelect">Zorluk</label>
                             <select id="multiDiffSelect">
-                                <option value="easy">Easy</option>
+                                <option value="easy">Kolay</option>
                                 <option value="normal" selected>Normal</option>
-                                <option value="hard">Hard</option>
+                                <option value="hard">Zor</option>
                             </select>
                         </div>
                         <div class="menu-field menu-field-span-2">
@@ -3411,10 +3374,9 @@
                         <div id="customMapStatus" class="menu-status-note">Custom map yükleyip başlangıç düzenini, anomalileri ve açılış node sahipliklerini sabitleyebilirsin. Yüklenen haritayı online oda olarak da açabilirsin.</div>
                     </div>
                     <div class="menu-card">
-                        <h3>Replay ve Liderlik</h3>
-                        <p class="menu-card-copy">Kaydedilmiş maçları tekrar izle veya günlük challenge liderliğini kontrol et.</p>
+                        <h3>Liderlik</h3>
+                        <p class="menu-card-copy">Günlük challenge ve genel skor tablosunu buradan kontrol et.</p>
                         <div class="menu-card-actions">
-                            <button id="loadReplayBtn" class="secondary-btn">Replay Yükle</button>
                             <button id="leaderboardBtn" class="secondary-btn">Liderlik</button>
                         </div>
                     </div>
@@ -3431,7 +3393,6 @@
             <div id="leaderboardOverlay" class="overlay hidden">
                 <div class="menu-panel"><h3>Liderlik Tablosu</h3><div id="leaderboardList"></div><button id="leaderboardClose" class="secondary-btn">Kapat</button></div>
             </div>
-            <input type="file" id="replayFileInput" accept=".json" style="display:none;" />
             <input type="file" id="customMapFileInput" accept=".json" style="display:none;" />
         </div>
     </div>
@@ -3475,7 +3436,7 @@
                         <li><b>Oyunu Özelleştir:</b> Seed, node sayısı, zorluk, playlist, doktrin, oyun modu ve sis ayarları bu paneldedir. Aynı ayarlar standart çok oyunculu host kurulumunda da kullanılır.</li>
                         <li><b>Senaryo ve Challenge:</b> Kampanya bölümleri ve günlük challenge burada toplanır. Günlük challenge serbest maçtan ayrı kurallarla açılır.</li>
                         <li><b>Çok Oyunculu:</b> Nick gir, <b>Oda Kur</b> ile kayıtlı ayarlarla hemen host ol veya <b>Oda Kurulumu</b> panelinde detayları değiştir. 5 haneli <b>Oda Kodu</b> ile mevcut odaya katıl.</li>
-                        <li><b>Araçlar:</b> Özel harita yükleme, replay açma, liderlik ve yardım içerikleri ana başlatma akışından ayrıdır.</li>
+                        <li><b>Araçlar:</b> Özel harita yükleme, liderlik ve yardım içerikleri ana başlatma akışından ayrıdır.</li>
                     </ul>
                     <div class="tutorial-tip"><strong>İpucu:</strong> İlk turlarda <b>Standart</b> veya <b>Zen</b> playlist ile başlamak sistemi daha rahat okutuyor.</div>
                 </div>
@@ -3493,7 +3454,7 @@
                         <li><b>Sağ tık (düşman veya tarafsız):</b> Seçili kaynaklardan hedefe <b>Flow</b> bağlantısı aç/kapat. Bu, tek saldırı değil, sürekli baskı emridir.</li>
                         <li><b>HUD orta bilgi satırı:</b> Seçili node için upgrade maliyeti, defense tradeoff'u, supply indirimi, savunma alanı, gate, mutatör ve aktif pulse bonusları gösterilir.</li>
                         <li><b>Orta tuş + sürükle:</b> Kamerayı kaydır. <b>Mouse tekeri:</b> Zoom in/out.</li>
-                        <li><b>Mobil:</b> Tek parmakla seç ve sürükle. İki parmakla haritayı pan/zoom yap.</li>
+                        <li><b>Mobil:</b> Tek parmakla seç ve sürükle. İki parmakla haritayı pan/zoom yap. Yükseltme, savunma ve flow için HUD'daki <b>YUK</b>, <b>SAV</b> ve <b>FLOW</b> düğmelerini kullan.</li>
                     </ul>
                 </div>
 
@@ -3509,7 +3470,7 @@
                     </div>
                     <ul>
                         <li><b>1-9, 0:</b> Gönderim yüzdesini sırasıyla %10, %20, ... %100 yapar.</li>
-                        <li><b>U:</b> Seçili gezegenleri upgrade eder (yeterli birlik ve seviye koşulu varsa).</li>
+                        <li><b>U:</b> Seçili gezegenleri upgrade eder (yeterli birlik ve seviye koşulu varsa). Mobilde aynı işlev <b>YUK</b> düğmesindedir.</li>
                         <li><b>A:</b> Tüm kendi gezegenlerini tek seferde seçer.</li>
                         <li><b>Q:</b> İnsan oyuncunun doktrin aktif becerisini tetikler. Aynı işlev HUD'daki <b>DOC</b> düğmesindedir.</li>
                         <li><b>Esc / P:</b> Tek oyunculuda oyunu duraklatır veya devam ettirir.</li>
@@ -3671,14 +3632,9 @@
             <div id="gameOverStats" class="game-stats"></div>
             <button id="rematchBtn" class="primary-btn" style="display:none">Tekrar Oyna</button>
             <button id="nextLevelBtn" class="primary-btn" style="display:none">Sonraki Bölüm</button>
-            <button id="replayBtn" class="primary-btn">Replay İzle</button><button
-                id="exportReplayBtn" class="secondary-btn">Replay Dışa Aktar</button><button id="restartBtn"
-                class="secondary-btn">Yeni Oyun</button>
+            <button id="restartBtn" class="secondary-btn">Yeni Oyun</button>
         </div>
     </div>
-    <div id="replayBar" class="hidden"><span id="replayLabel">REPLAY</span><button id="replaySlower">&lt;&lt;</button><button
-            id="replayPause">||</button><button id="replayFaster">&gt;&gt;</button><span id="replaySpeedLabel">1x</span><span
-            id="replayTickLabel">Tick: 0</span><button id="replayStop" class="secondary-btn">Replay'den Çık</button></div>
     <div id="minimap" class="minimap hidden">
         <canvas id="minimapCanvas"></canvas>
     </div>
@@ -3710,7 +3666,7 @@
             <div id="hudTelemetryRow" class="hud-center-top"><span id="hudTick">Tick: 0</span><span id="hudCap">Cap 0/0</span><span id="pingDisplay" class="ping-display"></span></div>
             <span id="hudMeta">Seçili node bilgisi burada görünür.</span>
         </div>
-        <div id="hudRight"><button id="pauseBtn" title="Duraklat">||</button><button id="speedBtn" title="Hız">1x</button><button id="doctrineBtn" title="Doctrine">DOC</button><button id="themeBtn" title="Tema">TEMA</button><button id="chatToggle" title="Sohbet">SOHBET</button><button id="exportMapHudBtn" title="Haritayı Dışa Aktar">MAP</button>
+        <div id="hudRight"><button id="pauseBtn" title="Duraklat">||</button><button id="speedBtn" title="Hız">1x</button><button id="upgradeHudBtn" class="hud-mobile-action" title="Seçili gezegenleri yükselt">YUK</button><button id="defenseHudBtn" class="hud-mobile-action" title="Seçili gezegenlerde savunmayı aç veya kapat">SAV</button><button id="flowHudBtn" class="hud-mobile-action" title="Seçili kaynaklar için flow hedefi seç">FLOW</button><button id="doctrineBtn" title="Doktrin">DOC</button><button id="themeBtn" title="Tema">TEMA</button><button id="chatToggle" title="Sohbet">SOHBET</button><button id="exportMapHudBtn" title="Haritayı Dışa Aktar">MAP</button>
         </div>
     </div>
     <div id="tuningPanel" class="hidden">

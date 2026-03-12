@@ -73,9 +73,8 @@ docker compose up -d --build
 - **Skirmish** - Free matches against AI or friends
 - **Campaign** - Structured handcrafted mission ladder
 - **Daily Challenge** - Seeded procedural scenario with daily variation
-- **Custom Maps** - In-game map editing plus import/export
+- **Custom Maps** - JSON-based custom map import/export flow
 - **Multiplayer** - Real-time Socket.IO rooms for up to 6 players
-- **Replay** - Save matches and watch them back
 
 ### AI
 
@@ -332,7 +331,7 @@ This order prioritizes features that reuse existing mechanics, reinforce the gam
 
 - one main mutator such as ion storms, blackout sectors, pulse-rich regions, or collapse corridors
 - deterministic generation tied to the seed
-- mutator data preserved in daily challenge, campaign, replay, and multiplayer state
+- mutator data preserved in daily challenge, campaign, and multiplayer state
 - short mutator description surfaced in HUD or mission UI
 
 **Why it matters**
@@ -345,7 +344,7 @@ This order prioritizes features that reuse existing mechanics, reinforce the gam
 
 - map manifest and generation integration
 - anomaly rendering language
-- replay and network snapshot support for mutator metadata
+- network snapshot support for mutator metadata
 
 **Success criteria**
 
@@ -511,14 +510,13 @@ This order prioritizes features that reuse existing mechanics, reinforce the gam
 - Elo / MMR
 - seasonal structure
 - spectator mode
-- replay browser
 - match history
 - post-match timelines and economy breakdowns
 
 **Dependencies**
 
 - robust authoritative sync
-- reliable replay data
+- reliable match-history data
 - better reconnect and stability behavior
 
 **Success criteria**
@@ -557,7 +555,6 @@ This order prioritizes features that reuse existing mechanics, reinforce the gam
 **Scope**
 
 - shareable challenge seeds
-- replay sharing
 - featured daily / weekly sectors
 - community map showcases
 - tournament or event playlists
@@ -617,7 +614,7 @@ Constraints:
 - local and authoritative simulation must use the same rules
 - do not damage mobile readability
 - keep CPU cost low
-- do not break replay, snapshot, or sync logic
+- do not break snapshot or sync logic
 
 Expected output:
 - code changes
@@ -642,7 +639,7 @@ Look at:
 Goal:
 - each match can have one dominant environmental rule
 - that rule must be deterministic from the seed
-- it must be preserved in replay and multiplayer snapshots
+- it must be preserved in multiplayer snapshots
 
 For the first version, implement at most 2 mutators:
 - ion storm: fleets move slower inside a region
@@ -742,7 +739,7 @@ Inspect:
 Constraints:
 - do not turn this into a heavy tech tree
 - actives should not require high APM
-- think about multiplayer snapshot, replay, and AI compatibility
+- think about multiplayer snapshot and AI compatibility
 
 Expected output:
 - data model
@@ -788,10 +785,9 @@ Target areas:
 - Elo / MMR
 - seasons
 - spectator mode
-- replay browser
 - match history
 
-First inspect the existing multiplayer, replay, and authoritative sync architecture.
+First inspect the existing multiplayer and authoritative sync architecture.
 Then output:
 - current state
 - missing infrastructure

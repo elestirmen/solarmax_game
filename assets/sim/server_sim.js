@@ -420,7 +420,7 @@ export function applyCommandToAuthoritativeState(state, playerIndex, type, data)
 }
 
 export function simulateAuthoritativeTick(state) {
-    if (!state || (state.state !== 'playing' && state.state !== 'replay')) return state;
+    if (!state || state.state !== 'playing') return state;
     state.doctrineStates = tickDoctrineStates(state.doctrines, state.doctrineStates);
 
     state.strategicPulse = getStrategicPulseState({

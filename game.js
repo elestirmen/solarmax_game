@@ -29,10 +29,11 @@ import { stepFlowLinks } from './assets/sim/flow_step.js';
 import { decideAiCommands } from './assets/sim/ai.js';
 import { isPointInsideMapMutator, isTerritoryBonusBlockedAtPoint as isTerritoryBonusBlockedByMutator, mapMutatorHint, mapMutatorName, resolveMapMutator } from './assets/sim/mutator.js';
 import { CAMPAIGN_LEVELS } from './assets/campaign/levels.js';
-import { buildDailyChallenge, dailyChallengeKey } from './assets/campaign/daily_challenge.js';
+import { buildDailyChallenge } from './assets/campaign/daily_challenge.js';
 import { describeCampaignObjectives, evaluateCampaignObjectives } from './assets/campaign/objectives.js';
 import { buildCustomMapExport, normalizeCustomMapConfig } from './assets/sim/custom_map.js';
 import { resolveMatchEndState } from './assets/sim/end_state.js';
+import { todayDateKey } from './assets/sim/match_manifest.js';
 import { playlistName, resolvePlaylistConfig } from './assets/sim/playlists.js';
 import { renderLeaderboardUI, renderMissionPanel, renderRoomListUI, renderStatRows } from './assets/ui/renderers.js';
 
@@ -90,7 +91,8 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     CAP_SOFT_START = 0.82,
     CAP_SOFT_FLOOR = 0.28,
     DEFENSE_ASSIM_BONUS = 1.18,
-    SUPPLIED_UPGRADE_DISCOUNT = 0.94;
+    SUPPLIED_UPGRADE_DISCOUNT = 0.94,
+    DAILY_CHALLENGE_TIMEZONE = 'Europe/Istanbul';
 var SYNC_HASH_INTERVAL_TICKS = 90, TICK_RATE = Math.round(1 / TICK_DT);
 
 var NODE_TYPE_DEFS = {
@@ -361,8 +363,7 @@ var G = {
     cam: { x: MAP_W / 2, y: MAP_H / 2, zoom: 1 },
     diffCfg: DIFFICULTY_PRESETS.normal,
     tune: { prod: 1, fspeed: FLEET_SPEED, def: DEF_FACTOR, flowInt: 15, aiAgg: AI_AGG, aiBuf: AI_BUF, aiInt: AI_INTERVAL, fogEnabled: false, aiAssist: true },
-    rec: { events: [], seed: 0, nc: 0, diff: 'normal' },
-    rep: null, aiTicks: [], flowId: 0, fleetSerial: 0,
+    aiTicks: [], flowId: 0, fleetSerial: 0,
     aiProfiles: [], mapFeature: { type: 'none' }, mapMutator: { type: 'none' }, wormholes: [],
     playlist: 'standard', doctrineId: '', doctrines: [], doctrineStates: [], encounters: [], encounterContext: {}, objectives: [], endOnObjectives: false,
     stats: { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0, doctrineActivations: 0 },
@@ -880,7 +881,6 @@ function applyCustomMapDefinition(customMap) {
 // Ã¢â€â‚¬Ã¢â€â‚¬ INIT GAME Ã¢â€â‚¬Ã¢â€â‚¬
 function initGame(seedStr, nc, diff, opts) {
     opts = opts || {};
-    var keepReplay = !!opts.keepReplay;
     var keepTuning = !!opts.keepTuning;
     var menuFog = typeof opts.fogEnabled === 'boolean' ? opts.fogEnabled : null;
     var playlistConfig = resolvePlaylistConfig({
@@ -1008,28 +1008,13 @@ function initGame(seedStr, nc, diff, opts) {
     G.strategicPulse.announcedCycle = -1;
     var pn = preferredCameraNodeForPlayer(G.human);
     if (pn) { G.cam.x = pn.pos.x; G.cam.y = pn.pos.y; } G.cam.zoom = 1;
-    if (!keepReplay) G.rec = {
-        events: [],
-        seed: G.seed,
-        nc: nc,
-        diff: diff,
-        rulesMode: G.rulesMode,
-        mapFeature: JSON.parse(JSON.stringify(G.mapFeature || { type: 'none' })),
-        mapMutator: JSON.parse(JSON.stringify(G.mapMutator || { type: 'none' })),
-        playlist: G.playlist || 'standard',
-        doctrineId: G.doctrineId || '',
-        encounters: JSON.parse(JSON.stringify(G.encounters || [])),
-        objectives: JSON.parse(JSON.stringify(G.objectives || [])),
-        endOnObjectives: G.endOnObjectives === true,
-        };
-    if (!keepReplay) G.rep = null;
-    G.state = keepReplay ? 'replay' : 'playing';
+    G.state = 'playing';
     G.campaign.reminderShown = {};
     G.daily.reminderShown = {};
-    if (!keepReplay && G.mapFeature.type === 'barrier') showHintToast(barrierGatePromptText());
-    if (!keepReplay && G.mapMutator && G.mapMutator.type !== 'none') showHintToast(mapMutatorHint(G.mapMutator));
-    if (!keepReplay && G.encounters && G.encounters.length) showHintToast(encounterHint(G.encounters[0]));
-    if (!keepReplay && humanDoctrineId()) showHintToast(doctrineSummary(humanDoctrineId()));
+    if (G.mapFeature.type === 'barrier') showHintToast(barrierGatePromptText());
+    if (G.mapMutator && G.mapMutator.type !== 'none') showHintToast(mapMutatorHint(G.mapMutator));
+    if (G.encounters && G.encounters.length) showHintToast(encounterHint(G.encounters[0]));
+    if (humanDoctrineId()) showHintToast(doctrineSummary(humanDoctrineId()));
 }
 function genMap(nc) {
     G.nodes = []; var att = 0, placed = 0, minDist = NODE_MINDIST;
@@ -1448,8 +1433,6 @@ function aiDecide(pi) {
     return decideAiCommands(G, pi);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ REPLAY Ã¢â€â‚¬Ã¢â€â‚¬
-function recEvt(type, data) { if (net.online) return; G.rec.events.push({ tick: G.tick, type: type, data: data || {} }); }
 function applyPlayerCommand(playerIndex, type, data) {
     return applyPlayerCommandWithOps(playerIndex, type, data, {
         send: dispatch,
@@ -1460,52 +1443,11 @@ function applyPlayerCommand(playerIndex, type, data) {
         activateDoctrine: activateDoctrineForPlayer,
     });
 }
-function applyRep(evt) {
-    var d = evt.data || {};
-    var type = evt.type;
-    if (type === 'sendPacket') type = 'send';
-    else if (type === 'toggleFlow') type = 'flow';
-    else if (type === 'removeFlow') type = 'rmFlow';
-    else if (type === 'speedChange') type = 'speed';
-    else if (type === 'upgradeNode') type = 'upgrade';
-    else if (type === 'toggleDefense') { applyPlayerCommand(G.human, 'toggleDefense', d); return; }
-    else if (type === 'activateDoctrine') { applyPlayerCommand(G.human, 'activateDoctrine', d); return; }
-
-    switch (type) {
-        case 'select': {
-            var ids = d.ids || d.nodeIds || [];
-            var fleetIds = d.fleetIds || [];
-            if (!d.append) clearSelection(true);
-            for (var si = 0; si < ids.length; si++) if (G.nodes[ids[si]]) inp.sel.add(ids[si]);
-            for (var sj = 0; sj < fleetIds.length; sj++) if (findHoldingFleetById(fleetIds[sj])) inp.selFleets.add(fleetIds[sj]);
-            syncNodeSelectionFlags();
-            break;
-        }
-        case 'deselect':
-            clearSelection(true);
-            break;
-        case 'send':
-            applyPlayerCommand(G.human, 'send', d);
-            break;
-        case 'flow':
-            applyPlayerCommand(G.human, 'flow', d);
-            break;
-        case 'rmFlow':
-            applyPlayerCommand(G.human, 'rmFlow', d);
-            break;
-        case 'speed':
-            G.speed = d.speed;
-            break;
-        case 'upgrade':
-            applyPlayerCommand(G.human, 'upgrade', d);
-            break;
-    }
-}
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ TICK Ã¢â€â‚¬Ã¢â€â‚¬
 function gameTick(runtimeOpts) {
     runtimeOpts = runtimeOpts || {};
-    if (G.state !== 'playing' && G.state !== 'replay') return;
+    if (G.state !== 'playing') return;
 
     // Lockstep determinism: Throttle simulation to stay synced with server ticks
     if (net.online) {
@@ -1552,10 +1494,6 @@ function gameTick(runtimeOpts) {
         }
     }
 
-    if (G.rep && G.state === 'replay') {
-        while (G.rep.idx < G.rep.events.length && G.rep.events[G.rep.idx].tick === G.tick) { applyRep(G.rep.events[G.rep.idx]); G.rep.idx++; }
-        if (G.rep.idx >= G.rep.events.length && G.tick > ((G.rep.events.length ? G.rep.events[G.rep.events.length - 1].tick : 0) + 90)) { G.state = 'gameOver'; return; }
-    }
     G.doctrineStates = tickDoctrineStates(G.doctrines, G.doctrineStates);
     G.strategicPulse = currentStrategicPulse(G.tick);
     strategicPulseToast();
@@ -1818,7 +1756,7 @@ function checkEnd() {
     for (var i = 0; i < G.players.length; i++) G.players[i].alive = resolved.playersAlive[i] !== false;
     if (resolved.gameOver) {
         G.winner = resolved.winnerIndex;
-        if (G.state === 'playing' || G.state === 'replay') G.state = 'gameOver';
+        if (G.state === 'playing') G.state = 'gameOver';
     }
 }
 
@@ -3220,7 +3158,7 @@ function render(ctx, cv, tick) {
     ctx.restore();
     // minimap
     var mm = document.getElementById('minimapCanvas');
-    if (mm && mm.getContext && (G.state === 'playing' || G.state === 'replay') && G.nodes.length > 0) {
+    if (mm && mm.getContext && (G.state === 'playing' || G.state === 'paused') && G.nodes.length > 0) {
         var mmCtx = mm.getContext('2d');
         mm.width = 140; mm.height = 90;
         var scale = Math.min(mm.width / MAP_W, mm.height / MAP_H);
@@ -3370,7 +3308,7 @@ var inp = {
     sel: new Set(), selFleets: new Set(), marqActive: false, marqStart: { x: 0, y: 0 }, marqEnd: { x: 0, y: 0 }, dragActive: false, dragStart: { x: 0, y: 0 }, dragEnd: { x: 0, y: 0 }, dragNodeIds: [], dragFleetIds: [],
     dragPending: false, dragDownNodeId: -1, dragDownFleetId: -1, dragDownScreen: { x: 0, y: 0 }, dragThreshold: 6,
     panActive: false, panLast: { x: 0, y: 0 }, mw: { x: 0, y: 0 }, ms: { x: 0, y: 0 }, sendPct: 50, shift: false,
-    pinchActive: false, pinchStartDist: 0, pinchStartZoom: 1, pinchWorldCenter: { x: 0, y: 0 }, touchPointOrderPending: false, mousePointOrderPending: false
+    pinchActive: false, pinchStartDist: 0, pinchStartZoom: 1, pinchWorldCenter: { x: 0, y: 0 }, touchPointOrderPending: false, mousePointOrderPending: false, commandMode: ''
 };
 function s2w(sx, sy) { return { x: (sx - cv.width / 2) / G.cam.zoom + G.cam.x, y: (sy - cv.height / 2) / G.cam.zoom + G.cam.y }; }
 function touchScreenPos(touch) {
@@ -3418,20 +3356,27 @@ function pruneSelectedFleetIds() {
 function syncNodeSelectionFlags() {
     for (var i = 0; i < G.nodes.length; i++) G.nodes[i].selected = inp.sel.has(G.nodes[i].id);
 }
-function recordSelectionEvent(append) {
-    recEvt('select', { ids: Array.from(inp.sel), fleetIds: Array.from(inp.selFleets), append: !!append });
-}
-function clearSelection(skipReplayEvent) {
+function clearSelection() {
     inp.sel.clear();
     inp.selFleets.clear();
+    inp.commandMode = '';
     syncNodeSelectionFlags();
-    if (!skipReplayEvent) recEvt('deselect', {});
+}
+function selectedOwnedNodeIds(exceptId) {
+    var ids = [];
+    inp.sel.forEach(function (id) {
+        var node = G.nodes[id];
+        if (!node || node.owner !== G.human || id === exceptId) return;
+        ids.push(node.id);
+    });
+    return ids;
 }
 function selectEntityIds(nodeIds, fleetIds, append) {
     pruneSelectedFleetIds();
     if (!append) {
         inp.sel.clear();
         inp.selFleets.clear();
+        inp.commandMode = '';
     }
     for (var i = 0; i < nodeIds.length; i++) {
         var node = G.nodes[nodeIds[i]];
@@ -3444,7 +3389,6 @@ function selectEntityIds(nodeIds, fleetIds, append) {
         inp.selFleets.add(fleet.id);
     }
     syncNodeSelectionFlags();
-    recordSelectionEvent(append);
 }
 function selectNodeIds(ids, append) {
     selectEntityIds(ids, [], append);
@@ -3484,12 +3428,7 @@ function holdingFleetIdsInRect(s, e, pi) {
 }
 function selectedSendOrder(tgtId) {
     pruneSelectedFleetIds();
-    var srcs = [], fleetIds = [];
-    inp.sel.forEach(function (sid) {
-        var sn = G.nodes[sid];
-        if (!sn || sn.owner !== G.human || sid === tgtId) return;
-        srcs.push(sid);
-    });
+    var srcs = selectedOwnedNodeIds(tgtId), fleetIds = [];
     inp.selFleets.forEach(function (id) {
         var fleet = findHoldingFleetById(id);
         if (!fleet || fleet.owner !== G.human) return;
@@ -3503,7 +3442,6 @@ function sendFromSelectionTo(tgtId) {
     var sendData = { sources: selected.sources, fleetIds: selected.fleetIds, tgtId: tgtId, pct: inp.sendPct / 100 };
     if (!issueOnlineCommand('send', sendData)) {
         applyPlayerCommand(G.human, 'send', sendData);
-        recEvt('send', sendData);
     }
     return true;
 }
@@ -3523,7 +3461,6 @@ function sendFromSourcesTo(srcs, fleetIds, tgtId) {
     var sendData = { sources: valid, fleetIds: validFleetIds, tgtId: tgtId, pct: inp.sendPct / 100 };
     if (!issueOnlineCommand('send', sendData)) {
         applyPlayerCommand(G.human, 'send', sendData);
-        recEvt('send', sendData);
     }
     return true;
 }
@@ -3545,7 +3482,6 @@ function sendFromSourcesToPoint(srcs, fleetIds, point) {
     var sendData = { sources: valid, fleetIds: validFleetIds, targetPoint: targetPoint, pct: inp.sendPct / 100 };
     if (!issueOnlineCommand('send', sendData)) {
         applyPlayerCommand(G.human, 'send', sendData);
-        recEvt('send', sendData);
     }
     return true;
 }
@@ -3589,16 +3525,60 @@ function resetDragState() {
     inp.touchPointOrderPending = false;
     inp.mousePointOrderPending = false;
 }
+function clearCommandMode() {
+    inp.commandMode = '';
+}
+function toggleFlowFromSelectionTo(targetId) {
+    var sourceIds = selectedOwnedNodeIds(targetId);
+    if (!sourceIds.length) return false;
+    for (var i = 0; i < sourceIds.length; i++) {
+        var flowData = { srcId: sourceIds[i], tgtId: targetId };
+        if (!issueOnlineCommand('flow', flowData)) {
+            applyPlayerCommand(G.human, 'flow', flowData);
+        }
+    }
+    return true;
+}
+function activateSelectionUpgrade() {
+    var targetIds = selectedOwnedNodeIds();
+    if (!targetIds.length || !(G.rules && G.rules.allowUpgrade)) return false;
+    if (issueOnlineCommand('upgrade', { nodeIds: targetIds })) return true;
+    for (var i = 0; i < targetIds.length; i++) upgradeNode(G.human, targetIds[i]);
+    return true;
+}
+function activateSelectionDefense() {
+    var targetIds = selectedOwnedNodeIds();
+    if (!targetIds.length) return false;
+    if (issueOnlineCommand('toggleDefense', { nodeIds: targetIds })) return true;
+    for (var i = 0; i < targetIds.length; i++) toggleDefense(G.human, targetIds[i]);
+    return true;
+}
+function armFlowSelection() {
+    if (!selectedOwnedNodeIds().length) return false;
+    inp.commandMode = inp.commandMode === 'flow' ? '' : 'flow';
+    if (inp.commandMode === 'flow') showGameToast('Flow hedefini seç.');
+    return true;
+}
+function applyCommandModeTarget(nodeId) {
+    if (inp.commandMode !== 'flow') return false;
+    clearCommandMode();
+    if (!toggleFlowFromSelectionTo(nodeId)) {
+        showGameToast('Flow için farklı bir hedef seç.');
+        return true;
+    }
+    showGameToast('Flow emri güncellendi.');
+    return true;
+}
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ DOM Ã¢â€â‚¬Ã¢â€â‚¬
 var cv = document.getElementById('gameCanvas'), ctx = cv.getContext('2d');
 var $ = function (id) { return document.getElementById(id); };
-var mainMenu = $('mainMenu'), pauseOv = $('pauseOverlay'), goOv = $('gameOverOverlay'), hud = $('hud'), repBar = $('replayBar'), tunePanel = $('tuningPanel'), tuneOpen = $('tuneOpenBtn');
+var mainMenu = $('mainMenu'), pauseOv = $('pauseOverlay'), goOv = $('gameOverOverlay'), hud = $('hud'), tunePanel = $('tuningPanel'), tuneOpen = $('tuneOpenBtn');
 var seedIn = $('seedInput'), rndSeedBtn = $('randomSeedBtn'), ncIn = $('nodeCountInput'), ncLbl = $('nodeCountLabel'), diffSel = $('difficultySelect');
 var playlistSel = $('playlistSelect'), doctrineSel = $('doctrineSelect');
 var gameModeSel = $('gameModeSelect'), multiModeSel = $('multiModeSelect'), multiPlaylistSel = $('multiPlaylistSelect'), multiDoctrineSel = $('multiDoctrineSelect');
 var multiSeedIn = $('multiSeedInput'), multiNodeIn = $('multiNodeInput'), multiNodeLbl = $('multiNodeLabel'), multiDiffSel = $('multiDiffSelect'), multiRoomTypeIn = $('multiRoomTypeSelect');
-var startBtn = $('startBtn'), customStartBtn = $('customStartBtn'), sandboxBtn = $('sandboxBtn'), campaignBtn = $('campaignBtn'), dailyChallengeBtn = $('dailyChallengeBtn'), importMapBtn = $('importMapBtn'), exportMapBtn = $('exportMapBtn'), loadRepBtn = $('loadReplayBtn'), repFileIn = $('replayFileInput'), customMapFileIn = $('customMapFileInput');
+var startBtn = $('startBtn'), customStartBtn = $('customStartBtn'), sandboxBtn = $('sandboxBtn'), campaignBtn = $('campaignBtn'), dailyChallengeBtn = $('dailyChallengeBtn'), importMapBtn = $('importMapBtn'), exportMapBtn = $('exportMapBtn'), customMapFileIn = $('customMapFileInput');
 var menuCustomizeBtn = $('menuCustomizeBtn'), menuOpenContentBtn = $('menuOpenContentBtn'), menuOpenMultiplayerBtn = $('menuOpenMultiplayerBtn'), menuOpenToolsBtn = $('menuOpenToolsBtn');
 var menuHubView = $('menuHubView'), menuSubHeader = $('menuSubHeader'), menuSectionTitle = $('menuSectionTitle'), menuSectionCopy = $('menuSectionCopy'), menuBackBtn = $('menuBackBtn');
 var panelSingleCustomize = $('panelSingleCustomize'), panelContent = $('panelContent'), panelMultiplayer = $('panelMultiplayer'), panelHostSetup = $('panelHostSetup'), panelTools = $('panelTools');
@@ -3649,14 +3629,13 @@ if (howToPlayOv) {
 var roomStatusEl = $('roomStatus'), roomPlayersEl = $('roomPlayers'), roomListEl = $('roomList');
 var chatMessagesEl = $('chatMessages');
 var pauseTitleEl = $('pauseTitle'), pauseHintEl = $('pauseHint'), resumeBtn = $('resumeBtn'), quitBtn = $('quitBtn');
-var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameOverStats'), repBtn = $('replayBtn'), expRepBtn = $('exportReplayBtn'), restartBtn = $('restartBtn'), nextLevelBtn = $('nextLevelBtn');
+var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameOverStats'), restartBtn = $('restartBtn'), nextLevelBtn = $('nextLevelBtn');
 var hudTelemetryRow = $('hudTelemetryRow'), hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), hudCap = $('hudCap'), hudMeta = $('hudMeta'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
-var doctrineBtn = $('doctrineBtn');
+var doctrineBtn = $('doctrineBtn'), upgradeHudBtn = $('upgradeHudBtn'), defenseHudBtn = $('defenseHudBtn'), flowHudBtn = $('flowHudBtn');
 var sendPctQuickBtns = Array.prototype.slice.call(document.querySelectorAll('.send-quick-btn'));
 var powerSidebar = $('powerSidebar'), powerListEl = $('powerList');
 var scenarioOv = $('scenarioOverlay'), scenarioStartBtn = $('scenarioStartBtn'), scenarioCloseBtn = $('scenarioCloseBtn'), scenarioProgressEl = $('scenarioProgress'), scenarioBubbleListEl = $('scenarioBubbleList'), scenarioMissionEl = $('scenarioMission');
 var campaignMissionHud = $('campaignMissionHud'), dailyChallengeCard = $('dailyChallengeCard');
-var repSlower = $('replaySlower'), repPauseBtn = $('replayPause'), repFaster = $('replayFaster'), repSpdLbl = $('replaySpeedLabel'), repTickLbl = $('replayTickLabel'), repStopBtn = $('replayStop');
 var tuneProd = $('tuneProduction'), tuneFSpd = $('tuneFleetSpeed'), tuneDef = $('tuneDefense'), tuneFlowInt = $('tuneFlowInterval');
 var tuneAiAgg = $('tuneAIAggression'), tuneAiBuf = $('tuneAIBuffer'), tuneAiDec = $('tuneAIDecision');
 var tuneResetBtn = $('tuneResetBtn'), tuneTogBtn = $('tuneToggleBtn');
@@ -3666,14 +3645,14 @@ var audioToggleBtn = $('audioToggleBtn'), hudInfoToggleBtn = $('hudInfoToggleBtn
 var tuneVals = { p: $('tuneProductionVal'), f: $('tuneFleetSpeedVal'), d: $('tuneDefenseVal'), fi: $('tuneFlowIntervalVal'), aa: $('tuneAIAggressionVal'), ab: $('tuneAIBufferVal'), ad: $('tuneAIDecisionVal') };
 var UI_PREFS_KEY = 'stellar_ui_prefs_v1';
 var DEFAULT_SFX_VOLUME = 0.85, DEFAULT_MUSIC_VOLUME = 0.55;
-var tuningOpen = false, lastRepData = null, powerRenderKey = '', inGameMenuOpen = false;
+var tuningOpen = false, powerRenderKey = '', inGameMenuOpen = false;
 var MENU_PANEL_META = {
     hub: { title: '', copy: '' },
     single_customize: { title: 'Oyunu Özelleştir', copy: 'Serbest maç ayarları ikinci katmanda durur; hızlı başlat akışından ayrıdır.' },
     content: { title: 'Senaryo ve Challenge', copy: 'Kampanya ve günlük challenge aynı panelde toplanır; serbest maç ayarlarından ayrıdır.' },
     multiplayer: { title: 'Çok Oyunculu', copy: 'İlk ekranda yalnızca nick, oda listesi, oda kur ve koda katıl akışı görünür.' },
     host_setup: { title: 'Oda Kurulumu', copy: 'Host ayarları ayrı açılır; standard room varsayımları shared menu state üzerinden korunur.' },
-    tools: { title: 'Araçlar', copy: 'Özel harita, replay, liderlik ve yardım ana oyun başlatma akışından ayrıldı.' },
+    tools: { title: 'Araçlar', copy: 'Özel harita, liderlik ve yardım ana oyun başlatma akışından ayrıldı.' },
 };
 var menuPanelViews = {
     hub: menuHubView,
@@ -3715,10 +3694,15 @@ function normalizeMenuPanel(panel) {
     return MENU_PANEL_META[panel] ? panel : 'hub';
 }
 function menuRulesModeLabel(mode) {
-    return normalizeMenuRulesMode(mode) === 'classic' ? 'Classic' : 'Advanced';
+    return normalizeMenuRulesMode(mode) === 'classic' ? 'Klasik' : 'Gelişmiş';
+}
+function menuDifficultyLabel(diff) {
+    if (diff === 'easy') return 'Kolay';
+    if (diff === 'hard') return 'Zor';
+    return 'Normal';
 }
 function menuDoctrineMenuLabel(doctrineId) {
-    if (!doctrineId || doctrineId === 'auto') return 'Doctrine Auto';
+    if (!doctrineId || doctrineId === 'auto') return 'Doktrin Otomatik';
     return doctrineName(doctrineId);
 }
 function setMenuLobbyMeta(text) {
@@ -3730,12 +3714,12 @@ function refreshMenuHeroSummary() {
     if (menuPlaylistChip) menuPlaylistChip.textContent = playlistName(sk.playlist || 'standard');
     if (menuDoctrineChip) menuDoctrineChip.textContent = menuDoctrineMenuLabel(sk.doctrineId);
     if (menuModeChip) menuModeChip.textContent = menuRulesModeLabel(sk.rulesMode);
-    if (menuFogChip) menuFogChip.textContent = sk.fogEnabled ? 'Fog ON' : 'Fog OFF';
+    if (menuFogChip) menuFogChip.textContent = sk.fogEnabled ? 'Sis Açık' : 'Sis Kapalı';
     if (menuQuickStatusEl) {
-        menuQuickStatusEl.textContent = sk.nodeCount + ' node | ' + String(sk.difficulty || 'normal').toUpperCase() + ' | ' + playlistName(sk.playlist || 'standard') + ' | ' + menuDoctrineMenuLabel(sk.doctrineId);
+        menuQuickStatusEl.textContent = sk.nodeCount + ' node | ' + menuDifficultyLabel(sk.difficulty || 'normal') + ' | ' + playlistName(sk.playlist || 'standard') + ' | ' + menuDoctrineMenuLabel(sk.doctrineId);
     }
-    if (menuStagePlaylistLabel) menuStagePlaylistLabel.textContent = 'PLAYLIST // ' + String(playlistName(sk.playlist || 'standard')).toUpperCase();
-    if (menuStageDoctrineLabel) menuStageDoctrineLabel.textContent = 'DOCTRINE // ' + String(menuDoctrineMenuLabel(sk.doctrineId)).toUpperCase();
+    if (menuStagePlaylistLabel) menuStagePlaylistLabel.textContent = 'OYUN LISTESI // ' + String(playlistName(sk.playlist || 'standard')).toUpperCase();
+    if (menuStageDoctrineLabel) menuStageDoctrineLabel.textContent = 'DOKTRIN // ' + String(menuDoctrineMenuLabel(sk.doctrineId)).toUpperCase();
 }
 function createInitialMenuState() {
     return {
@@ -3905,6 +3889,22 @@ function syncMatchHudControls() {
     if (spdBtn) {
         spdBtn.disabled = !!net.online;
         spdBtn.title = net.online ? 'Online maçlarda devre dışı' : 'Hız';
+    }
+    if (upgradeHudBtn) {
+        upgradeHudBtn.disabled = G.state !== 'playing' || !selectedOwnedNodeIds().length || !(G.rules && G.rules.allowUpgrade);
+        upgradeHudBtn.title = G.rules && G.rules.allowUpgrade ? 'Seçili gezegenleri yükselt' : 'Bu modda upgrade kapalı';
+    }
+    if (defenseHudBtn) {
+        defenseHudBtn.disabled = G.state !== 'playing' || !selectedOwnedNodeIds().length;
+        defenseHudBtn.title = 'Seçili gezegenlerde savunmayı aç veya kapat';
+    }
+    if (flowHudBtn) {
+        var hasOwnedSelection = selectedOwnedNodeIds().length > 0;
+        if (!hasOwnedSelection && inp.commandMode) clearCommandMode();
+        flowHudBtn.disabled = G.state !== 'playing' || !hasOwnedSelection;
+        flowHudBtn.textContent = inp.commandMode === 'flow' ? 'HEDEF' : 'FLOW';
+        flowHudBtn.title = inp.commandMode === 'flow' ? 'Flow hedefi seç' : 'Seçili kaynaklar için flow hedefi seç';
+        flowHudBtn.classList.toggle('active', inp.commandMode === 'flow');
     }
 }
 function setAudioEnabled(enabled) {
@@ -4092,13 +4092,12 @@ function activateDoctrineForPlayer(playerIndex) {
 function triggerHumanDoctrine() {
     if (!humanDoctrineId()) return false;
     if (issueOnlineCommand('activateDoctrine', {})) return true;
-    var activated = activateDoctrineForPlayer(G.human);
-    if (activated) recEvt('activateDoctrine', {});
-    return activated;
+    return activateDoctrineForPlayer(G.human);
 }
 
 function selectionMetaText() {
     if (!hudMeta || !inp || !inp.sel) return '';
+    if (inp.commandMode === 'flow') return 'FLOW modu aktif: hedef gezegene dokun ya da tıkla.';
     var ids = Array.from(inp.sel).filter(function (id) { return !!G.nodes[id]; });
     if (!ids.length) {
         var idleParts = [];
@@ -4306,7 +4305,7 @@ function refreshCampaignMissionPanels() {
     var rows = level ? currentCampaignObjectiveRows() : [];
 
     if (campaignMissionHud) {
-        if (!level || (G.state !== 'playing' && G.state !== 'replay')) {
+        if (!level || G.state !== 'playing') {
             campaignMissionHud.classList.add('hidden');
         } else {
             campaignMissionHud.classList.remove('hidden');
@@ -4356,7 +4355,7 @@ function maybeShowCampaignObjectiveReminder() {
 function maybeResolveMissionObjectiveVictory() {
     var level = currentMissionDefinition();
     if (!level || level.endOnObjectives !== true) return;
-    if (G.state !== 'playing' && G.state !== 'replay') return;
+    if (G.state !== 'playing') return;
     if (!currentMissionIsComplete()) return;
     G.winner = G.human;
     G.state = 'gameOver';
@@ -4791,8 +4790,9 @@ function showUI(st) {
     if (st !== 'playing') inGameMenuOpen = false;
     var pauseVisible = st === 'paused' || (st === 'playing' && inGameMenuOpen);
     mainMenu.classList.toggle('hidden', st !== 'mainMenu'); pauseOv.classList.toggle('hidden', !pauseVisible); goOv.classList.toggle('hidden', st !== 'gameOver');
-    var ig = st === 'playing' || st === 'paused' || st === 'replay'; hud.classList.toggle('hidden', !ig || st === 'replay'); repBar.classList.toggle('hidden', st !== 'replay');
-    if (powerSidebar) powerSidebar.classList.toggle('hidden', !ig || st === 'replay');
+    var ig = st === 'playing' || st === 'paused';
+    hud.classList.toggle('hidden', !ig);
+    if (powerSidebar) powerSidebar.classList.toggle('hidden', !ig);
     var cp = document.getElementById('chatPanel'); if (cp) cp.classList.toggle('hidden', !ig || !net.online);
     if (st === 'mainMenu') {
         setMenuPanel(net.roomCode ? 'multiplayer' : 'hub', { keepOverlay: true });
@@ -5111,7 +5111,7 @@ function ensureSocket() {
     net.socket.on('roomClosed', function (payload) {
         clearRoomState((payload && payload.message) || 'Room closed.');
         requestLobby();
-        if (G.state === 'playing' || G.state === 'paused' || G.state === 'replay') {
+        if (G.state === 'playing' || G.state === 'paused') {
             G.state = 'mainMenu';
             showUI('mainMenu');
             setMenuPanel('multiplayer', { keepOverlay: true });
@@ -5180,7 +5180,6 @@ function ensureSocket() {
 
         var onlineCustomMap = payload && payload.mode === 'custom' && payload.customMap ? normalizeCustomMapConfig(payload.customMap) : null;
         initGame(payload.seed || '42', Number(payload.nodeCount || 16), payload.difficulty || 'normal', {
-            keepReplay: false,
             keepTuning: false,
             fogEnabled: !!payload.fogEnabled,
             rulesMode: payload.rulesMode || 'advanced',
@@ -5286,59 +5285,6 @@ function ensureSocket() {
         serverDailyChallenge = payload.challenge || null;
         refreshDailyChallengeCard();
     });
-}
-function normalizeReplay(raw) {
-    if (!raw || !Array.isArray(raw.events)) throw new Error('Replay events missing');
-    var nc = Number(raw.nc !== undefined ? raw.nc : raw.nodeCount);
-    var diff = raw.diff !== undefined ? raw.diff : raw.difficulty;
-    var seed = Number(raw.seed);
-    var rulesMode = normalizeRulesetMode(raw.rulesMode || raw.mode || 'advanced');
-    return {
-        seed: isNaN(seed) ? 42 : seed,
-        nc: isNaN(nc) ? 16 : nc,
-        diff: (typeof diff === 'string' ? diff : 'normal'),
-        rulesMode: rulesMode,
-        mapFeature: raw.mapFeature || 'none',
-        mapMutator: raw.mapMutator || 'auto',
-        playlist: raw.playlist || 'standard',
-        doctrineId: raw.doctrineId || '',
-        encounters: Array.isArray(raw.encounters) ? raw.encounters : [],
-        objectives: Array.isArray(raw.objectives) ? raw.objectives : [],
-        endOnObjectives: raw.endOnObjectives === true,
-        events: raw.events.map(function (e) {
-            return { tick: Number(e.tick) || 0, type: e.type, data: e.data || {} };
-        }),
-    };
-}
-function startReplayFromData(raw) {
-    if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
-    clearRoomState('');
-    var rep = normalizeReplay(raw);
-    initGame('' + rep.seed, rep.nc, rep.diff, {
-        keepReplay: true,
-        keepTuning: false,
-        fogEnabled: false,
-        rulesMode: rep.rulesMode,
-        mapFeature: rep.mapFeature || 'none',
-        mapMutator: rep.mapMutator || 'auto',
-        playlist: rep.playlist || 'standard',
-        doctrineId: rep.doctrineId || '',
-        encounters: rep.encounters || [],
-        objectives: rep.objectives || [],
-        endOnObjectives: rep.endOnObjectives === true,
-    });
-    G.campaign.active = false;
-    G.campaign.levelIndex = -1;
-    G.daily.active = false;
-    G.daily.challenge = null;
-    G.daily.reminderShown = {};
-    currentCustomMapConfig = null;
-    G.rep = { events: rep.events, idx: 0, speed: 1, paused: false };
-    spIdx = 0;
-    spdBtn.textContent = '1x';
-    repSpdLbl.textContent = '1x';
-    repPauseBtn.textContent = 'Duraklat';
-    showUI('replay');
 }
 // Menu
 function syncRoomTypeInputs() {
@@ -5514,7 +5460,7 @@ function syncDailyChallengeState(challenge) {
     G.daily.completed = progress.completed;
 }
 function todayDailyChallenge() {
-    return serverDailyChallenge || buildDailyChallenge(dailyChallengeKey(new Date()));
+    return serverDailyChallenge || buildDailyChallenge(todayDateKey(DAILY_CHALLENGE_TIMEZONE));
 }
 function campaignFeatureName(feature) {
     if (!feature) return 'Standart';
@@ -5560,17 +5506,17 @@ function campaignFeatureHint(level) {
 function campaignLevelSummary(level) {
     return 'Bölüm ' + level.id + ': ' + level.name + '\n' +
         level.blurb + '\n' +
-        'Nodes: ' + level.nc + ' | AI: ' + level.aiCount + ' | Diff: ' + level.diff.toUpperCase() +
-        ' | Feature: ' + campaignFeatureName(level.mapFeature) +
+        'Node: ' + level.nc + ' | AI: ' + level.aiCount + ' | Zorluk: ' + menuDifficultyLabel(level.diff) +
+        ' | Özellik: ' + campaignFeatureName(level.mapFeature) +
         ' | Mutator: ' + campaignMutatorName(level.mapMutator || 'none') +
-        ' | Playlist: ' + playlistName(level.playlist || 'standard') +
+        ' | Oyun Listesi: ' + playlistName(level.playlist || 'standard') +
         (level.doctrineId ? (' | Doktrin: ' + doctrineName(level.doctrineId)) : '') +
-        (level.fog ? ' | Fog ON' : ' | Fog OFF') + '\n' +
+        (level.fog ? ' | Sis Açık' : ' | Sis Kapalı') + '\n' +
         'Harita Dersi: ' + campaignFeatureHint(level) + '\n' +
         'Mutator: ' + mapMutatorHint(level.mapMutator || 'none') + '\n' +
         'Encounter: ' + encounterSummary(level.encounters || []) + '\n' +
-        'Systems: ' + campaignSystemsSummary(level) + '\n' +
-        'Objectives: ' + describeCampaignObjectives(level, { tickRate: TICK_RATE }) + '\n' +
+        'Sistemler: ' + campaignSystemsSummary(level) + '\n' +
+        'Hedefler: ' + describeCampaignObjectives(level, { tickRate: TICK_RATE }) + '\n' +
         'Plan: ' + (level.hint || 'Map temposunu pulse, supply ve savunma alanı ile yönet.');
 }
 function refreshDailyChallengeCard() {
@@ -5665,7 +5611,7 @@ function refreshCampaignUI() {
     var selectedDone = campaignSelectedLevel < completed;
     var missionData = {
         title: 'Bölüm ' + selected.id + ': ' + selected.name,
-        subtitle: selected.blurb + ' | AI ' + selected.aiCount + ' | ' + selected.diff.toUpperCase() + ' | ' + campaignFeatureName(selected.mapFeature) + ' | Mutator: ' + campaignMutatorName(selected.mapMutator || 'none') + ' | Playlist: ' + playlistName(selected.playlist || 'standard') + (selected.doctrineId ? (' | Doktrin: ' + doctrineName(selected.doctrineId)) : '') + ' | ' + (selectedDone ? 'Durum: Geçildi' : 'Durum: Hazır'),
+        subtitle: selected.blurb + ' | AI ' + selected.aiCount + ' | ' + menuDifficultyLabel(selected.diff) + ' | ' + campaignFeatureName(selected.mapFeature) + ' | Mutator: ' + campaignMutatorName(selected.mapMutator || 'none') + ' | Oyun Listesi: ' + playlistName(selected.playlist || 'standard') + (selected.doctrineId ? (' | Doktrin: ' + doctrineName(selected.doctrineId)) : '') + ' | ' + (selectedDone ? 'Durum: Geçildi' : 'Durum: Hazır'),
         items: evaluateCampaignObjectives(selected, {
             tick: 0,
             didWin: false,
@@ -6021,16 +5967,6 @@ if (startRoomBtn) {
     });
 }
 
-loadRepBtn.addEventListener('click', function () { repFileIn.click(); });
-repFileIn.addEventListener('change', function () {
-    var f = repFileIn.files[0]; if (!f) return; var r = new FileReader();
-    r.onload = function () {
-        try {
-            startReplayFromData(JSON.parse(r.result));
-        } catch (e) { alert('Invalid replay: ' + e); }
-        repFileIn.value = '';
-    }; r.readAsText(f);
-});
 pauseBtn.addEventListener('click', function () {
     togglePauseMenu();
 });
@@ -6061,7 +5997,7 @@ if (hintToggleBtn) {
     });
 }
 var speeds = [1, 2, 4], spIdx = 0;
-spdBtn.addEventListener('click', function () { if (net.online) return; spIdx = (spIdx + 1) % 3; G.speed = speeds[spIdx]; spdBtn.textContent = G.speed + 'x'; recEvt('speed', { speed: G.speed }); });
+spdBtn.addEventListener('click', function () { if (net.online) return; spIdx = (spIdx + 1) % 3; G.speed = speeds[spIdx]; spdBtn.textContent = G.speed + 'x'; });
 var themeBtn = $('themeBtn');
 function syncThemeButton() {
     if (!themeBtn) return;
@@ -6123,8 +6059,6 @@ for (var sqi = 0; sqi < sendPctQuickBtns.length; sqi++) {
     })(sendPctQuickBtns[sqi]);
 }
 syncSendQuickButtons();
-repBtn.addEventListener('click', function () { if (lastRepData) startReplayFromData(lastRepData); });
-expRepBtn.addEventListener('click', function () { if (!lastRepData) return; var b = new Blob([JSON.stringify(lastRepData, null, 2)], { type: 'application/json' }), u = URL.createObjectURL(b), a = document.createElement('a'); a.href = u; a.download = 'replay-' + lastRepData.seed + '.json'; a.click(); URL.revokeObjectURL(u); });
 if (nextLevelBtn) nextLevelBtn.addEventListener('click', function () {
     if (!G.campaign.active || G.campaign.levelIndex < 0) return;
     var nextIdx = G.campaign.levelIndex + 1;
@@ -6137,14 +6071,28 @@ if (nextLevelBtn) nextLevelBtn.addEventListener('click', function () {
     startCampaignLevel(nextIdx);
 });
 restartBtn.addEventListener('click', function () { G.state = 'mainMenu'; showUI('mainMenu'); });
-repSlower.addEventListener('click', function () { if (G.rep) G.rep.speed = Math.max(0.25, G.rep.speed / 2); repSpdLbl.textContent = (G.rep ? G.rep.speed : 1) + 'x'; });
-repFaster.addEventListener('click', function () { if (G.rep) G.rep.speed = Math.min(8, G.rep.speed * 2); repSpdLbl.textContent = (G.rep ? G.rep.speed : 1) + 'x'; });
-repPauseBtn.addEventListener('click', function () { if (G.rep) { G.rep.paused = !G.rep.paused; repPauseBtn.textContent = G.rep.paused ? 'Oynat' : 'Duraklat'; } });
-repStopBtn.addEventListener('click', function () { G.state = 'mainMenu'; showUI('mainMenu'); });
 if (doctrineBtn) {
     doctrineBtn.addEventListener('click', function () {
         if (G.state !== 'playing') return;
         triggerHumanDoctrine();
+    });
+}
+if (upgradeHudBtn) {
+    upgradeHudBtn.addEventListener('click', function () {
+        if (G.state !== 'playing') return;
+        if (activateSelectionUpgrade()) clearCommandMode();
+    });
+}
+if (defenseHudBtn) {
+    defenseHudBtn.addEventListener('click', function () {
+        if (G.state !== 'playing') return;
+        if (activateSelectionDefense()) clearCommandMode();
+    });
+}
+if (flowHudBtn) {
+    flowHudBtn.addEventListener('click', function () {
+        if (G.state !== 'playing') return;
+        if (!armFlowSelection()) showGameToast('Flow için önce kendi gezegenlerini seç.');
     });
 }
 function syncTune() {
@@ -6159,7 +6107,7 @@ function updTuneLabels() {
     tuneVals.fi.textContent = tuneFlowInt.value; tuneVals.aa.textContent = parseFloat(tuneAiAgg.value).toFixed(1); tuneVals.ab.textContent = tuneAiBuf.value; tuneVals.ad.textContent = tuneAiDec.value;
 }
 function readTune() {
-    if (G.state === 'replay' || net.online) return; G.tune.prod = parseFloat(tuneProd.value); G.tune.fspeed = parseFloat(tuneFSpd.value);
+    if (net.online) return; G.tune.prod = parseFloat(tuneProd.value); G.tune.fspeed = parseFloat(tuneFSpd.value);
     G.tune.def = parseFloat(tuneDef.value); G.tune.flowInt = parseInt(tuneFlowInt.value, 10); G.tune.aiAgg = parseFloat(tuneAiAgg.value);
     G.tune.aiBuf = parseInt(tuneAiBuf.value, 10); G.tune.aiInt = parseInt(tuneAiDec.value, 10); updTuneLabels();
     if (tuneAiAssistCb) G.tune.aiAssist = tuneAiAssistCb.checked;
@@ -6179,6 +6127,16 @@ if (menuFogCb) menuFogCb.addEventListener('change', function () { tuneFogCb.chec
 // Ã¢â€â‚¬Ã¢â€â‚¬ CANVAS MOUSE Ã¢â€â‚¬Ã¢â€â‚¬
 cv.addEventListener('mousedown', function (e) {
     if (G.state !== 'playing') return; var w = s2w(e.offsetX, e.offsetY); inp.mw = w; inp.ms = { x: e.offsetX, y: e.offsetY };
+    if (e.button === 0 && inp.commandMode) {
+        var modeNode = hitNode(w);
+        if (modeNode) applyCommandModeTarget(modeNode.id);
+        else {
+            clearCommandMode();
+            showGameToast('Flow modu iptal edildi.');
+        }
+        e.preventDefault();
+        return;
+    }
     if (e.button === 1) { inp.panActive = true; inp.panLast = { x: e.offsetX, y: e.offsetY }; e.preventDefault(); return; }
     if (e.button === 2) {
         var nd = hitNode(w);
@@ -6197,7 +6155,6 @@ cv.addEventListener('mousedown', function (e) {
             var defIds = inp.sel.has(nd.id) && inp.sel.size > 0 ? Array.from(inp.sel) : [nd.id];
             if (issueOnlineCommand('toggleDefense', { nodeIds: defIds })) { } else {
                 defIds.forEach(function (id) { toggleDefense(G.human, id); });
-                recEvt('toggleDefense', { nodeIds: defIds });
             }
         } else if (rightClickAction === 'flow' && nd) {
             inp.sel.forEach(function (sid) {
@@ -6206,7 +6163,6 @@ cv.addEventListener('mousedown', function (e) {
                     var flowData = { srcId: sid, tgtId: nd.id };
                     if (!issueOnlineCommand('flow', flowData)) {
                         applyPlayerCommand(G.human, 'flow', flowData);
-                        recEvt('flow', flowData);
                     }
                 }
             });
@@ -6228,7 +6184,6 @@ cv.addEventListener('mousedown', function (e) {
         } else if (e.shiftKey) {
             inp.sel.add(cn.id);
             syncNodeSelectionFlags();
-            recordSelectionEvent(true);
             dragSelection = selectedSendOrder();
             if (typeof AudioFX !== 'undefined') AudioFX.select();
         } else {
@@ -6257,7 +6212,6 @@ cv.addEventListener('mousedown', function (e) {
         } else if (e.shiftKey) {
             inp.selFleets.add(hf.id);
             syncNodeSelectionFlags();
-            recordSelectionEvent(true);
             fleetDragSelection = selectedSendOrder();
             if (typeof AudioFX !== 'undefined') AudioFX.select();
         } else {
@@ -6355,12 +6309,12 @@ cv.addEventListener('mouseup', function (e) {
     }
 });
 cv.addEventListener('wheel', function (e) {
-    if (G.state !== 'playing' && G.state !== 'replay') return;
+    if (G.state !== 'playing') return;
     var f = e.deltaY > 0 ? (1 - ZOOM_SPD) : (1 + ZOOM_SPD); G.cam.zoom *= f; G.cam.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, G.cam.zoom)); e.preventDefault();
 }, { passive: false });
 cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 cv.addEventListener('touchstart', function (e) {
-    if ((G.state === 'playing' || G.state === 'replay') && e.touches.length === 2) {
+    if (G.state === 'playing' && e.touches.length === 2) {
         beginTouchPinch(touchScreenPos(e.touches[0]), touchScreenPos(e.touches[1]));
         e.preventDefault();
         return;
@@ -6373,6 +6327,15 @@ cv.addEventListener('touchstart', function (e) {
         inp.dragDownNodeId = -1;
         inp.dragDownFleetId = -1;
         var w = s2w(pos.x, pos.y); var cn = hitNode(w), hf = null; if (!cn) hf = hitHoldingFleet(w);
+        if (inp.commandMode) {
+            if (cn) applyCommandModeTarget(cn.id);
+            else {
+                clearCommandMode();
+                showGameToast('Flow modu iptal edildi.');
+            }
+            e.preventDefault();
+            return;
+        }
         if (cn && cn.owner === G.human && (inp.sel.size > 0 || inp.selFleets.size > 0) && !inp.sel.has(cn.id)) {
             if (sendFromSelectionTo(cn.id)) { e.preventDefault(); return; }
         }
@@ -6426,7 +6389,7 @@ cv.addEventListener('touchstart', function (e) {
     }
 }, { passive: false });
 cv.addEventListener('touchmove', function (e) {
-    if ((G.state === 'playing' || G.state === 'replay') && e.touches.length === 2) {
+    if (G.state === 'playing' && e.touches.length === 2) {
         var posA = touchScreenPos(e.touches[0]);
         var posB = touchScreenPos(e.touches[1]);
         if (!inp.pinchActive) beginTouchPinch(posA, posB);
@@ -6498,18 +6461,9 @@ window.addEventListener('keydown', function (e) {
             clearSelection(true);
             G.nodes.forEach(function (n) { if (n.owner === G.human) inp.sel.add(n.id); });
             syncNodeSelectionFlags();
-            recordSelectionEvent(false);
         }
         if (e.key === 'u' || e.key === 'U') {
-            var targetIds = Array.from(inp.sel);
-            if (targetIds.length > 0) {
-                if (issueOnlineCommand('upgrade', { nodeIds: targetIds })) {
-                } else {
-                    var upgraded = [];
-                    inp.sel.forEach(function (id) { if (upgradeNode(G.human, id)) upgraded.push(id); });
-                    if (upgraded.length > 0) recEvt('upgrade', { nodeIds: upgraded });
-                }
-            }
+            activateSelectionUpgrade();
         }
         if (e.key === 'q' || e.key === 'Q') {
             if (triggerHumanDoctrine()) e.preventDefault();
@@ -6534,7 +6488,6 @@ function loop(ts) {
     var rawDt = Math.min((ts - lastT) / 1000, 0.1); lastT = ts;
     if (G.state !== prevSt) {
         showUI(G.state); if (G.state === 'gameOver') {
-            if (prevSt === 'playing') lastRepData = JSON.parse(JSON.stringify(G.rec));
             if (nextLevelBtn) nextLevelBtn.style.display = 'none';
             goTitle.textContent = G.winner === G.human ? 'Zafer' : 'Maglubiyet';
             goMsg.textContent = G.winner === G.human ? (G.tick + ' tickte tum yildizlari fethettin.') : ('Tick ' + G.tick + ' civarinda oyundan dustun.');
@@ -6587,15 +6540,14 @@ function loop(ts) {
             }
         } prevSt = G.state;
     }
-    if (G.state === 'playing' || G.state === 'replay') {
+    if (G.state === 'playing') {
         var useAuthoritativeState = net.online && net.authoritativeEnabled && G.state === 'playing';
         if (useAuthoritativeState) {
             acc = 0;
             advanceTransientVisuals(rawDt);
             if (net.authoritativeReady) maybeSendOnlinePing();
         } else {
-            var es = G.state === 'replay' && G.rep ? (G.rep.paused ? 0 : G.rep.speed) : G.speed;
-            acc += rawDt * es;
+            acc += rawDt * G.speed;
             while (acc >= TICK_DT) { gameTick(); acc -= TICK_DT; }
         }
         var featureName = G.mapFeature.type === 'wormhole' ? 'Wormhole' : (G.mapFeature.type === 'gravity' ? 'Gravity' : (G.mapFeature.type === 'barrier' ? 'Barrier' : 'Standart'));
@@ -6632,6 +6584,7 @@ function loop(ts) {
                 doctrineBtn.title = doctrineName(doctrineId) + ' | ' + doctrineStatus;
             }
         }
+        syncMatchHudControls();
         var pingEl = document.getElementById('pingDisplay');
         if (pingEl) {
             var pingText = net.online && net.lastPingMs !== undefined ? ('Ping: ' + Math.round(net.lastPingMs) + 'ms') : '';
@@ -6640,7 +6593,6 @@ function loop(ts) {
             }
             pingEl.textContent = pingText;
         }
-        if (G.state === 'replay') repTickLbl.textContent = 'Tick: ' + G.tick;
     }
     if (G.state === 'playing' || G.state === 'paused') updatePowerSidebar();
     if (G.state !== 'mainMenu') render(ctx, cv, G.tick);

@@ -72,10 +72,9 @@ docker compose up -d --build
 
 - **Skirmish** — AI veya arkadaşlarla serbest maç
 - **Campaign** — El yapımı görevlerle yapılandırılmış misyon merdiveni
-- **Günlük meydan okuma** — Tohumlu prosedürel senaryo, günde bir deneme
-- **Özel haritalar** — Oyun içi harita editörü ve dışa aktarma
+- **Günlük meydan okuma** — Tohumlu prosedürel senaryo, her gün yenilenen varyasyon
+- **Özel haritalar** — JSON içe/dışa aktarma ile özel harita akışı
 - **Çok oyunculu** — Socket.IO ile gerçek zamanlı odalar, 6 oyunculuya kadar
-- **Replay** — Her maçı kaydet ve tekrar izle
 
 ### AI
 
@@ -334,7 +333,7 @@ Bu bölümdeki durum satırları `10 Mart 2026` itibarıyla repo içindeki gerç
 
 **Durum**
 
-- tamamlandı (v1); `Iyon Firtinasi` ve `Karartma Bolgesi` deterministik, replay/network/snapshot akışına bağlı
+- tamamlandı (v1); `Iyon Firtinasi` ve `Karartma Bolgesi` deterministik, network/snapshot akışına bağlı
 
 **Amaç**
 
@@ -344,7 +343,7 @@ Bu bölümdeki durum satırları `10 Mart 2026` itibarıyla repo içindeki gerç
 
 - iyon fırtınası, karartma bölgesi, pulse zengin alan, çöküş koridoru gibi tek ana mutatör
 - mutatör bilgisinin seed ile deterministik üretilmesi
-- günlük görev, kampanya ve multiplayer snapshot/replay içinde kayıtlı olması
+- günlük görev, kampanya ve multiplayer snapshot içinde kayıtlı olması
 - HUD veya mission panel içinde kısa mutatör açıklaması gösterilmesi
 
 **Neden önemli**
@@ -357,7 +356,7 @@ Bu bölümdeki durum satırları `10 Mart 2026` itibarıyla repo içindeki gerç
 
 - map manifest / map generation entegrasyonu
 - render tarafında anomaly ve alan gösterimi
-- replay ve network state tarafında mutatör verisinin tutulması
+- snapshot ve network state tarafında mutatör verisinin tutulması
 
 **Başarı ölçütü**
 
@@ -540,7 +539,7 @@ Bu bölümdeki durum satırları `10 Mart 2026` itibarıyla repo içindeki gerç
 
 **Durum**
 
-- başlangıç seviyesinde; authoritative sync, reconnect ve temel leaderboard/persistence var ama Elo/MMR, sezon, spectator, replay tarayıcı ve maç geçmişi henüz yok
+- başlangıç seviyesinde; authoritative sync, reconnect ve temel leaderboard/persistence var ama Elo/MMR, sezon, spectator ve maç geçmişi henüz yok
 
 **Amaç**
 
@@ -551,14 +550,13 @@ Bu bölümdeki durum satırları `10 Mart 2026` itibarıyla repo içindeki gerç
 - Elo/MMR
 - sezon sistemi
 - izleyici modu
-- replay tarayıcı
 - maç geçmişi
 - maç sonrası zaman çizelgesi ve ekonomi kırılımı
 
 **Bağımlılıklar**
 
 - sağlam authoritative sync
-- güvenilir replay verisi
+- güvenilir maç geçmişi verisi
 - reconnect / stability iyileştirmeleri
 
 **Başarı ölçütü**
@@ -605,7 +603,6 @@ Bu bölümdeki durum satırları `10 Mart 2026` itibarıyla repo içindeki gerç
 **Kapsam**
 
 - paylaşılabilir challenge seed’leri
-- replay paylaşımı
 - haftalık / günlük öne çıkan sektörler
 - topluluk harita vitrinleri
 - turnuva veya etkinlik playlist’leri
@@ -663,7 +660,7 @@ Kısıtlar:
 - local ve authoritative sim aynı kuralla çalışmalı
 - mevcut mobil ve masaüstü okunabilirliğini bozma
 - CPU maliyetini düşük tut
-- replay / snapshot / sync mantığını bozma
+- snapshot / sync mantığını bozma
 
 Beklenen çıktı:
 - gerekli kod değişiklikleri
@@ -688,7 +685,7 @@ Bakılacak dosyalar:
 Amaç:
 - her maç için tek bir baskın çevresel kural seçilebilsin
 - bu kural seed ile deterministik olsun
-- replay ve multiplayer snapshot’larda saklansın
+- multiplayer snapshot’larda saklansın
 
 İlk versiyon için en fazla 2 mutatör ekle:
 - ion storm: belirli bölgede fleet speed düşsün
@@ -787,7 +784,7 @@ Bu repo için maç öncesi `Komutan / Doktrin Sistemi` tasarla ve ilk uygulanabi
 Kısıtlar:
 - sistem ağır bir tech tree’ye dönüşmemeli
 - aktif yetenekler yüksek APM istememeli
-- multiplayer snapshot / replay / AI uyumunu düşün
+- multiplayer snapshot / AI uyumunu düşün
 
 İstenen çıktı:
 - veri modeli
@@ -836,10 +833,9 @@ Amaç:
 - Elo/MMR
 - sezonlar
 - spectator mode
-- replay browser
 - match history
 
-Önce mevcut multiplayer, replay ve authoritative sync mimarisini incele.
+Önce mevcut multiplayer ve authoritative sync mimarisini incele.
 Sonra şu formatta çıktı ver:
 - mevcut durum
 - eksik altyapı
