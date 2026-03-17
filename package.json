@@ -8,13 +8,17 @@
     "server": "node server.js",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test"
+    "test": "node --test",
+    "e2e": "playwright test",
+    "e2e:headed": "playwright test --headed",
+    "e2e:docker": "docker run --rm --network host --ipc=host -v \"$(pwd)\":/work -v /work/node_modules -v /work/dist -v /work/test-results -v /work/playwright-report -w /work mcr.microsoft.com/playwright:v1.58.2-jammy bash -lc \"npm ci && npm run e2e\""
   },
   "dependencies": {
     "express": "^4.21.2",
     "socket.io": "^4.8.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "vite": "^5.4.0"
   }
 }

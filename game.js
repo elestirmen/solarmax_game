@@ -35,6 +35,19 @@ import { buildCustomMapExport, normalizeCustomMapConfig } from './assets/sim/cus
 import { resolveMatchEndState } from './assets/sim/end_state.js';
 import { todayDateKey } from './assets/sim/match_manifest.js';
 import { playlistName, resolvePlaylistConfig } from './assets/sim/playlists.js';
+import { attachGameInputController, createInputState } from './assets/app/input_controller.js';
+import { runAiAndWrapTickPhase, runCombatTickPhase, runEconomyTickPhase, runOnlineTickSyncPhase } from './assets/app/game_tick_phases.js';
+import { renderMarqueeLayer, renderMinimapLayer, renderWorldLayers } from './assets/app/render_layers.js';
+import { applyCampaignRunState, applyDailyChallengeRunState, applySkirmishRunState, buildCampaignLevelStartConfig, buildCustomMapStartConfig, buildDailyChallengeStartConfig, buildSkirmishStartConfig } from './assets/app/start_flow.js';
+import { applyRoomStateNetState, beginOnlineMatch, buildCreateRoomRequest, buildJoinRoomRequest, buildOnlineMatchInitOptions, buildOnlineMatchStatusText, buildRoomStateMenuPatches, computeOnlineCommandTick, getSocketEndpoint, resetOnlineRoomState } from './assets/net/online_session.js';
+import { HUD_ACTION_HELP_DEFAULT, buildHudContextBadge, buildHudHintText } from './assets/ui/hud_assistive.js';
+import { buildHudAdvisorCard } from './assets/ui/hud_advisor.js';
+import { buildHudCoachItems, renderHudCoach } from './assets/ui/hud_coach.js';
+import { applyLobbyControlState, buildLobbyListStatus, buildRoomStatusSummary, getLobbyControlState, renderRoomPlayers, setRoomStatusState } from './assets/ui/lobby_ui.js';
+import { buildDoctrineButtonState, buildHudCapText, buildHudTickText, buildPingDisplayText } from './assets/ui/match_hud.js';
+import { MENU_PANEL_META, buildMenuHeroSummary, buildMenuLobbyMeta, clampMenuNodeCount, createInitialMenuState as createMenuState, menuBackTarget, menuDifficultyLabel, normalizeMenuDifficulty, normalizeMenuDoctrine, normalizeMenuPanel, normalizeMenuPlaylist, normalizeMenuRoomType, normalizeMenuRulesMode, normalizeMenuSeed } from './assets/ui/menu_state.js';
+import { buildMissionPanelSubtitle, buildMissionPanelTitle, pickPrimaryObjectiveRow, resolveMissionDefinition, resolveMissionMode } from './assets/ui/mission_state.js';
+import { applyRoomTypeUiState, getRoomTypeUiState } from './assets/ui/room_type_ui.js';
 import { renderLeaderboardUI, renderMissionPanel, renderRoomListUI, renderStatRows } from './assets/ui/renderers.js';
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ CONSTANTS Ã¢â€â‚¬Ã¢â€â‚¬
@@ -1448,98 +1461,18 @@ function applyPlayerCommand(playerIndex, type, data) {
 function gameTick(runtimeOpts) {
     runtimeOpts = runtimeOpts || {};
     if (G.state !== 'playing') return;
-
-    // Lockstep determinism: Throttle simulation to stay synced with server ticks
-    if (net.online) {
-        if (!runtimeOpts.skipNetworkSync) {
-            if (!net.lastPingTick || G.tick - net.lastPingTick >= 45) {
-                net.lastPingTick = G.tick;
-                net.socket.emit('pingTick', { clientTs: Date.now() });
-            }
-
-            if (net.syncDrift !== undefined) {
-                net.syncDrift += (G.speed - 1.0);
-
-                // Hard-catchup for background tabs or extreme lag
-                if (net.syncDrift > 30) G.speed = 0.1;
-                else if (net.syncDrift > 10) G.speed = 0.5;
-                else if (net.syncDrift > 3) G.speed = 0.85;
-                else if (net.syncDrift < -90) G.speed = 10.0;
-                else if (net.syncDrift < -30) G.speed = 4.0;
-                else if (net.syncDrift < -10) G.speed = 2.0;
-                else if (net.syncDrift < -3) G.speed = 1.15;
-                else G.speed = 1.0;
-            }
-        }
-
-        if (net.pendingCommands.length > 0) {
-            net.pendingCommands.sort(function (a, b) {
-                var tickDelta = (a.tick || 0) - (b.tick || 0);
-                if (tickDelta !== 0) return tickDelta;
-                return (a.seq || 0) - (b.seq || 0);
-            });
-            var remaining = [];
-            for (var qi = 0; qi < net.pendingCommands.length; qi++) {
-                var cmd = net.pendingCommands[qi];
-                if (cmd && cmd.matchId && net.matchId && cmd.matchId !== net.matchId) continue;
-                if ((cmd.tick || 0) <= G.tick + 1) { // Apply when due
-                    if (typeof cmd.seq === 'number' && cmd.seq <= net.lastAppliedSeq) continue;
-                    applyPlayerCommand(cmd.playerIndex, cmd.type, cmd.data);
-                    if (typeof cmd.seq === 'number') net.lastAppliedSeq = cmd.seq;
-                } else {
-                    remaining.push(cmd);
-                }
-            }
-            net.pendingCommands = remaining;
-        }
-    }
-
-    G.doctrineStates = tickDoctrineStates(G.doctrines, G.doctrineStates);
-    G.strategicPulse = currentStrategicPulse(G.tick);
-    strategicPulseToast();
-    var ownershipMetrics = computeOwnershipMetrics({
-        players: G.players,
-        nodes: G.nodes,
-        fleets: G.fleets,
-        strategicPulse: G.strategicPulse,
-        rules: G.rules,
-        strategicPulseCapBonus: STRATEGIC_PULSE_CAP,
-        playerCapital: G.playerCapital,
-        anchorPositions: spawnAnchors(G.players.length),
-        isNodeAssimilated: isNodeAssimilated,
-        distanceFn: dist,
-        maxLinkDist: SUPPLY_DIST,
-        nodePowerValue: nodePowerValue,
+    runOnlineTickSyncPhase({
+        game: G,
+        net: net,
+        runtimeOpts: runtimeOpts,
+        applyPlayerCommand: applyPlayerCommand,
     });
-    var power = ownershipMetrics.powerByPlayer;
-    var supplyByPlayer = ownershipMetrics.supplyByPlayer;
-    var ownerUnits = ownershipMetrics.unitByPlayer;
-    var ownerCaps = ownershipMetrics.capByPlayer;
-    G.powerByPlayer = power;
-    G.unitByPlayer = ownerUnits;
-    G.capByPlayer = ownerCaps;
-    if (ownerCaps[G.human] > 0) {
-        var humanCapPressureTick = ownerUnits[G.human] / ownerCaps[G.human];
-        if (humanCapPressureTick > G.stats.peakCapPressure) G.stats.peakCapPressure = humanCapPressureTick;
-    }
-    if ((power[G.human] || 0) > G.stats.peakPower) G.stats.peakPower = power[G.human] || 0;
-    var livePulseNode = G.nodes[G.strategicPulse.nodeId];
-    if (G.strategicPulse.active && livePulseNode && livePulseNode.owner === G.human && isNodeAssimilated(livePulseNode)) {
-        G.stats.pulseControlTicks++;
-    }
-    stepEncounterState(G);
-    stepNodeEconomy({
-        nodes: G.nodes,
-        humanIndex: G.human,
-        powerByPlayer: power,
-        supplyByPlayer: supplyByPlayer,
-        ownerUnits: ownerUnits,
-        ownerCaps: ownerCaps,
-        tune: G.tune,
-        diffCfg: G.diffCfg,
-        rules: G.rules,
-        stats: G.stats,
+
+    runEconomyTickPhase({
+        game: G,
         constants: {
+            strategicPulseCap: STRATEGIC_PULSE_CAP,
+            supplyDistance: SUPPLY_DIST,
             baseProd: BASE_PROD,
             nodeRadiusMax: NODE_RMAX,
             isolatedProdPenalty: ISOLATED_PROD_PENALTY,
@@ -1556,12 +1489,21 @@ function gameTick(runtimeOpts) {
             assimLevelResist: ASSIM_LEVEL_RESIST,
         },
         callbacks: {
+            tickDoctrineStates: tickDoctrineStates,
+            currentStrategicPulse: currentStrategicPulse,
+            strategicPulseToast: strategicPulseToast,
+            computeOwnershipMetrics: computeOwnershipMetrics,
+            spawnAnchors: spawnAnchors,
+            isNodeAssimilated: isNodeAssimilated,
+            dist: dist,
+            nodePowerValue: nodePowerValue,
+            stepEncounterState: stepEncounterState,
+            stepNodeEconomy: stepNodeEconomy,
             clamp: clamp,
             nodeTypeOf: nodeTypeOf,
             nodeCapacity: nodeCapacity,
             nodeLevelProdMult: nodeLevelProdMult,
             strategicPulseAppliesToNode: strategicPulseAppliesToNode,
-            isNodeAssimilated: isNodeAssimilated,
             ownerProdMultiplier: function (owner, node) {
                 var modifiers = doctrineModifiers(G.doctrines, G.doctrineStates, owner);
                 var prodMult = modifiers.prodMult;
@@ -1575,50 +1517,14 @@ function gameTick(runtimeOpts) {
             },
         },
     });
-    var turretReport = applyTurretDamage({
-        nodes: G.nodes,
-        fleets: G.fleets,
-        dt: TICK_DT,
-        range: TURRET_RANGE,
-        dps: TURRET_DPS,
-        minGarrison: TURRET_MIN_GARRISON,
-    });
-    if (turretReport && Array.isArray(turretReport.shots) && turretReport.shots.length > 0) {
-        for (var tsi = 0; tsi < turretReport.shots.length; tsi++) {
-            var shot = turretReport.shots[tsi];
-            G.turretBeams.push({
-                fromX: shot.fromX,
-                fromY: shot.fromY,
-                toX: shot.toX,
-                toY: shot.toY,
-                owner: shot.turretOwner,
-                life: 0.12,
-                maxLife: 0.12,
-            });
-        }
-        if (G.turretBeams.length > 80) G.turretBeams = G.turretBeams.slice(-80);
-    }
-    applyImpactFeedback(turretReport && turretReport.impacts);
 
-    stepFleetMovement({
-        fleets: G.fleets,
-        nodes: G.nodes,
-        dt: TICK_DT,
-        tune: G.tune,
-        mapFeature: G.mapFeature,
-        mapMutator: G.mapMutator,
-        callbacks: {
-            clamp: clamp,
-            bezPt: bezPt,
-            isNodeTerritoryActive: isNodeAssimilated,
-            isTerritoryBonusBlockedAtPoint: function (opts) {
-                return territoryBonusBlockedAtPoint(opts && opts.point);
-            },
-            fleetSpeedMultiplier: function (fleet) {
-                return doctrineModifiers(G.doctrines, G.doctrineStates, fleet && fleet.owner).fleetSpeedMult;
-            },
-        },
+    runCombatTickPhase({
+        game: G,
         constants: {
+            tickDt: TICK_DT,
+            turretRange: TURRET_RANGE,
+            turretDps: TURRET_DPS,
+            turretMinGarrison: TURRET_MIN_GARRISON,
             baseFleetSpeed: FLEET_SPEED,
             gravitySpeedMult: GRAVITY_SPEED_MULT,
             territorySpeedMult: TERRITORY_SPEED_MULT,
@@ -1626,38 +1532,29 @@ function gameTick(runtimeOpts) {
             territoryRadiusNodeRadiusMult: TERRITORY_RADIUS_NODE_RADIUS_MULT,
             territoryRadiusLevelBonus: TERRITORY_RADIUS_LEVEL_BONUS,
             trailLen: TRAIL_LEN,
+            turretCaptureResist: TURRET_CAPTURE_RESIST,
+            defenseBonus: DEFENSE_BONUS,
+            assimLockTicks: ASSIM_LOCK_TICKS,
+            holdDecayGraceTicks: HOLD_DECAY_GRACE_TICKS,
+            holdDecayIntervalTicks: HOLD_DECAY_INTERVAL_TICKS,
+            flowFraction: FLOW_FRAC,
         },
-    });
-    var fieldReport = applyDefenseFieldDamage({
-        nodes: G.nodes,
-        fleets: G.fleets,
-        dt: TICK_DT,
-        cfg: defenseFieldCfg(),
-    });
-    if (fieldReport && Array.isArray(fieldReport.arcs) && fieldReport.arcs.length > 0) {
-        for (var fai = 0; fai < fieldReport.arcs.length; fai++) {
-            var arc = fieldReport.arcs[fai];
-            G.fieldBeams.push({
-                fromX: arc.fromX,
-                fromY: arc.fromY,
-                toX: arc.toX,
-                toY: arc.toY,
-                owner: arc.owner,
-                life: 0.1,
-                maxLife: 0.1,
-            });
-        }
-        if (G.fieldBeams.length > 120) G.fieldBeams = G.fieldBeams.slice(-120);
-    }
-    applyImpactFeedback(fieldReport && fieldReport.impacts);
-    var arrivalReport = resolveFleetArrivals({
-        fleets: G.fleets,
-        nodes: G.nodes,
-        flows: G.flows,
-        players: G.players,
-        tune: G.tune,
-        humanIndex: G.human,
         callbacks: {
+            applyTurretDamage: applyTurretDamage,
+            applyImpactFeedback: applyImpactFeedback,
+            stepFleetMovement: stepFleetMovement,
+            clamp: clamp,
+            bezPt: bezPt,
+            isNodeAssimilated: isNodeAssimilated,
+            isTerritoryBonusBlockedAtPoint: function (opts) {
+                return territoryBonusBlockedAtPoint(opts && opts.point);
+            },
+            fleetSpeedMultiplier: function (fleet) {
+                return doctrineModifiers(G.doctrines, G.doctrineStates, fleet && fleet.owner).fleetSpeedMult;
+            },
+            applyDefenseFieldDamage: applyDefenseFieldDamage,
+            defenseFieldCfg: defenseFieldCfg,
+            resolveFleetArrivals: resolveFleetArrivals,
             nodeTypeOf: nodeTypeOf,
             nodeLevelDefMult: nodeLevelDefMult,
             nodeCapacity: nodeCapacity,
@@ -1670,82 +1567,39 @@ function gameTick(runtimeOpts) {
             defenseMultiplier: function () {
                 return 1;
             },
-        },
-        constants: {
-            turretCaptureResist: TURRET_CAPTURE_RESIST,
-            defenseBonus: DEFENSE_BONUS,
-            assimLockTicks: ASSIM_LOCK_TICKS,
-        },
-    });
-    G.flows = arrivalReport.flows;
-    if (arrivalReport.statsDelta.nodesCaptured > 0) G.stats.nodesCaptured += arrivalReport.statsDelta.nodesCaptured;
-    if (arrivalReport.statsDelta.gateCaptures > 0) G.stats.gateCaptures += arrivalReport.statsDelta.gateCaptures;
-    for (var ari = 0; ari < arrivalReport.particleBursts.length; ari++) {
-        var burst = arrivalReport.particleBursts[ari];
-        spawnParticles(burst.x, burst.y, burst.count, burst.color, burst.isCapture, burst);
-    }
-    for (var asi = 0; asi < (arrivalReport.shockwaves || []).length; asi++) {
-        var wave = arrivalReport.shockwaves[asi];
-        enqueueShockwave(wave.x, wave.y, wave);
-    }
-    stepHoldingFleetDecay({
-        fleets: G.fleets,
-        nodes: G.nodes,
-        callbacks: {
-            isNodeTerritoryActive: isNodeAssimilated,
-            isTerritoryBonusBlockedAtPoint: function (opts) {
-                return territoryBonusBlockedAtPoint(opts && opts.point);
+            spawnParticles: spawnParticles,
+            enqueueShockwave: enqueueShockwave,
+            stepHoldingFleetDecay: stepHoldingFleetDecay,
+            showGameToast: showGameToast,
+            playArrivalAudio: function (kind) {
+                if (typeof AudioFX === 'undefined') return;
+                if (kind === 'capture' && typeof AudioFX.capture === 'function') AudioFX.capture();
+                else if (kind === 'combat' && typeof AudioFX.combat === 'function') AudioFX.combat();
             },
-        },
-        constants: {
-            holdDecayGraceTicks: HOLD_DECAY_GRACE_TICKS,
-            holdDecayIntervalTicks: HOLD_DECAY_INTERVAL_TICKS,
-            territoryRadiusBase: TERRITORY_RADIUS_BASE,
-            territoryRadiusNodeRadiusMult: TERRITORY_RADIUS_NODE_RADIUS_MULT,
-            territoryRadiusLevelBonus: TERRITORY_RADIUS_LEVEL_BONUS,
+            stepFlowLinks: stepFlowLinks,
+            dispatch: dispatch,
         },
     });
-    for (var ati = 0; ati < arrivalReport.toasts.length; ati++) {
-        showGameToast(arrivalReport.toasts[ati]);
-    }
-    for (var aui = 0; aui < arrivalReport.audio.length; aui++) {
-        if (typeof AudioFX === 'undefined') break;
-        if (arrivalReport.audio[aui] === 'capture' && typeof AudioFX.capture === 'function') AudioFX.capture();
-        else if (arrivalReport.audio[aui] === 'combat' && typeof AudioFX.combat === 'function') AudioFX.combat();
-    }
-    var flowReport = stepFlowLinks({
-        flows: G.flows,
-        nodes: G.nodes,
-        flowInterval: G.tune.flowInt,
+
+    runAiAndWrapTickPhase({
+        game: G,
+        net: net,
+        runtimeOpts: runtimeOpts,
         constants: {
-            flowFraction: FLOW_FRAC,
-            minReserve: 2,
+            tickDt: TICK_DT,
+        },
+        callbacks: {
+            aiDecide: aiDecide,
+            applyPlayerCommand: applyPlayerCommand,
+            updateVis: updateVis,
+            sendOnlineStateHash: sendOnlineStateHash,
+            maybeShowCampaignObjectiveReminder: maybeShowCampaignObjectiveReminder,
+            refreshCampaignMissionPanels: refreshCampaignMissionPanels,
+            advanceTransientVisuals: advanceTransientVisuals,
+            maybeResolveMissionObjectiveVictory: maybeResolveMissionObjectiveVictory,
+            checkEnd: checkEnd,
         },
     });
-    G.flows = flowReport.flows;
-    for (var fdi = 0; fdi < flowReport.dispatches.length; fdi++) {
-        var flowDispatch = flowReport.dispatches[fdi];
-        dispatch(flowDispatch.owner, [flowDispatch.srcId], flowDispatch.tgtId, flowDispatch.pct);
-    }
-    // AI
-    for (var p = 0; p < G.players.length; p++) {
-        if (!G.players[p].isAI || !G.players[p].alive) continue; G.aiTicks[p]++;
-        if (G.aiTicks[p] >= G.tune.aiInt) {
-            G.aiTicks[p] = 0; var cmds = aiDecide(p);
-            for (var c = 0; c < cmds.length; c++) {
-                var cmd = cmds[c];
-                applyPlayerCommand(p, cmd.type, cmd.data || {});
-            }
-        }
-    }
-    // fog
-    for (var p = 0; p < G.players.length; p++)updateVis(G.fog, p, G.nodes, G.tick);
-    if (net.online && !runtimeOpts.skipNetworkSync) sendOnlineStateHash();
-    maybeShowCampaignObjectiveReminder();
-    refreshCampaignMissionPanels();
-    advanceTransientVisuals(TICK_DT);
-    maybeResolveMissionObjectiveVictory();
-    checkEnd(); G.tick++;
 }
 function checkEnd() {
     var resolved = resolveMatchEndState({
@@ -2798,390 +2652,63 @@ function drawTerritories(ctx, tick) {
 function render(ctx, cv, tick) {
     pruneSelectedFleetIds();
     drawScreenBackdrop(ctx, cv, tick);
-    ctx.save(); ctx.translate(cv.width / 2, cv.height / 2); ctx.scale(G.cam.zoom, G.cam.zoom); ctx.translate(-G.cam.x, -G.cam.y);
-
-    var hw = cv.width / 2 / G.cam.zoom, hh = cv.height / 2 / G.cam.zoom;
-    drawWorldBackdrop(ctx, tick, hw, hh);
-
-    // Ã¢â€â‚¬Ã¢â€â‚¬ GRID Ã¢â€â‚¬Ã¢â€â‚¬
-    var sp = 100;
-    var sx = Math.floor((G.cam.x - hw) / sp) * sp, sy = Math.floor((G.cam.y - hh) / sp) * sp;
-    ctx.fillStyle = 'rgba(255,255,255,0.02)';
-    for (var x = sx; x <= G.cam.x + hw; x += sp) for (var y = sy; y <= G.cam.y + hh; y += sp) { ctx.beginPath(); ctx.arc(x, y, 0.4, 0, Math.PI * 2); ctx.fill(); }
-
-    drawMapFeature(ctx, tick);
-    drawTerritories(ctx, tick);
-
-    for (var tr = 0; tr < G.nodes.length; tr++) {
-        var turretNode = G.nodes[tr];
-        if (turretNode.kind !== 'turret') continue;
-        var turretVisible = !G.tune.fogEnabled || turretNode.owner === G.human || !!G.fog.vis[G.human][turretNode.id];
-        if (!turretVisible) continue;
-        var turretCol = turretNode.owner >= 0 && G.players[turretNode.owner] ? G.players[turretNode.owner].color : NODE_TYPE_DEFS.turret.color;
-        ctx.beginPath();
-        ctx.arc(turretNode.pos.x, turretNode.pos.y, TURRET_RANGE, 0, Math.PI * 2);
-        ctx.strokeStyle = hexToRgba(turretCol, 0.16);
-        ctx.setLineDash([5, 4]);
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.setLineDash([]);
-    }
-    for (var fr = 0; fr < G.nodes.length; fr++) {
-        var fieldNode = G.nodes[fr];
-        if (!fieldNode || fieldNode.kind === 'turret' || fieldNode.owner < 0) continue;
-        var fieldVisible = !G.tune.fogEnabled || fieldNode.owner === G.human || !!G.fog.vis[G.human][fieldNode.id];
-        if (!fieldVisible) continue;
-        var fieldStats = getDefenseFieldStats(fieldNode, defenseFieldCfg());
-        if (!fieldStats.active) continue;
-        var fieldCol = G.players[fieldNode.owner] ? G.players[fieldNode.owner].color : COL_NEUTRAL;
-        var fieldAlpha = fieldNode.owner === G.human ? 0.12 : 0.07;
-        if (fieldNode.selected) fieldAlpha += 0.05;
-        ctx.beginPath();
-        ctx.arc(fieldNode.pos.x, fieldNode.pos.y, fieldStats.range, 0, Math.PI * 2);
-        ctx.strokeStyle = hexToRgba(fieldCol, fieldAlpha);
-        ctx.setLineDash([4, 5]);
-        ctx.lineWidth = fieldNode.defense ? 1.4 : 1;
-        ctx.stroke();
-        ctx.setLineDash([]);
-    }
-
-    // Ã¢â€â‚¬Ã¢â€â‚¬ FLOW LINKS Ã¢â€â‚¬Ã¢â€â‚¬
-    for (var i = 0; i < G.flows.length; i++) {
-        var fl = G.flows[i]; if (!fl.active) continue;
-        var sn = G.nodes[fl.srcId], tn = G.nodes[fl.tgtId];
-        if (G.tune.fogEnabled && fl.owner !== G.human && !G.fog.vis[G.human][fl.srcId] && !G.fog.vis[G.human][fl.tgtId]) continue;
-        var col = G.players[fl.owner] ? G.players[fl.owner].color : COL_NEUTRAL, cp = bezCP(sn.pos, tn.pos);
-        ctx.beginPath(); ctx.moveTo(sn.pos.x, sn.pos.y); ctx.quadraticCurveTo(cp.x, cp.y, tn.pos.x, tn.pos.y);
-        ctx.strokeStyle = hexToRgba(col, 0.35); ctx.lineWidth = 1; ctx.stroke();
-    }
-
-    // Ã¢â€â‚¬Ã¢â€â‚¬ FLEETS WITH TRAILS Ã¢â€â‚¬Ã¢â€â‚¬
-    var fhw = hw + 30, fhh = hh + 30;
-    for (var i = 0; i < G.fleets.length; i++) {
-        var f = G.fleets[i]; if (!f.active) continue;
-        if (G.tune.fogEnabled && f.owner !== G.human && !fleetVis(f, G.human, G.nodes)) continue;
-        if (Math.abs(f.x - G.cam.x) > fhw || Math.abs(f.y - G.cam.y) > fhh) continue;
-        var col = G.players[f.owner] ? G.players[f.owner].color : COL_NEUTRAL;
-        if (f.holding) {
-            drawHoldingFleet(ctx, f, col, tick, inp.selFleets.has(f.id));
-            continue;
-        }
-        if (f.t <= 0) continue;
-        drawFleetRocket(ctx, f, col, tick);
-    }
-    for (var bi = 0; bi < G.turretBeams.length; bi++) {
-        var beam = G.turretBeams[bi];
-        var beamAlpha = clamp(beam.life / Math.max(beam.maxLife, 0.0001), 0, 1);
-        var beamCol = beam.owner >= 0 && G.players[beam.owner] ? G.players[beam.owner].color : NODE_TYPE_DEFS.turret.color;
-        ctx.beginPath();
-        ctx.moveTo(beam.fromX, beam.fromY);
-        ctx.lineTo(beam.toX, beam.toY);
-        ctx.strokeStyle = hexToRgba(beamCol, 0.18 * beamAlpha);
-        ctx.lineWidth = 5;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.moveTo(beam.fromX, beam.fromY);
-        ctx.lineTo(beam.toX, beam.toY);
-        ctx.strokeStyle = hexToRgba('#ffffff', 0.75 * beamAlpha);
-        ctx.lineWidth = 1.4;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(beam.toX, beam.toY, 1.6 + beamAlpha * 1.2, 0, Math.PI * 2);
-        ctx.fillStyle = hexToRgba('#ffffff', 0.55 * beamAlpha);
-        ctx.fill();
-    }
-    for (var fbi = 0; fbi < G.fieldBeams.length; fbi++) {
-        var fieldBeam = G.fieldBeams[fbi];
-        var fieldBeamAlpha = clamp(fieldBeam.life / Math.max(fieldBeam.maxLife, 0.0001), 0, 1);
-        var fieldBeamCol = fieldBeam.owner >= 0 && G.players[fieldBeam.owner] ? G.players[fieldBeam.owner].color : '#8db3ff';
-        ctx.beginPath();
-        ctx.moveTo(fieldBeam.fromX, fieldBeam.fromY);
-        ctx.lineTo(fieldBeam.toX, fieldBeam.toY);
-        ctx.strokeStyle = hexToRgba(fieldBeamCol, 0.22 * fieldBeamAlpha);
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.arc(fieldBeam.toX, fieldBeam.toY, 1.2 + fieldBeamAlpha, 0, Math.PI * 2);
-        ctx.fillStyle = hexToRgba('#ffffff', 0.45 * fieldBeamAlpha);
-        ctx.fill();
-    }
-
-    // Ã¢â€â‚¬Ã¢â€â‚¬ NODES Ã¢â€â‚¬Ã¢â€â‚¬
-    for (var i = 0; i < G.nodes.length; i++) {
-        var n = G.nodes[i];
-        var vis = !G.tune.fogEnabled || !!G.fog.vis[G.human][n.id], col, dUnits;
-        if (n.owner === -1) col = COL_NEUTRAL;
-        else if (vis || n.owner === G.human) col = G.players[n.owner] ? G.players[n.owner].color : COL_NEUTRAL;
-        else { var ls = G.fog.ls[G.human][n.id]; col = (ls.tick >= 0 && ls.owner >= 0) ? darken(G.players[ls.owner] ? G.players[ls.owner].color : COL_NEUTRAL, 40) : COL_FOG; }
-        if (vis || n.owner === G.human) dUnits = '' + Math.floor(n.units);
-        else { var ls2 = G.fog.ls[G.human][n.id]; dUnits = ls2.tick >= 0 ? '' + ls2.units : '?'; }
-
-        // selection ring (sade)
-        if (n.selected && n.owner === G.human) {
-            ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, n.radius + 4, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 1.5; ctx.stroke();
-        }
-
-        // Ã¢â€â‚¬Ã¢â€â‚¬ Precompute orbital data Ã¢â€â‚¬Ã¢â€â‚¬
-        if ((vis || n.owner === G.human) && n.owner >= 0 && n.supplied === false) {
-            ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, n.radius + 3, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255,100,100,0.35)'; ctx.setLineDash([2, 3]); ctx.lineWidth = 1; ctx.stroke(); ctx.setLineDash([]);
-        }
-        if ((vis || n.owner === G.human) && n.defense) {
-            ctx.font = 'bold 10px sans-serif'; ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.textAlign = 'center';
-            ctx.fillText('\u26E8', n.pos.x, n.pos.y - n.radius - 4);
-        }
-        if ((vis || n.owner === G.human) && n.strategic) {
-            ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, n.radius + 4, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255,215,0,0.3)'; ctx.lineWidth = 1; ctx.stroke();
-            if (strategicPulseAppliesToNode(n.id)) {
-                var pulseGlow = 0.45 + Math.sin(tick * 0.12 + n.id) * 0.2;
-                ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, n.radius + 9, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(255,230,120,' + pulseGlow + ')';
-                ctx.lineWidth = 2.2;
-                ctx.stroke();
-                ctx.font = 'bold 9px Outfit,sans-serif';
-                ctx.fillStyle = 'rgba(255,235,170,0.95)';
-                ctx.textAlign = 'center';
-                ctx.fillText('PULSE', n.pos.x, n.pos.y - n.radius - 10);
-            }
-        }
-        var gateVisible = n.gate && (vis || n.owner === G.human || (G.mapFeature && G.mapFeature.type === 'barrier'));
-        if (gateVisible) {
-            var gatePulse = 0.55 + 0.45 * Math.sin(tick * 0.08 + n.id);
-            var gateAlpha = (vis || n.owner === G.human) ? 0.95 : 0.62;
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(n.pos.x, n.pos.y, n.radius + 9, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255,220,140,' + (0.28 + gatePulse * 0.24) * gateAlpha + ')';
-            ctx.lineWidth = 1.8;
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(n.pos.x, n.pos.y - n.radius - 8);
-            ctx.lineTo(n.pos.x + 5, n.pos.y - n.radius - 2);
-            ctx.lineTo(n.pos.x, n.pos.y - n.radius + 4);
-            ctx.lineTo(n.pos.x - 5, n.pos.y - n.radius - 2);
-            ctx.closePath();
-            ctx.fillStyle = 'rgba(255,220,140,' + gateAlpha + ')';
-            ctx.fill();
-            ctx.font = 'bold 10px Outfit,sans-serif';
-            ctx.fillStyle = 'rgba(255,232,180,' + gateAlpha + ')';
-            ctx.textAlign = 'center';
-            ctx.fillText('GATE', n.pos.x, n.pos.y + n.radius + 13);
-            ctx.restore();
-        }
-        if ((vis || n.owner === G.human) && n.encounterType) {
-            var encounterPulse = 0.58 + 0.42 * Math.sin(tick * 0.07 + n.id * 0.9);
-            var encounterCol = n.encounterType === 'mega_turret' ? 'rgba(255,196,132,' : 'rgba(130,238,255,';
-            ctx.save();
-            ctx.beginPath();
-            ctx.arc(n.pos.x, n.pos.y, n.radius + 12, 0, Math.PI * 2);
-            ctx.strokeStyle = encounterCol + (0.24 + encounterPulse * 0.18) + ')';
-            ctx.lineWidth = 1.5;
-            ctx.stroke();
-            ctx.font = 'bold 9px Outfit,sans-serif';
-            ctx.fillStyle = encounterCol + '0.92)';
-            ctx.textAlign = 'center';
-            ctx.fillText(n.encounterType === 'mega_turret' ? 'BOSS' : 'CORE', n.pos.x, n.pos.y - n.radius - 16);
-            ctx.restore();
-        }
-        if ((vis || n.owner === G.human) && n.owner >= 0 && n.assimilationProgress !== undefined && n.assimilationProgress < 1) {
-            var ringR = n.radius + 7;
-            var lockPhase = (n.assimilationLock || 0) > 0 ? (1 - clamp((n.assimilationLock || 0) / ASSIM_LOCK_TICKS, 0, 1)) : 1;
-            var assimPhase = clamp(n.assimilationProgress || 0, 0, 1);
-            var prog = clamp(lockPhase * 0.5 + assimPhase * 0.5, 0, 1);
-            var pulse = 0.8 + Math.sin(tick * 0.09 + n.id * 0.7) * 0.2;
-
-            // Base assimilation circle around the planet.
-            ctx.beginPath();
-            ctx.arc(n.pos.x, n.pos.y, ringR, 0, Math.PI * 2, false);
-            ctx.strokeStyle = hexToRgba(col, 0.16 + 0.12 * pulse);
-            ctx.lineWidth = 1.6;
-            ctx.stroke();
-
-            // Rotating dashed ring makes "ongoing process" readable at a glance.
-            ctx.save();
-            ctx.setLineDash([5, 4]);
-            ctx.lineDashOffset = -tick * 0.7;
-            ctx.beginPath();
-            ctx.arc(n.pos.x, n.pos.y, ringR, 0, Math.PI * 2, false);
-            ctx.strokeStyle = hexToRgba(col, 0.36);
-            ctx.lineWidth = 1.1;
-            ctx.stroke();
-            ctx.restore();
-
-            ctx.beginPath();
-            ctx.arc(n.pos.x, n.pos.y, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * prog, false);
-            ctx.strokeStyle = hexToRgba(col, 0.82);
-            ctx.lineWidth = 2.8;
-            ctx.lineCap = 'round';
-            ctx.stroke();
-
-            var endA = -Math.PI / 2 + Math.PI * 2 * prog;
-            var ex = n.pos.x + Math.cos(endA) * ringR;
-            var ey = n.pos.y + Math.sin(endA) * ringR;
-            ctx.beginPath();
-            ctx.arc(ex, ey, 2, 0, Math.PI * 2);
-            ctx.fillStyle = 'rgba(255,255,255,0.75)';
-            ctx.fill();
-        }
-        var hasOrbiters = (vis || n.owner === G.human) && n.owner >= 0 && n.kind !== 'turret';
-        var orbitalSquads = [];
-        if (hasOrbiters) {
-            orbitalSquads = getNodeOrbitalSquads(n);
-            hasOrbiters = orbitalSquads.length > 0;
-        }
-
-        // Ã¢â€â‚¬Ã¢â€â‚¬ PASS 1: Back-half orbit tracks + back warriors (BEHIND planet) Ã¢â€â‚¬Ã¢â€â‚¬
-        if (hasOrbiters) {
-            for (var osi = 0; osi < orbitalSquads.length; osi++) {
-                drawOrbitalSquadron(ctx, n, orbitalSquads[osi], col, tick, false);
-            }
-        }
-
-        // Ã¢â€â‚¬Ã¢â€â‚¬ PLANET BODY (drawn between back and front orbiters) Ã¢â€â‚¬Ã¢â€â‚¬
-        var tdef = nodeTypeOf(n);
-        if (n.kind === 'turret') {
-            drawTurretStation(ctx, n, col, tick);
-        } else {
-            var bodyCol = col;
-            if ((vis || n.owner === G.human) && col.indexOf('#') === 0) {
-                var typeBlend = n.owner === -1 ? 0.5 : 0.22;
-                bodyCol = blendHex(col, tdef.color, typeBlend);
-            }
-            var planetCanvas = getPlanetTexture(n.id, n.radius);
-            ctx.save();
-            if (!vis && n.owner !== G.human) { ctx.globalAlpha = 0.3; ctx.filter = 'grayscale(100%) brightness(50%)'; }
-            ctx.drawImage(planetCanvas, n.pos.x - n.radius, n.pos.y - n.radius, n.radius * 2, n.radius * 2);
-            ctx.restore();
-            if ((vis || n.owner === G.human) && n.owner >= 0 && col && col.indexOf('#') === 0) {
-                ctx.save();
-                ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, n.radius, 0, Math.PI * 2); ctx.clip();
-                var tint = ctx.createRadialGradient(n.pos.x - n.radius * 0.3, n.pos.y - n.radius * 0.3, 0, n.pos.x, n.pos.y, n.radius * 1.2);
-                tint.addColorStop(0, hexToRgba(col, 0.35)); tint.addColorStop(0.7, hexToRgba(col, 0.15)); tint.addColorStop(1, 'rgba(0,0,0,0)');
-                ctx.fillStyle = tint; ctx.fillRect(n.pos.x - n.radius, n.pos.y - n.radius, n.radius * 2, n.radius * 2);
-                ctx.restore();
-                ctx.beginPath(); ctx.arc(n.pos.x, n.pos.y, n.radius + 2, 0, Math.PI * 2);
-                ctx.strokeStyle = hexToRgba(col, 0.9); ctx.lineWidth = 2.5; ctx.stroke();
-            }
-        }
-
-        if ((vis || n.owner === G.human) && n.level > 1) {
-            for (var lv = 1; lv < n.level; lv++) {
-                var la = -Math.PI / 2 + (lv - 1) * 0.5;
-                var lx = n.pos.x + Math.cos(la) * (n.radius + 5);
-                var ly = n.pos.y + Math.sin(la) * (n.radius + 5);
-                ctx.beginPath(); ctx.arc(lx, ly, 1.5, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fill();
-            }
-        }
-
-        // Ã¢â€â‚¬Ã¢â€â‚¬ PASS 2: Front-half orbit tracks + front warriors (IN FRONT of planet) Ã¢â€â‚¬Ã¢â€â‚¬
-        if (hasOrbiters) {
-            for (var osj = 0; osj < orbitalSquads.length; osj++) {
-                drawOrbitalSquadron(ctx, n, orbitalSquads[osj], col, tick, true);
-            }
-        }
-
-        // unit count text
-        ctx.font = 'bold ' + Math.max(11, n.radius * 0.5) + 'px Outfit,sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        var unitFill = '#fff';
-        var unitStroke = 'rgba(6,10,16,0.78)';
-        if (!vis && n.owner !== G.human) {
-            unitFill = dUnits === '?' ? '#555' : '#777';
-            unitStroke = 'rgba(6,10,16,0.45)';
-        } else if (n.kind === 'turret') {
-            unitFill = '#f7fbff';
-            unitStroke = 'rgba(4,8,14,0.96)';
-        }
-        ctx.lineJoin = 'round';
-        ctx.miterLimit = 2;
-        ctx.lineWidth = n.kind === 'turret' ? 4.5 : 3.2;
-        ctx.strokeStyle = unitStroke;
-        ctx.strokeText(dUnits, n.pos.x, n.pos.y);
-        ctx.fillStyle = unitFill;
-        ctx.fillText(dUnits, n.pos.x, n.pos.y); ctx.shadowBlur = 0;
-
-        if (vis || n.owner === G.human) {
-            drawTypeBadge(ctx, n, nodeTypeOf(n));
-            if (n.level > 1) {
-                ctx.font = 'bold 9px Outfit,sans-serif';
-                ctx.fillStyle = 'rgba(255,255,255,0.82)';
-                ctx.fillText('L' + n.level, n.pos.x, n.pos.y - n.radius * 0.66);
-            }
-        }
-    }
-
-    // particles
-    for (var pi = 0; pi < G.particles.length; pi++) {
-        var p = G.particles[pi];
-        var alpha = p.life / p.maxLife;
-        if ((p.glow || 0) > 0) {
-            ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1.8 + p.glow), 0, Math.PI * 2);
-            ctx.fillStyle = hexToRgba(p.col, alpha * p.glow * 0.45);
-            ctx.fill();
-        }
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = hexToRgba(p.col, alpha);
-        ctx.fill();
-    }
-    for (var swi = 0; swi < G.shockwaves.length; swi++) {
-        var wave = G.shockwaves[swi];
-        var lifeAlpha = clamp(wave.life / Math.max(wave.maxLife, 0.0001), 0, 1);
-        var progress = 1 - lifeAlpha;
-        var radius = (Number(wave.radius) || 0) + (Number(wave.grow) || 0) * progress;
-        if ((Number(wave.fillAlpha) || 0) > 0) {
-            ctx.beginPath();
-            ctx.arc(wave.x, wave.y, radius, 0, Math.PI * 2);
-            ctx.fillStyle = hexToRgba(wave.col || '#ffffff', wave.fillAlpha * lifeAlpha);
-            ctx.fill();
-        }
-        ctx.beginPath();
-        ctx.arc(wave.x, wave.y, radius, 0, Math.PI * 2);
-        ctx.strokeStyle = hexToRgba(wave.col || '#ffffff', (Number(wave.alpha) || 0.3) * lifeAlpha);
-        ctx.lineWidth = (Number(wave.lineWidth) || 1.4) * (1 + progress * 0.3);
-        ctx.stroke();
-    }
-
-    // drag line (sade)
-    if (inp.dragActive) {
-        var ds = inp.dragStart, de = inp.dragEnd, dcp = bezCP(ds, de, BEZ_CURV * 0.7);
-        ctx.beginPath(); ctx.moveTo(ds.x, ds.y); ctx.quadraticCurveTo(dcp.x, dcp.y, de.x, de.y);
-        ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.lineWidth = 1; ctx.stroke();
-    }
+    ctx.save();
+    ctx.translate(cv.width / 2, cv.height / 2);
+    ctx.scale(G.cam.zoom, G.cam.zoom);
+    ctx.translate(-G.cam.x, -G.cam.y);
+    renderWorldLayers({
+        ctx: ctx,
+        canvas: cv,
+        tick: tick,
+        game: G,
+        inputState: inp,
+        constants: {
+            bezierCurve: BEZ_CURV,
+            turretRange: TURRET_RANGE,
+            assimLockTicks: ASSIM_LOCK_TICKS,
+            colNeutral: COL_NEUTRAL,
+            colFog: COL_FOG,
+            nodeTypeDefs: NODE_TYPE_DEFS,
+        },
+        helpers: {
+            drawWorldBackdrop: drawWorldBackdrop,
+            drawMapFeature: drawMapFeature,
+            drawTerritories: drawTerritories,
+            getDefenseFieldStats: getDefenseFieldStats,
+            defenseFieldCfg: defenseFieldCfg,
+            hexToRgba: hexToRgba,
+            bezCP: bezCP,
+            drawHoldingFleet: drawHoldingFleet,
+            drawFleetRocket: drawFleetRocket,
+            fleetVis: fleetVis,
+            clamp: clamp,
+            strategicPulseAppliesToNode: strategicPulseAppliesToNode,
+            getNodeOrbitalSquads: getNodeOrbitalSquads,
+            drawOrbitalSquadron: drawOrbitalSquadron,
+            drawTurretStation: drawTurretStation,
+            nodeTypeOf: nodeTypeOf,
+            blendHex: blendHex,
+            darken: darken,
+            getPlanetTexture: getPlanetTexture,
+            drawTypeBadge: drawTypeBadge,
+        },
+    });
     ctx.restore();
-    // minimap
-    var mm = document.getElementById('minimapCanvas');
-    if (mm && mm.getContext && (G.state === 'playing' || G.state === 'paused') && G.nodes.length > 0) {
-        var mmCtx = mm.getContext('2d');
-        mm.width = 140; mm.height = 90;
-        var scale = Math.min(mm.width / MAP_W, mm.height / MAP_H);
-        var mx = mm.width / 2 - G.cam.x * scale, my = mm.height / 2 - G.cam.y * scale;
-        mmCtx.fillStyle = 'rgba(8,12,21,0.95)'; mmCtx.fillRect(0, 0, mm.width, mm.height);
-        mmCtx.save(); mmCtx.translate(mx, my); mmCtx.scale(scale, scale);
-        for (var mi = 0; mi < G.nodes.length; mi++) {
-            var mn = G.nodes[mi];
-            var mcol = mn.owner < 0 ? '#5a6272' : (G.players[mn.owner] ? G.players[mn.owner].color : '#888');
-            mmCtx.fillStyle = mcol; mmCtx.beginPath(); mmCtx.arc(mn.pos.x, mn.pos.y, 8, 0, Math.PI * 2); mmCtx.fill();
-        }
-        mmCtx.restore();
-        var vw = (cv.width / G.cam.zoom) * scale, vh = (cv.height / G.cam.zoom) * scale;
-        mmCtx.strokeStyle = 'rgba(255,255,255,0.6)'; mmCtx.strokeRect(mm.width / 2 - vw / 2, mm.height / 2 - vh / 2, vw, vh);
-        document.getElementById('minimap').classList.remove('hidden');
-    } else if (document.getElementById('minimap')) document.getElementById('minimap').classList.add('hidden');
-    // marquee (screen space)
-    if (inp.marqActive) {
-        var mx = Math.min(inp.marqStart.x, inp.marqEnd.x), my = Math.min(inp.marqStart.y, inp.marqEnd.y),
-            mw = Math.abs(inp.marqEnd.x - inp.marqStart.x), mh = Math.abs(inp.marqEnd.y - inp.marqStart.y);
-        ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(74,142,255,0.6)'; ctx.lineWidth = 1; ctx.strokeRect(mx, my, mw, mh);
-        ctx.fillStyle = 'rgba(74,142,255,0.06)'; ctx.fillRect(mx, my, mw, mh); ctx.restore();
-    }
+
+    renderMinimapLayer({
+        minimapCanvas: document.getElementById('minimapCanvas'),
+        minimapWrapper: document.getElementById('minimap'),
+        viewportCanvas: cv,
+        game: G,
+        constants: {
+            mapWidth: MAP_W,
+            mapHeight: MAP_H,
+        },
+    });
+    renderMarqueeLayer({
+        ctx: ctx,
+        inputState: inp,
+    });
 }
 function drawArrow(ctx, f, t, col, sz) {
     var dx = t.x - f.x, dy = t.y - f.y, a = Math.atan2(dy, dx); ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(a);
@@ -3304,12 +2831,7 @@ function drawMapFeature(ctx, tick) {
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ INPUT Ã¢â€â‚¬Ã¢â€â‚¬
-var inp = {
-    sel: new Set(), selFleets: new Set(), marqActive: false, marqStart: { x: 0, y: 0 }, marqEnd: { x: 0, y: 0 }, dragActive: false, dragStart: { x: 0, y: 0 }, dragEnd: { x: 0, y: 0 }, dragNodeIds: [], dragFleetIds: [],
-    dragPending: false, dragDownNodeId: -1, dragDownFleetId: -1, dragDownScreen: { x: 0, y: 0 }, dragThreshold: 6,
-    panActive: false, panLast: { x: 0, y: 0 }, mw: { x: 0, y: 0 }, ms: { x: 0, y: 0 }, sendPct: 50, shift: false,
-    pinchActive: false, pinchStartDist: 0, pinchStartZoom: 1, pinchWorldCenter: { x: 0, y: 0 }, touchPointOrderPending: false, mousePointOrderPending: false, commandMode: ''
-};
+var inp = createInputState();
 function s2w(sx, sy) { return { x: (sx - cv.width / 2) / G.cam.zoom + G.cam.x, y: (sy - cv.height / 2) / G.cam.zoom + G.cam.y }; }
 function touchScreenPos(touch) {
     var r = cv.getBoundingClientRect();
@@ -3578,6 +3100,7 @@ var seedIn = $('seedInput'), rndSeedBtn = $('randomSeedBtn'), ncIn = $('nodeCoun
 var playlistSel = $('playlistSelect'), doctrineSel = $('doctrineSelect');
 var gameModeSel = $('gameModeSelect'), multiModeSel = $('multiModeSelect'), multiPlaylistSel = $('multiPlaylistSelect'), multiDoctrineSel = $('multiDoctrineSelect');
 var multiSeedIn = $('multiSeedInput'), multiNodeIn = $('multiNodeInput'), multiNodeLbl = $('multiNodeLabel'), multiDiffSel = $('multiDiffSelect'), multiRoomTypeIn = $('multiRoomTypeSelect');
+var hostSetupModeHint = $('hostSetupModeHint');
 var startBtn = $('startBtn'), customStartBtn = $('customStartBtn'), sandboxBtn = $('sandboxBtn'), campaignBtn = $('campaignBtn'), dailyChallengeBtn = $('dailyChallengeBtn'), importMapBtn = $('importMapBtn'), exportMapBtn = $('exportMapBtn'), customMapFileIn = $('customMapFileInput');
 var menuCustomizeBtn = $('menuCustomizeBtn'), menuOpenContentBtn = $('menuOpenContentBtn'), menuOpenMultiplayerBtn = $('menuOpenMultiplayerBtn'), menuOpenToolsBtn = $('menuOpenToolsBtn');
 var menuHubView = $('menuHubView'), menuSubHeader = $('menuSubHeader'), menuSectionTitle = $('menuSectionTitle'), menuSectionCopy = $('menuSectionCopy'), menuBackBtn = $('menuBackBtn');
@@ -3585,6 +3108,7 @@ var panelSingleCustomize = $('panelSingleCustomize'), panelContent = $('panelCon
 var playerNameIn = $('playerNameInput'), hostSetupBtn = $('hostSetupBtn'), hostSetupCreateRoomBtn = $('hostSetupCreateRoomBtn'), hostSetupBackBtn = $('hostSetupBackBtn');
 var startRoomBtn = $('startRoomBtn');
 var createRoomBtn = $('createRoomBtn');
+var joinRoomRow = $('joinRoomRow');
 var joinRoomCodeInput = $('joinRoomCodeInput');
 var joinRoomBtn = $('joinRoomBtn');
 var hostControls = $('hostControls'), leaveRoomBtn = $('leaveRoomBtn');
@@ -3631,6 +3155,8 @@ var chatMessagesEl = $('chatMessages');
 var pauseTitleEl = $('pauseTitle'), pauseHintEl = $('pauseHint'), resumeBtn = $('resumeBtn'), quitBtn = $('quitBtn');
 var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameOverStats'), restartBtn = $('restartBtn'), nextLevelBtn = $('nextLevelBtn');
 var hudTelemetryRow = $('hudTelemetryRow'), hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), hudCap = $('hudCap'), hudMeta = $('hudMeta'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
+var hudContextBadge = $('hudContextBadge'), hudHintLine = $('hudHintLine'), hudCoachRow = $('hudCoachRow'), hudActionTip = $('hudActionTip');
+var hudAdvisorCard = $('hudAdvisorCard'), hudAdvisorTitle = $('hudAdvisorTitle'), hudAdvisorBody = $('hudAdvisorBody');
 var doctrineBtn = $('doctrineBtn'), upgradeHudBtn = $('upgradeHudBtn'), defenseHudBtn = $('defenseHudBtn'), flowHudBtn = $('flowHudBtn');
 var sendPctQuickBtns = Array.prototype.slice.call(document.querySelectorAll('.send-quick-btn'));
 var powerSidebar = $('powerSidebar'), powerListEl = $('powerList');
@@ -3645,15 +3171,7 @@ var audioToggleBtn = $('audioToggleBtn'), hudInfoToggleBtn = $('hudInfoToggleBtn
 var tuneVals = { p: $('tuneProductionVal'), f: $('tuneFleetSpeedVal'), d: $('tuneDefenseVal'), fi: $('tuneFlowIntervalVal'), aa: $('tuneAIAggressionVal'), ab: $('tuneAIBufferVal'), ad: $('tuneAIDecisionVal') };
 var UI_PREFS_KEY = 'stellar_ui_prefs_v1';
 var DEFAULT_SFX_VOLUME = 0.85, DEFAULT_MUSIC_VOLUME = 0.55;
-var tuningOpen = false, powerRenderKey = '', inGameMenuOpen = false;
-var MENU_PANEL_META = {
-    hub: { title: '', copy: '' },
-    single_customize: { title: 'Oyunu Özelleştir', copy: 'Serbest maç ayarları ikinci katmanda durur; hızlı başlat akışından ayrıdır.' },
-    content: { title: 'Senaryo ve Challenge', copy: 'Kampanya ve günlük challenge aynı panelde toplanır; serbest maç ayarlarından ayrıdır.' },
-    multiplayer: { title: 'Çok Oyunculu', copy: 'İlk ekranda yalnızca nick, oda listesi, oda kur ve koda katıl akışı görünür.' },
-    host_setup: { title: 'Oda Kurulumu', copy: 'Host ayarları ayrı açılır; standard room varsayımları shared menu state üzerinden korunur.' },
-    tools: { title: 'Araçlar', copy: 'Özel harita, liderlik ve yardım ana oyun başlatma akışından ayrıldı.' },
-};
+var tuningOpen = false, powerRenderKey = '', inGameMenuOpen = false, hudActionHelpBound = false;
 var menuPanelViews = {
     hub: menuHubView,
     single_customize: panelSingleCustomize,
@@ -3663,84 +3181,36 @@ var menuPanelViews = {
     tools: panelTools,
 };
 
-function clampMenuNodeCount(v) {
-    var n = Math.floor(Number(v));
-    if (!isFinite(n)) n = 16;
-    return Math.max(8, Math.min(30, n));
-}
-function normalizeMenuDifficulty(v) {
-    return v === 'easy' || v === 'hard' ? v : 'normal';
-}
-function normalizeMenuRulesMode(v) {
-    return normalizeRulesetMode(v || 'advanced');
-}
-function normalizeMenuPlaylist(v) {
-    var raw = v === null || v === undefined ? '' : String(v).trim();
-    return raw || 'standard';
-}
-function normalizeMenuDoctrine(v) {
-    var raw = v === null || v === undefined ? '' : String(v).trim();
-    return raw || 'auto';
-}
-function normalizeMenuRoomType(v) {
-    return v === 'daily' || v === 'custom' ? v : 'standard';
-}
-function normalizeMenuSeed(v) {
-    var raw = v === null || v === undefined ? '' : String(v).trim();
-    return raw || '42';
-}
-function normalizeMenuPanel(panel) {
-    if (panel === 'quick_start') return 'hub';
-    return MENU_PANEL_META[panel] ? panel : 'hub';
-}
-function menuRulesModeLabel(mode) {
-    return normalizeMenuRulesMode(mode) === 'classic' ? 'Klasik' : 'Gelişmiş';
-}
-function menuDifficultyLabel(diff) {
-    if (diff === 'easy') return 'Kolay';
-    if (diff === 'hard') return 'Zor';
-    return 'Normal';
-}
-function menuDoctrineMenuLabel(doctrineId) {
-    if (!doctrineId || doctrineId === 'auto') return 'Doktrin Otomatik';
-    return doctrineName(doctrineId);
-}
 function setMenuLobbyMeta(text) {
     if (menuMultiCardMeta) menuMultiCardMeta.textContent = text || 'Lobi taraması bekleniyor';
 }
 function refreshMenuHeroSummary() {
-    var sk = menuState.skirmish;
-    if (menuSeedChip) menuSeedChip.textContent = 'Seed ' + sk.seed;
-    if (menuPlaylistChip) menuPlaylistChip.textContent = playlistName(sk.playlist || 'standard');
-    if (menuDoctrineChip) menuDoctrineChip.textContent = menuDoctrineMenuLabel(sk.doctrineId);
-    if (menuModeChip) menuModeChip.textContent = menuRulesModeLabel(sk.rulesMode);
-    if (menuFogChip) menuFogChip.textContent = sk.fogEnabled ? 'Sis Açık' : 'Sis Kapalı';
-    if (menuQuickStatusEl) {
-        menuQuickStatusEl.textContent = sk.nodeCount + ' node | ' + menuDifficultyLabel(sk.difficulty || 'normal') + ' | ' + playlistName(sk.playlist || 'standard') + ' | ' + menuDoctrineMenuLabel(sk.doctrineId);
-    }
-    if (menuStagePlaylistLabel) menuStagePlaylistLabel.textContent = 'OYUN LISTESI // ' + String(playlistName(sk.playlist || 'standard')).toUpperCase();
-    if (menuStageDoctrineLabel) menuStageDoctrineLabel.textContent = 'DOKTRIN // ' + String(menuDoctrineMenuLabel(sk.doctrineId)).toUpperCase();
+    var summary = buildMenuHeroSummary(menuState.skirmish);
+    if (menuSeedChip) menuSeedChip.textContent = summary.seedChip;
+    if (menuPlaylistChip) menuPlaylistChip.textContent = summary.playlistChip;
+    if (menuDoctrineChip) menuDoctrineChip.textContent = summary.doctrineChip;
+    if (menuModeChip) menuModeChip.textContent = summary.modeChip;
+    if (menuFogChip) menuFogChip.textContent = summary.fogChip;
+    if (menuQuickStatusEl) menuQuickStatusEl.textContent = summary.quickStatus;
+    if (menuStagePlaylistLabel) menuStagePlaylistLabel.textContent = summary.stagePlaylistLabel;
+    if (menuStageDoctrineLabel) menuStageDoctrineLabel.textContent = summary.stageDoctrineLabel;
 }
-function createInitialMenuState() {
-    return {
-        panel: 'hub',
-        skirmish: {
-            seed: normalizeMenuSeed(seedIn ? seedIn.value : '42'),
-            nodeCount: clampMenuNodeCount(ncIn ? ncIn.value : 16),
-            difficulty: normalizeMenuDifficulty(diffSel ? diffSel.value : 'normal'),
-            playlist: normalizeMenuPlaylist(playlistSel ? playlistSel.value : 'standard'),
-            doctrineId: normalizeMenuDoctrine(doctrineSel ? doctrineSel.value : 'auto'),
-            rulesMode: normalizeMenuRulesMode(gameModeSel ? gameModeSel.value : 'advanced'),
-            fogEnabled: menuFogCb ? !!menuFogCb.checked : false,
-        },
-        multiplayer: {
-            playerName: playerNameIn ? playerNameIn.value.trim() : '',
-            joinCode: joinRoomCodeInput ? String(joinRoomCodeInput.value || '').trim().toUpperCase() : '',
-            roomType: normalizeMenuRoomType(multiRoomTypeIn ? multiRoomTypeIn.value : 'standard'),
-        },
-    };
-}
-var menuState = createInitialMenuState();
+var menuState = createMenuState({
+    skirmish: {
+        seed: seedIn ? seedIn.value : '42',
+        nodeCount: ncIn ? ncIn.value : 16,
+        difficulty: diffSel ? diffSel.value : 'normal',
+        playlist: playlistSel ? playlistSel.value : 'standard',
+        doctrineId: doctrineSel ? doctrineSel.value : 'auto',
+        rulesMode: gameModeSel ? gameModeSel.value : 'advanced',
+        fogEnabled: menuFogCb ? !!menuFogCb.checked : false,
+    },
+    multiplayer: {
+        playerName: playerNameIn ? playerNameIn.value.trim() : '',
+        joinCode: joinRoomCodeInput ? String(joinRoomCodeInput.value || '').trim().toUpperCase() : '',
+        roomType: multiRoomTypeIn ? multiRoomTypeIn.value : 'standard',
+    },
+});
 
 function applySkirmishMenuState() {
     var sk = menuState.skirmish;
@@ -3790,9 +3260,6 @@ function updateMultiplayerMenuState(patch) {
     if (patch.roomType !== undefined) menuState.multiplayer.roomType = normalizeMenuRoomType(patch.roomType);
     applyMultiplayerMenuState();
 }
-function menuBackTarget(panel) {
-    return panel === 'host_setup' ? 'multiplayer' : 'hub';
-}
 function setMenuPanel(panel, opts) {
     opts = opts || {};
     var next = normalizeMenuPanel(panel);
@@ -3811,7 +3278,7 @@ function setMenuPanel(panel, opts) {
 }
 
 applyMenuStateToInputs();
-setMenuLobbyMeta('Lobi taraması bekleniyor');
+setMenuLobbyMeta(buildMenuLobbyMeta({ connected: false }));
 var uiPrefs = loadUiPrefs();
 
 function loadUiPrefs() {
@@ -3862,6 +3329,33 @@ function syncHintToggleButton() {
     if (!hintToggleBtn) return;
     hintToggleBtn.textContent = uiPrefs.hintsEnabled !== false ? 'İpucu: Açık' : 'İpucu: Kapalı';
 }
+function setHudActionTip(text) {
+    if (!hudActionTip) return;
+    hudActionTip.textContent = text || HUD_ACTION_HELP_DEFAULT;
+}
+function bindHudActionHelp() {
+    if (hudActionHelpBound) return;
+    var hudActionRoot = document.getElementById('hudRight');
+    if (!hudActionRoot) return;
+    var buttons = hudActionRoot.querySelectorAll('button');
+    for (var i = 0; i < buttons.length; i++) {
+        (function (btn) {
+            function showHelp() {
+                if (btn.disabled) {
+                    setHudActionTip(btn.getAttribute('data-help-disabled') || btn.getAttribute('data-help') || btn.title || HUD_ACTION_HELP_DEFAULT);
+                    return;
+                }
+                setHudActionTip(btn.getAttribute('data-help') || btn.title || HUD_ACTION_HELP_DEFAULT);
+            }
+            btn.addEventListener('mouseenter', showHelp);
+            btn.addEventListener('focus', showHelp);
+            btn.addEventListener('mouseleave', function () { setHudActionTip(); });
+            btn.addEventListener('blur', function () { setHudActionTip(); });
+        })(buttons[i]);
+    }
+    hudActionHelpBound = true;
+    setHudActionTip();
+}
 function syncPauseOverlayContent() {
     var onlineMenu = net.online && G.state === 'playing' && inGameMenuOpen;
     if (pauseTitleEl) pauseTitleEl.textContent = onlineMenu ? 'Maç Menüsü' : 'Duraklatıldı';
@@ -3882,21 +3376,35 @@ function syncPauseOverlayContent() {
 }
 function syncMatchHudControls() {
     if (pauseBtn) {
-        pauseBtn.textContent = net.online ? 'ÇIKIŞ' : '||';
+        pauseBtn.textContent = net.online ? 'ÇIKIŞ' : 'MENÜ';
         pauseBtn.title = net.online ? 'Ana Menüye Dön' : 'Duraklat';
+        pauseBtn.setAttribute('data-help', net.online
+            ? 'Maç menüsünü açar. Ana menüye dönersen yerini AI devralır.'
+            : 'Oyunu duraklatır ve menüyü açar. Kısayol: Esc veya P.');
         pauseBtn.classList.toggle('hud-exit-btn', !!net.online);
     }
     if (spdBtn) {
         spdBtn.disabled = !!net.online;
         spdBtn.title = net.online ? 'Online maçlarda devre dışı' : 'Hız';
+        spdBtn.textContent = 'HIZ ' + G.speed + 'x';
+        spdBtn.setAttribute('data-help', net.online
+            ? 'Online maçlarda hız sabittir; tüm istemciler aynı tick hızında kalır.'
+            : 'Tek oyunculuda oyun hızını değiştirir. Döngü: 1x, 2x, 4x.');
+        spdBtn.setAttribute('data-help-disabled', 'Online maçlarda hız sunucu senkronu için sabittir.');
     }
     if (upgradeHudBtn) {
         upgradeHudBtn.disabled = G.state !== 'playing' || !selectedOwnedNodeIds().length || !(G.rules && G.rules.allowUpgrade);
         upgradeHudBtn.title = G.rules && G.rules.allowUpgrade ? 'Seçili gezegenleri yükselt' : 'Bu modda upgrade kapalı';
+        upgradeHudBtn.setAttribute('data-help', 'Seçili kendi node\'larını upgrade eder. Kısayol: U.');
+        upgradeHudBtn.setAttribute('data-help-disabled', G.rules && G.rules.allowUpgrade
+            ? 'Önce kendi bir node seç. Upgrade yalnızca asimile ve yeterli garnizonlu node\'larda çalışır.'
+            : 'Bu modda upgrade kapalı.');
     }
     if (defenseHudBtn) {
         defenseHudBtn.disabled = G.state !== 'playing' || !selectedOwnedNodeIds().length;
         defenseHudBtn.title = 'Seçili gezegenlerde savunmayı aç veya kapat';
+        defenseHudBtn.setAttribute('data-help', 'Defense modu savunmayı ve asimilasyonu güçlendirir, üretimi düşürür.');
+        defenseHudBtn.setAttribute('data-help-disabled', 'Defense için önce kendi bir node seç.');
     }
     if (flowHudBtn) {
         var hasOwnedSelection = selectedOwnedNodeIds().length > 0;
@@ -3905,6 +3413,21 @@ function syncMatchHudControls() {
         flowHudBtn.textContent = inp.commandMode === 'flow' ? 'HEDEF' : 'FLOW';
         flowHudBtn.title = inp.commandMode === 'flow' ? 'Flow hedefi seç' : 'Seçili kaynaklar için flow hedefi seç';
         flowHudBtn.classList.toggle('active', inp.commandMode === 'flow');
+        flowHudBtn.setAttribute('data-help', inp.commandMode === 'flow'
+            ? 'Flow modu aktif: hedef node\'a tıkla, boş alana tıklarsan iptal olur.'
+            : 'Seçili kaynaklardan otomatik transfer hattı kurmak için hedef modu açar.');
+        flowHudBtn.setAttribute('data-help-disabled', 'Flow için önce bir veya daha fazla kendi node seç.');
+    }
+    if (chatToggle) {
+        chatToggle.disabled = !net.online;
+        chatToggle.title = net.online ? 'Sohbet' : 'Sohbet yalnızca çok oyunculuda';
+        chatToggle.setAttribute('data-help', net.online
+            ? 'Sohbet panelini açar veya kapatır. Emote ve kısa mesajlar burada.'
+            : 'Sohbet yalnızca çok oyunculu odalarda aktiftir.');
+        chatToggle.setAttribute('data-help-disabled', 'Sohbet yalnızca çok oyunculu odalarda aktiftir.');
+    }
+    if (exportMapHudBtn) {
+        exportMapHudBtn.setAttribute('data-help', 'Geçerli maçı JSON custom map olarak dışa aktarır.');
     }
 }
 function setAudioEnabled(enabled) {
@@ -3923,6 +3446,7 @@ function setHintsEnabled(enabled) {
     saveUiPrefs();
     syncHintToggleButton();
     if (!uiPrefs.hintsEnabled) hideGameToast('hint');
+    syncHudAssistiveText();
 }
 function openPauseMenu() {
     if (G.state !== 'playing') return;
@@ -4166,6 +3690,90 @@ function selectionMetaText() {
     if (pulseCount > 0) summary.push('Pulse x' + pulseCount);
     return summary.join(' | ');
 }
+function syncHudAssistiveText() {
+    pruneSelectedFleetIds();
+    var commandMode = inp ? inp.commandMode : '';
+    var nodeCount = inp && inp.sel ? inp.sel.size : 0;
+    var fleetCount = inp && inp.selFleets ? inp.selFleets.size : 0;
+    var ownedCount = selectedOwnedNodeIds().length;
+    var selectedOwnedNodes = [];
+    var selectedNodeLabel = '';
+    var i = 0;
+    if (nodeCount === 1 && inp && inp.sel) {
+        var selectedNode = G.nodes[Array.from(inp.sel)[0]];
+        if (selectedNode) selectedNodeLabel = nodeTypeOf(selectedNode).label;
+    }
+    if (inp && inp.sel) {
+        Array.from(inp.sel).forEach(function (id) {
+            var node = G.nodes[id];
+            if (node && node.owner === G.human) selectedOwnedNodes.push(node);
+        });
+    }
+    if (hudContextBadge) {
+        hudContextBadge.textContent = buildHudContextBadge({
+            commandMode: commandMode,
+            nodeCount: nodeCount,
+            fleetCount: fleetCount,
+            online: net.online,
+            selectedNodeLabel: selectedNodeLabel,
+        });
+    }
+    var hintsOn = hintsEnabled();
+    if (hudHintLine) {
+        hudHintLine.classList.toggle('hidden', !hintsOn);
+        hudHintLine.textContent = buildHudHintText({
+            commandMode: commandMode,
+            nodeCount: nodeCount,
+            fleetCount: fleetCount,
+            ownedCount: ownedCount,
+        });
+    }
+    if (hudCoachRow) {
+        hudCoachRow.classList.toggle('hidden', !hintsOn);
+        renderHudCoach(hudCoachRow, hintsOn ? buildHudCoachItems({
+            commandMode: commandMode,
+            nodeCount: nodeCount,
+            fleetCount: fleetCount,
+            ownedCount: ownedCount,
+            sendPct: inp ? inp.sendPct : 50,
+        }) : []);
+    }
+    if (hudAdvisorCard) {
+        var objectiveRows = currentCampaignObjectiveRows();
+        var primaryObjective = pickPrimaryObjectiveRow(objectiveRows);
+        var gates = barrierGateNodes();
+        var readyGateCount = 0;
+        for (i = 0; i < gates.length; i++) {
+            if (gates[i].owner === G.human && isNodeAssimilated(gates[i])) readyGateCount++;
+        }
+        var hu = Math.floor((G.unitByPlayer && G.unitByPlayer[G.human]) || 0);
+        var hc = Math.floor((G.capByPlayer && G.capByPlayer[G.human]) || 0);
+        var pulseNode = G.strategicPulse && G.nodes ? G.nodes[G.strategicPulse.nodeId] : null;
+        var advisor = hintsOn ? buildHudAdvisorCard({
+            tick: G.tick,
+            commandMode: commandMode,
+            selectedOwnedUnassimilated: selectedOwnedNodes.some(function (node) { return !isNodeAssimilated(node); }),
+            selectedOwnedUnsupplied: selectedOwnedNodes.some(function (node) { return node.supplied !== true; }),
+            holdingFleetSelected: fleetCount > 0 && nodeCount === 0,
+            capPressure: hc > 0 ? hu / hc : 0,
+            primaryObjectiveTitle: primaryObjective ? currentMissionPanelTitle(currentMissionDefinition()) : '',
+            primaryObjectiveLabel: primaryObjective ? primaryObjective.label : '',
+            primaryObjectiveProgress: primaryObjective ? primaryObjective.progressText : '',
+            primaryObjectiveCoach: primaryObjective ? primaryObjective.coach : '',
+            mapFeatureType: G.mapFeature ? G.mapFeature.type : 'none',
+            readyGateCount: readyGateCount,
+            pulseOwnedActive: !!(G.strategicPulse && G.strategicPulse.active && pulseNode && pulseNode.owner === G.human && isNodeAssimilated(pulseNode)),
+            encounterCount: Array.isArray(G.encounters) ? G.encounters.length : 0,
+        }) : null;
+        hudAdvisorCard.classList.toggle('hidden', !advisor);
+        hudAdvisorCard.classList.remove('tone-info', 'tone-accent', 'tone-warning', 'tone-objective');
+        if (advisor) {
+            hudAdvisorCard.classList.add('tone-' + advisor.tone);
+            if (hudAdvisorTitle) hudAdvisorTitle.textContent = advisor.title;
+            if (hudAdvisorBody) hudAdvisorBody.textContent = advisor.body;
+        }
+    }
+}
 
 function updatePowerSidebar() {
     if (!powerSidebar || !powerListEl || !G.players || !G.players.length) return;
@@ -4230,29 +3838,29 @@ function currentCampaignLevel() {
     return CAMPAIGN_LEVELS[G.campaign.levelIndex] || null;
 }
 
-function currentObjectiveMissionDefinition() {
-    if (!Array.isArray(G.objectives) || !G.objectives.length) return null;
-    return {
-        name: 'Hedef Maçı',
-        title: 'Hedef Maçı',
-        blurb: '',
-        playlist: G.playlist || 'standard',
-        doctrineId: humanDoctrineId() || G.doctrineId || '',
-        objectives: G.objectives,
-        endOnObjectives: G.endOnObjectives === true,
-    };
-}
-
 function currentMissionDefinition() {
-    if (G.daily.active && G.daily.challenge) return G.daily.challenge;
-    return currentCampaignLevel() || currentObjectiveMissionDefinition();
+    return resolveMissionDefinition({
+        dailyActive: G.daily.active,
+        dailyChallenge: G.daily.challenge,
+        campaignActive: G.campaign.active,
+        campaignLevelIndex: G.campaign.levelIndex,
+        campaignLevels: CAMPAIGN_LEVELS,
+        objectives: G.objectives,
+        playlist: G.playlist || 'standard',
+        humanDoctrineId: humanDoctrineId(),
+        doctrineId: G.doctrineId || '',
+        endOnObjectives: G.endOnObjectives === true,
+    });
 }
 
 function currentMissionMode() {
-    if (G.daily.active && G.daily.challenge) return 'daily';
-    if (currentCampaignLevel()) return 'campaign';
-    if (currentObjectiveMissionDefinition()) return 'objective';
-    return '';
+    return resolveMissionMode({
+        dailyActive: G.daily.active,
+        dailyChallenge: G.daily.challenge,
+        campaignActive: G.campaign.active,
+        campaignLevelIndex: G.campaign.levelIndex,
+        objectives: G.objectives,
+    });
 }
 
 function currentMissionSnapshot() {
@@ -4274,30 +3882,16 @@ function currentCampaignObjectiveRows() {
 }
 
 function currentMissionPanelTitle(level) {
-    if (!level) return 'Misyon';
-    var mode = currentMissionMode();
-    if (mode === 'daily') return 'Günlük Challenge';
-    if (mode === 'campaign') return 'Bölüm ' + level.id + ': ' + level.name;
-    return level.title || level.name || 'Misyon';
+    return buildMissionPanelTitle(level, currentMissionMode());
 }
 
 function currentMissionPanelSubtitle(level) {
-    if (!level) return '';
-    var mode = currentMissionMode();
-    if (mode === 'daily') {
-        var statusBits = [];
-        statusBits.push(level.title || 'Günlük');
-        statusBits.push(level.blurb || '');
-        if (level.playlist) statusBits.push('Playlist: ' + playlistName(level.playlist));
-        if (level.doctrineId) statusBits.push('Doktrin: ' + doctrineName(level.doctrineId));
-        if (G.daily.completed) statusBits.push('Durum: Tamamlandı');
-        else if (G.daily.bestTick > 0) statusBits.push('En iyi: ' + G.daily.bestTick + ' tick');
-        return statusBits.filter(Boolean).join(' | ');
-    }
-    var subtitleParts = [level.blurb || ''];
-    if (level.playlist) subtitleParts.push('Playlist: ' + playlistName(level.playlist));
-    if (level.doctrineId) subtitleParts.push('Doktrin: ' + doctrineName(level.doctrineId));
-    return subtitleParts.filter(Boolean).join(' | ');
+    return buildMissionPanelSubtitle({
+        level: level,
+        mode: currentMissionMode(),
+        dailyCompleted: G.daily.completed,
+        dailyBestTick: G.daily.bestTick,
+    });
 }
 
 function refreshCampaignMissionPanels() {
@@ -4570,7 +4164,7 @@ function handleAuthoritativeState(payload) {
     net.syncWarningText = '';
     if (typeof payload.hash === 'string' && payload.hash) rememberSyncSnapshot(payload.tick, payload.hash);
     if (firstAuthoritativeFrame) {
-        setRoomStatus('Online maç sunucu state ile senkronize edildi.', false);
+        setRoomStatus('Online maç sunucu state ile senkronize edildi.', 'success');
     }
 }
 
@@ -4808,13 +4402,12 @@ function showUI(st) {
     syncPauseOverlayContent();
     syncMatchHudControls();
     syncHudTelemetryVisibility();
+    syncHudAssistiveText();
     refreshCampaignMissionPanels();
 }
 
 function setRoomStatus(msg, error) {
-    if (!roomStatusEl) return;
-    roomStatusEl.textContent = msg || '';
-    roomStatusEl.style.color = error ? '#ff8f8f' : 'var(--text-dim)';
+    setRoomStatusState(roomStatusEl, msg || '', error === true ? 'error' : (error === 'success' ? 'success' : 'info'));
 }
 
 var CHAT_LOG_LIMIT = 120;
@@ -4842,68 +4435,41 @@ function chatColorForPlayer(index) {
     return 'var(--danger)';
 }
 
-function renderRoomPlayers(players, hostId) {
-    if (!roomPlayersEl) return;
-    roomPlayersEl.replaceChildren();
-    if (!players || players.length === 0) return;
-    for (var i = 0; i < players.length; i++) {
-        var p = players[i];
-        var el = document.createElement('span');
-        el.className = 'room-player' + (p.socketId === hostId ? ' host' : '');
-        el.textContent = p.name + (p.socketId === hostId ? ' (Host)' : '');
-        roomPlayersEl.appendChild(el);
-    }
-}
-
 function roomButtonState() {
-    var inRoom = !!net.roomCode;
-    if (playerNameIn) playerNameIn.disabled = inRoom;
-    if (startRoomBtn) {
-        startRoomBtn.disabled = !inRoom || !net.connected || net.players.length < 2;
-        startRoomBtn.textContent = 'Oyunu Başlat';
-    }
+    applyLobbyControlState({
+        playerNameInput: playerNameIn,
+        startRoomButton: startRoomBtn,
+        roomList: roomListEl,
+        createRoomButton: createRoomBtn,
+        hostSetupButton: hostSetupBtn,
+        joinCodeRow: joinRoomRow,
+        hostControls: hostControls,
+        leaveRoomButton: leaveRoomBtn,
+    }, getLobbyControlState({
+        inRoom: !!net.roomCode,
+        connected: net.connected,
+        isHost: net.isHost,
+        playerCount: net.players.length,
+    }));
 }
 
 function renderRoomList(rooms) {
     renderRoomListUI(roomListEl, rooms, { connected: net.connected });
-    if (!net.connected) setMenuLobbyMeta('Sunucuya bağlanılıyor');
-    else if (!rooms || rooms.length === 0) setMenuLobbyMeta('Henüz açık oda yok');
-    else setMenuLobbyMeta(rooms.length + ' aktif oda tarandı');
+    setMenuLobbyMeta(buildMenuLobbyMeta({
+        connected: net.connected,
+        roomCount: rooms ? rooms.length : 0,
+    }));
 }
 
 function clearRoomState(message, opts) {
     opts = opts || {};
     inGameMenuOpen = false;
-    net.online = false;
-    net.authoritativeEnabled = false;
-    net.authoritativeReady = false;
-    net.roomCode = '';
-    net.players = [];
-    net.isHost = false;
-    net.localPlayerIndex = 0;
-    net.pendingCommands = [];
-    net.matchId = '';
-    net.lastAppliedSeq = -1;
-    net.syncHashSentTick = -1;
-    net.syncWarningTick = -99999;
-    net.syncWarningText = '';
-    net.syncHistory = [];
-    net.commandHistory = [];
-    net.resyncRequestId = '';
-    net.lastSummaryTick = -1;
-    net.lastPingWallMs = 0;
-    net.resumePending = !!opts.preserveResume;
+    resetOnlineRoomState(net, opts);
     clearChatMessages();
-    renderRoomPlayers([], null);
+    renderRoomPlayers(roomPlayersEl, [], null);
     if (!opts.preserveResume) clearRoomResumeState();
     if (message) setRoomStatus(message, false);
     roomButtonState();
-    if (roomListEl) roomListEl.style.display = '';
-    if (createRoomBtn) createRoomBtn.style.display = '';
-    if (hostSetupBtn) hostSetupBtn.style.display = '';
-    if (joinRoomCodeInput && joinRoomCodeInput.parentElement) joinRoomCodeInput.parentElement.style.display = '';
-    if (hostControls) hostControls.style.display = 'none';
-    if (leaveRoomBtn) leaveRoomBtn.style.display = 'none';
     syncRoomTypeInputs();
     syncPauseOverlayContent();
     syncMatchHudControls();
@@ -4933,19 +4499,12 @@ function doCreateRoom() {
         setRoomStatus('Custom oda açmak için önce bir custom map yükle.', true);
         return;
     }
-    net.socket.emit('createRoom', {
-        action: 'create',
+    net.socket.emit('createRoom', buildCreateRoomRequest({
         playerName: net.playerName,
         mode: roomMode,
-        seed: sk.seed,
-        nodeCount: sk.nodeCount,
-        difficulty: sk.difficulty,
-        fogEnabled: !!sk.fogEnabled,
-        rulesMode: sk.rulesMode,
-        playlist: sk.playlist,
-        doctrineId: sk.doctrineId,
-        customMap: roomMode === 'custom' ? currentCustomMapConfig : null,
-    });
+        skirmish: sk,
+        customMap: currentCustomMapConfig,
+    }));
 }
 
 function doJoinRoom() {
@@ -4965,12 +4524,11 @@ function doJoinRoom() {
 
     net.pendingJoin = false;
     setRoomStatus('Odaya bağlanılıyor...', false);
-    net.socket.emit('joinRoom', {
-        action: 'join',
+    net.socket.emit('joinRoom', buildJoinRoomRequest({
         playerName: net.playerName,
         roomCode: code,
         reconnectToken: net.reconnectToken || '',
-    });
+    }));
 }
 
 function issueOnlineCommand(type, data) {
@@ -4981,31 +4539,24 @@ function issueOnlineCommand(type, data) {
         }
         var sanitized = sanitizeCommandData(type, data || {});
         if (!sanitized) return false;
-        // Ä°leri tarihli komut gÃ¶ndererek, aÄŸ gecikmesine raÄŸmen 
-        // iki oyuncuda da aynÄ± tick'te eÅŸzamanlÄ± iÅŸletilmesini saÄŸla (Command Delay)
-        var rtt = typeof net.lastPingMs === 'number' && net.lastPingMs > 0 ? net.lastPingMs : 180;
-        var delayTicks = clamp(Math.round((rtt / 2) / 33.33) + 4, 6, 18);
-        net.socket.emit('playerCommand', { type: type, data: sanitized, tick: G.tick + delayTicks, matchId: net.matchId });
+        net.socket.emit('playerCommand', {
+            type: type,
+            data: sanitized,
+            tick: computeOnlineCommandTick(G.tick, net.lastPingMs),
+            matchId: net.matchId,
+        });
         return true;
     }
     return false;
 }
 
-function socketEndpoint() {
-    if (window.location.protocol === 'file:') return 'http://127.0.0.1:3000';
-    if (window.location.port === '5173') {
-        return window.location.protocol + '//' + window.location.hostname + ':3000';
-    }
-    return undefined;
-}
-
 function ensureSocket() {
     if (net.socket || typeof window.io !== 'function') return;
-    net.socket = window.io(socketEndpoint());
+    net.socket = window.io(getSocketEndpoint(window.location));
 
     net.socket.on('connect', function () {
         net.connected = true;
-        setRoomStatus('Bağlantı kuruldu. Oda Kur veya Katıl.', false);
+        setRoomStatus('Bağlantı kuruldu. Oda Kur veya Katıl.', 'success');
         setMenuLobbyMeta('Lobi taranıyor');
         requestLobby();
         net.socket.emit('requestDailyChallenge');
@@ -5038,19 +4589,11 @@ function ensureSocket() {
         var rooms = payload && Array.isArray(payload.rooms) ? payload.rooms : [];
         if (net.roomCode) return; // Already in a room
         renderRoomList(rooms);
-        if (rooms.length === 0) {
-            setRoomStatus('Henüz oda yok. Oda Kur ile yeni oda oluştur veya arkadaşından oda kodu al.', false);
-        } else {
-            setRoomStatus(rooms.length + ' oda mevcut. Birine katıl veya yeni oda kur.', false);
-        }
+        setRoomStatus(buildLobbyListStatus({ connected: net.connected, roomCount: rooms.length }), false);
     });
 
     net.socket.on('roomState', function (state) {
-        net.roomCode = state.code;
-        net.isHost = !!state.isHost;
-        net.players = state.players || [];
-        net.pendingJoin = false;
-        net.resumePending = false;
+        applyRoomStateNetState(net, state);
         if (state.reconnectToken) {
             saveRoomResumeState({
                 roomCode: state.code,
@@ -5058,45 +4601,18 @@ function ensureSocket() {
                 reconnectToken: state.reconnectToken,
             });
         }
-        if (state.config) {
-            var stateMode = normalizeRulesetMode(state.config.rulesMode || 'advanced');
-            updateSkirmishMenuState({
-                seed: state.config.seed || menuState.skirmish.seed,
-                nodeCount: state.config.nodeCount || menuState.skirmish.nodeCount,
-                difficulty: state.config.difficulty || menuState.skirmish.difficulty,
-                rulesMode: stateMode,
-                playlist: state.config.playlist || 'standard',
-                doctrineId: state.config.doctrineId || 'auto',
-                fogEnabled: state.config.fogEnabled === true,
-            });
-            updateMultiplayerMenuState({
-                roomType: state.config.mode === 'daily' ? 'daily' : (state.config.mode === 'custom' ? 'custom' : 'standard'),
-            });
+        var menuPatches = buildRoomStateMenuPatches(state, menuState.skirmish);
+        if (menuPatches) {
+            updateSkirmishMenuState(menuPatches.skirmish);
+            updateMultiplayerMenuState(menuPatches.multiplayer);
         }
 
-        if (hostControls) hostControls.style.display = net.isHost ? 'flex' : 'none';
-        if (roomListEl) roomListEl.style.display = 'none';
-        if (createRoomBtn) createRoomBtn.style.display = 'none';
-        if (hostSetupBtn) hostSetupBtn.style.display = 'none';
-        if (joinRoomCodeInput && joinRoomCodeInput.parentElement) joinRoomCodeInput.parentElement.style.display = 'none';
-        if (leaveRoomBtn) leaveRoomBtn.style.display = 'block';
-
-        renderRoomPlayers(net.players, state.hostId);
-        var status = 'Oda: ' + state.code + ' | ' + net.players.length + '/' + state.maxPlayers + ' oyuncu';
-        if (state.preview && state.preview.mode === 'daily') {
-            status += ' | Günlük: ' + ((state.preview.challengeTitle || '') + (state.preview.challengeKey ? (' (' + state.preview.challengeKey + ')') : ''));
-            if (state.preview.aiCount) status += ' | AI ' + state.preview.aiCount;
-        } else if (state.preview && state.preview.mode === 'custom') {
-            status += ' | Custom: ' + (state.preview.customMapName || 'Harita');
-            status += ' | Slot ' + (state.preview.playerCount || state.maxPlayers || net.players.length);
-            if (state.preview.aiCount) status += ' | AI ' + state.preview.aiCount;
-        } else if (state.preview) {
-            status += ' | ' + playlistName(state.preview.playlist || 'standard');
-        }
-        if (net.players.length < 2) status += ' | En az 2 oyuncu gerekli';
-        else status += (net.isHost ? ' | Oyunu başlatabilirsin' : ' | Hostun başlatması bekleniyor...');
-        setRoomStatus(status, false);
-        setMenuLobbyMeta('Canlı oda // ' + state.code);
+        renderRoomPlayers(roomPlayersEl, net.players, state.hostId);
+        setRoomStatus(buildRoomStatusSummary(state, {
+            playerCount: net.players.length,
+            isHost: net.isHost,
+        }), false);
+        setMenuLobbyMeta(buildMenuLobbyMeta({ roomCode: state.code }));
         roomButtonState();
         if (G.state === 'mainMenu') setMenuPanel('multiplayer', { keepOverlay: true });
     });
@@ -5128,7 +4644,7 @@ function ensureSocket() {
             appendChatMessage(leftName + ' oyundan ayrıldı. Yerine Yapay Zeka geçti.', leftColor);
         } else if (net.players) {
             net.players = net.players.filter(function (p) { return p.index !== payload.index; });
-            renderRoomPlayers(net.players, net.isHost ? net.socket.id : null);
+            renderRoomPlayers(roomPlayersEl, net.players, net.isHost ? net.socket.id : null);
             appendChatMessage(leftName + ' odadan ayrıldı.', leftColor);
         }
     });
@@ -5148,13 +4664,7 @@ function ensureSocket() {
     });
 
     net.socket.on('matchStarted', function (payload) {
-        var players = payload.players || [];
-        net.players = players;
-        net.pendingJoin = false;
-        net.resumePending = false;
-        net.matchId = payload.matchId || '';
-        net.authoritativeEnabled = payload && payload.authoritative === true;
-        net.authoritativeReady = false;
+        var onlineState = beginOnlineMatch(net, payload, net.socket.id);
         if (payload && payload.reconnectToken) {
             saveRoomResumeState({
                 roomCode: payload.roomCode || net.roomCode,
@@ -5162,40 +4672,7 @@ function ensureSocket() {
                 reconnectToken: payload.reconnectToken,
             });
         }
-        var self = players.find(function (p) { return p.socketId === net.socket.id; });
-        net.localPlayerIndex = self ? self.index : 0;
-        net.online = true;
-        net.pendingCommands = [];
-        net.syncDrift = 0;
-        net.lastPingTick = 0;
-        net.lastAppliedSeq = -1;
-        net.syncHashSentTick = -1;
-        net.syncWarningTick = -99999;
-        net.syncWarningText = '';
-        net.syncHistory = [];
-        net.commandHistory = [];
-        net.resyncRequestId = '';
-        net.lastSummaryTick = -1;
-        net.lastPingWallMs = 0;
-
-        var onlineCustomMap = payload && payload.mode === 'custom' && payload.customMap ? normalizeCustomMapConfig(payload.customMap) : null;
-        initGame(payload.seed || '42', Number(payload.nodeCount || 16), payload.difficulty || 'normal', {
-            keepTuning: false,
-            fogEnabled: !!payload.fogEnabled,
-            rulesMode: payload.rulesMode || 'advanced',
-            humanCount: Number(payload.humanCount || players.length || 2),
-            aiCount: Number(payload.aiCount || 0),
-            localPlayerIndex: net.localPlayerIndex,
-            mapFeature: payload.mapFeature || 'none',
-            mapMutator: payload.mapMutator || 'auto',
-            customMap: onlineCustomMap,
-            tuneOverrides: onlineCustomMap ? onlineCustomMap.tuneOverrides || null : null,
-            playlist: payload.playlist || 'standard',
-            doctrineId: payload.doctrineId || 'auto',
-            encounters: payload.encounters || [],
-            objectives: payload.objectives || [],
-            endOnObjectives: payload.endOnObjectives === true,
-        });
+        initGame(payload.seed || '42', Number(payload.nodeCount || 16), payload.difficulty || 'normal', buildOnlineMatchInitOptions(payload, onlineState));
         G.campaign.active = false;
         G.campaign.levelIndex = -1;
         G.daily.active = payload.mode === 'daily' && !!payload.challenge;
@@ -5203,20 +4680,15 @@ function ensureSocket() {
         G.daily.reminderShown = {};
         if (G.daily.active) syncDailyChallengeState(payload.challenge);
         else { G.daily.bestTick = 0; G.daily.completed = false; }
-        currentCustomMapConfig = onlineCustomMap;
+        currentCustomMapConfig = onlineState.onlineCustomMap;
         clearSelection(true);
         clearChatMessages();
         spIdx = 0;
-        spdBtn.textContent = '1x';
+        G.speed = 1;
+        spdBtn.textContent = 'HIZ 1x';
         tuneFogCb.checked = G.tune.fogEnabled;
         if (menuFogCb) menuFogCb.checked = G.tune.fogEnabled;
-        setRoomStatus(
-            'Online maç başladı. Sen P' + (net.localPlayerIndex + 1) + ' oldun.' +
-            (payload.mode === 'daily' && payload.challengeTitle ? (' | Günlük: ' + payload.challengeTitle) : '') +
-            (payload.mode === 'custom' && payload.customMapName ? (' | Custom: ' + payload.customMapName) : '') +
-            (net.authoritativeEnabled ? ' | Sunucu state senkronu bekleniyor...' : ''),
-            false
-        );
+        setRoomStatus(buildOnlineMatchStatusText(payload, net.localPlayerIndex, net.authoritativeEnabled), false);
         applyAudioPreference();
         showUI('playing');
         showHintToast('Ana menü için sağ üstteki CIKIS butonunu kullan.');
@@ -5273,7 +4745,7 @@ function ensureSocket() {
     net.socket.on('matchResultConfirmed', function (payload) {
         if (payload && payload.draw) appendChatMessage('Maç sonucu: Berabere', 'var(--text-dim)');
         else appendChatMessage('Maç sonucu onaylandı: ' + ((payload && payload.winnerName) || ('P' + ((payload && payload.winnerIndex >= 0) ? (payload.winnerIndex + 1) : '?'))), 'var(--text-dim)');
-        setRoomStatus('Maç sonucu sunucu tarafında onaylandı.', false);
+        setRoomStatus('Maç sonucu sunucu tarafında onaylandı.', 'success');
     });
     net.socket.on('leaderboard', function (payload) {
         var el = document.getElementById('leaderboardList');
@@ -5289,15 +4761,17 @@ function ensureSocket() {
 // Menu
 function syncRoomTypeInputs() {
     var roomMode = normalizeMenuRoomType(menuState.multiplayer.roomType);
-    var locksMapConfig = roomMode === 'daily' || roomMode === 'custom';
-    if (multiRoomTypeIn && multiRoomTypeIn.value !== roomMode) multiRoomTypeIn.value = roomMode;
-    if (multiSeedIn) multiSeedIn.disabled = !!locksMapConfig;
-    if (multiNodeIn) multiNodeIn.disabled = !!locksMapConfig;
-    if (multiDiffSel) multiDiffSel.disabled = !!locksMapConfig;
-    if (multiModeSel) multiModeSel.disabled = !!locksMapConfig;
-    if (multiPlaylistSel) multiPlaylistSel.disabled = roomMode !== 'standard';
-    if (multiDoctrineSel) multiDoctrineSel.disabled = roomMode !== 'standard';
-    if (multiNodeLbl) multiNodeLbl.style.opacity = locksMapConfig ? '0.45' : '1';
+    applyRoomTypeUiState({
+        roomTypeSelect: multiRoomTypeIn,
+        seedInput: multiSeedIn,
+        nodeInput: multiNodeIn,
+        difficultySelect: multiDiffSel,
+        rulesModeSelect: multiModeSel,
+        playlistSelect: multiPlaylistSel,
+        doctrineSelect: multiDoctrineSel,
+        nodeLabel: multiNodeLbl,
+        modeHint: hostSetupModeHint,
+    }, getRoomTypeUiState(roomMode));
 }
 syncRoomTypeInputs();
 if (seedIn) seedIn.addEventListener('input', function () { updateSkirmishMenuState({ seed: seedIn.value }); });
@@ -5367,12 +4841,11 @@ function maybeResumeOnlineRoom() {
     net.reconnectToken = resume.reconnectToken;
     net.resumePending = true;
     setRoomStatus('Bağlantı geri geldi. Maçtaki koltuk geri alınıyor...', false);
-    net.socket.emit('joinRoom', {
-        action: 'join',
+    net.socket.emit('joinRoom', buildJoinRoomRequest({
         playerName: resume.playerName,
         roomCode: resume.roomCode,
         reconnectToken: resume.reconnectToken,
-    });
+    }));
     return true;
 }
 
@@ -5644,16 +5117,11 @@ function resetSelectionAndSpeed() {
     clearSelection(true);
     resetDragState();
     spIdx = 0;
-    if (spdBtn) spdBtn.textContent = '1x';
+    G.speed = 1;
+    if (spdBtn) spdBtn.textContent = 'HIZ 1x';
 }
 function finalizeLocalGameStart(fogOn) {
-    G.campaign.active = false;
-    G.campaign.levelIndex = -1;
-    G.daily.active = false;
-    G.daily.challenge = null;
-    G.daily.reminderShown = {};
-    G.daily.bestTick = 0;
-    G.daily.completed = false;
+    applySkirmishRunState(G);
     resetSelectionAndSpeed();
     if (tuneFogCb) tuneFogCb.checked = !!fogOn;
     applyAudioPreference();
@@ -5662,17 +5130,10 @@ function finalizeLocalGameStart(fogOn) {
 function startSinglePlayerGame() {
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
     clearRoomState('');
-    currentCustomMapConfig = null;
-    var sk = menuState.skirmish;
-    initGame(sk.seed, sk.nodeCount, sk.difficulty, {
-        fogEnabled: !!sk.fogEnabled,
-        rulesMode: sk.rulesMode,
-        mapMutator: 'auto',
-        playlist: sk.playlist,
-        doctrineId: sk.doctrineId,
-        forcePlaylistOverrides: sk.playlist !== 'standard',
-    });
-    finalizeLocalGameStart(G.tune.fogEnabled);
+    var startConfig = buildSkirmishStartConfig(menuState.skirmish);
+    currentCustomMapConfig = startConfig.customMapConfig;
+    initGame(startConfig.seed, startConfig.nodeCount, startConfig.difficulty, startConfig.initOptions);
+    finalizeLocalGameStart(startConfig.fogEnabled);
     refreshCustomMapStatus();
 }
 function startSandboxGame() {
@@ -5687,53 +5148,29 @@ function startDailyChallengeGame() {
     var challenge = todayDailyChallenge();
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
     clearRoomState('');
-    currentCustomMapConfig = null;
+    var startConfig = buildDailyChallengeStartConfig(challenge);
+    currentCustomMapConfig = startConfig.customMapConfig;
     syncDailyChallengeState(challenge);
-    initGame(challenge.seed, challenge.nc, challenge.diff, {
-        fogEnabled: !!challenge.fog,
-        aiCount: challenge.aiCount,
-        mapFeature: challenge.mapFeature || 'auto',
-        mapMutator: challenge.mapMutator || 'auto',
-        rulesMode: challenge.rulesMode || 'advanced',
-        playlist: challenge.playlist || 'standard',
-        doctrineId: challenge.doctrineId || 'auto',
-        encounters: challenge.encounters || [],
-        objectives: challenge.objectives || [],
-        endOnObjectives: challenge.endOnObjectives === true,
-    });
-    G.campaign.active = false;
-    G.campaign.levelIndex = -1;
-    G.daily.active = true;
-    G.daily.challenge = challenge;
-    G.daily.reminderShown = {};
+    initGame(startConfig.seed, startConfig.nodeCount, startConfig.difficulty, startConfig.initOptions);
+    applyDailyChallengeRunState(G, challenge);
     syncDailyChallengeState(challenge);
     resetSelectionAndSpeed();
-    if (menuFogCb) menuFogCb.checked = !!challenge.fog;
-    if (tuneFogCb) tuneFogCb.checked = !!challenge.fog;
+    if (menuFogCb) menuFogCb.checked = startConfig.fogEnabled;
+    if (tuneFogCb) tuneFogCb.checked = startConfig.fogEnabled;
     applyAudioPreference();
     showUI('playing');
-    showGameToast('Günlük challenge açıldı: ' + challenge.title);
+    showGameToast(startConfig.toastText);
 }
 function startCustomMapGame(customMap) {
     var normalized = normalizeCustomMapConfig(customMap);
-    if (!normalized || !normalized.nodes || normalized.nodes.length < 4) return;
+    var startConfig = buildCustomMapStartConfig(normalized);
+    if (!startConfig) return;
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
     clearRoomState('');
-    currentCustomMapConfig = normalized;
-    initGame(normalized.seed || 'custom-map', normalized.nodes.length, normalized.difficulty || 'normal', {
-        fogEnabled: !!normalized.fogEnabled,
-        aiCount: Math.max(0, normalized.playerCount - 1),
-        rulesMode: normalized.rulesMode || 'advanced',
-        tuneOverrides: normalized.tuneOverrides || null,
-        customMap: normalized,
-        playlist: normalized.playlist || 'standard',
-        doctrineId: normalized.doctrineId || 'auto',
-        encounters: normalized.encounters || [],
-        objectives: normalized.objectives || [],
-        endOnObjectives: normalized.endOnObjectives === true,
-    });
-    finalizeLocalGameStart(normalized.fogEnabled);
-    showGameToast('Custom map yüklendi: ' + normalized.name);
+    currentCustomMapConfig = startConfig.customMapConfig;
+    initGame(startConfig.seed, startConfig.nodeCount, startConfig.difficulty, startConfig.initOptions);
+    finalizeLocalGameStart(startConfig.fogEnabled);
+    showGameToast(startConfig.toastText);
     refreshCustomMapStatus();
 }
 function exportCurrentMapState() {
@@ -5786,39 +5223,21 @@ function exportCurrentMapState() {
 function startCampaignLevel(levelIndex) {
     var idx = applyCampaignLevelSelection(levelIndex);
     var lvl = CAMPAIGN_LEVELS[idx];
+    var startConfig = buildCampaignLevelStartConfig(lvl, idx);
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
     clearRoomState('');
-    initGame(lvl.seed, lvl.nc, lvl.diff, {
-        fogEnabled: !!lvl.fog,
-        aiCount: lvl.aiCount,
-        mapFeature: lvl.mapFeature || 'auto',
-        mapMutator: lvl.mapMutator || 'none',
-        tuneOverrides: lvl.tune || null,
-        rulesMode: lvl.rulesMode || 'advanced',
-        playlist: lvl.playlist || 'standard',
-        doctrineId: lvl.doctrineId || 'auto',
-        encounters: lvl.encounters || [],
-        objectives: lvl.objectives || [],
-        endOnObjectives: lvl.endOnObjectives === true,
-    });
-    G.campaign.active = true;
-    G.campaign.levelIndex = idx;
-    G.campaign.reminderShown = {};
-    G.daily.active = false;
-    G.daily.challenge = null;
-    G.daily.reminderShown = {};
-    G.daily.bestTick = 0;
-    G.daily.completed = false;
-    currentCustomMapConfig = null;
-    if (menuFogCb) menuFogCb.checked = !!lvl.fog;
-    if (tuneFogCb) tuneFogCb.checked = !!lvl.fog;
+    initGame(startConfig.seed, startConfig.nodeCount, startConfig.difficulty, startConfig.initOptions);
+    applyCampaignRunState(G, startConfig.campaignLevelIndex);
+    currentCustomMapConfig = startConfig.customMapConfig;
+    if (menuFogCb) menuFogCb.checked = startConfig.fogEnabled;
+    if (tuneFogCb) tuneFogCb.checked = startConfig.fogEnabled;
     resetSelectionAndSpeed();
     applyAudioPreference();
     closeScenarioMenu();
     showUI('playing');
-    if (lvl.hint) {
+    if (startConfig.hintText) {
         setTimeout(function () {
-            if (G.campaign.active && G.campaign.levelIndex === idx && G.state === 'playing') showHintToast('Bölüm ipucu: ' + lvl.hint);
+            if (G.campaign.active && G.campaign.levelIndex === idx && G.state === 'playing') showHintToast(startConfig.hintText);
         }, 1200);
     }
     refreshCampaignMissionPanels();
@@ -5997,17 +5416,22 @@ if (hintToggleBtn) {
     });
 }
 var speeds = [1, 2, 4], spIdx = 0;
-spdBtn.addEventListener('click', function () { if (net.online) return; spIdx = (spIdx + 1) % 3; G.speed = speeds[spIdx]; spdBtn.textContent = G.speed + 'x'; });
+spdBtn.addEventListener('click', function () { if (net.online) return; spIdx = (spIdx + 1) % 3; G.speed = speeds[spIdx]; spdBtn.textContent = 'HIZ ' + G.speed + 'x'; });
 var themeBtn = $('themeBtn');
 function syncThemeButton() {
     if (!themeBtn) return;
-    themeBtn.textContent = document.body.classList.contains('theme-light') ? 'KOYU' : 'ACIK';
+    themeBtn.textContent = 'TEMA';
+    themeBtn.title = document.body.classList.contains('theme-light') ? 'Koyu temaya geç' : 'Açık temaya geç';
+    themeBtn.setAttribute('data-help', document.body.classList.contains('theme-light')
+        ? 'Açık tema aktif. Tıklarsan koyu temaya geçer.'
+        : 'Koyu tema aktif. Tıklarsan açık temaya geçer.');
 }
 if (themeBtn) themeBtn.addEventListener('click', function () {
     document.body.classList.toggle('theme-light');
     syncThemeButton();
 });
 syncThemeButton();
+bindHudActionHelp();
 var chatPanel = $('chatPanel'), chatInput = $('chatInput'), chatToggle = $('chatToggle');
 if (chatToggle) chatToggle.addEventListener('click', function () {
     if (chatPanel) chatPanel.classList.toggle('hidden');
@@ -6046,7 +5470,7 @@ function setSendPct(pct) {
     var next = clamp(Math.round(Number(pct) || 50), 10, 100);
     inp.sendPct = next;
     if (sendPctIn) sendPctIn.value = '' + next;
-    if (hudPct) hudPct.textContent = 'Send: ' + next + '%';
+    if (hudPct) hudPct.textContent = 'Gönder: ' + next + '%';
     syncSendQuickButtons();
 }
 sendPctIn.addEventListener('input', function () { setSendPct(parseInt(sendPctIn.value, 10)); });
@@ -6125,361 +5549,60 @@ tuneOpen.addEventListener('click', function () { tuningOpen = true; tunePanel.cl
 if (menuFogCb) menuFogCb.addEventListener('change', function () { tuneFogCb.checked = menuFogCb.checked; });
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ CANVAS MOUSE Ã¢â€â‚¬Ã¢â€â‚¬
-cv.addEventListener('mousedown', function (e) {
-    if (G.state !== 'playing') return; var w = s2w(e.offsetX, e.offsetY); inp.mw = w; inp.ms = { x: e.offsetX, y: e.offsetY };
-    if (e.button === 0 && inp.commandMode) {
-        var modeNode = hitNode(w);
-        if (modeNode) applyCommandModeTarget(modeNode.id);
-        else {
-            clearCommandMode();
-            showGameToast('Flow modu iptal edildi.');
-        }
-        e.preventDefault();
-        return;
-    }
-    if (e.button === 1) { inp.panActive = true; inp.panLast = { x: e.offsetX, y: e.offsetY }; e.preventDefault(); return; }
-    if (e.button === 2) {
-        var nd = hitNode(w);
-        var selectedOwnedSources = 0;
-        inp.sel.forEach(function (sid) {
-            var sn = G.nodes[sid];
-            if (sn && sn.owner === G.human) selectedOwnedSources++;
-        });
-        var rightClickAction = resolveRightClickAction({
-            targetExists: !!nd,
-            targetOwnerIsHuman: !!(nd && nd.owner === G.human),
-            targetSelected: !!(nd && inp.sel.has(nd.id)),
-            selectedOwnedCount: selectedOwnedSources,
-        });
-        if (rightClickAction === 'defense' && nd && nd.owner === G.human) {
-            var defIds = inp.sel.has(nd.id) && inp.sel.size > 0 ? Array.from(inp.sel) : [nd.id];
-            if (issueOnlineCommand('toggleDefense', { nodeIds: defIds })) { } else {
-                defIds.forEach(function (id) { toggleDefense(G.human, id); });
-            }
-        } else if (rightClickAction === 'flow' && nd) {
-            inp.sel.forEach(function (sid) {
-                var sn = G.nodes[sid];
-                if (sn && sn.owner === G.human && sid !== nd.id) {
-                    var flowData = { srcId: sid, tgtId: nd.id };
-                    if (!issueOnlineCommand('flow', flowData)) {
-                        applyPlayerCommand(G.human, 'flow', flowData);
-                    }
-                }
-            });
-        }
-        e.preventDefault(); return;
-    }
-    var cn = hitNode(w), hf = null; if (!cn) hf = hitHoldingFleet(w); inp.shift = e.shiftKey;
-    inp.dragPending = false;
-    inp.dragDownNodeId = -1;
-    inp.dragDownFleetId = -1;
-    if (cn && cn.owner === G.human && (inp.sel.size > 0 || inp.selFleets.size > 0) && !inp.sel.has(cn.id) && !e.shiftKey) {
-        if (sendFromSelectionTo(cn.id)) return;
-    }
-
-    if (cn && cn.owner === G.human) {
-        var dragSelection = null;
-        if (inp.sel.has(cn.id) && (inp.sel.size > 0 || inp.selFleets.size > 0)) {
-            dragSelection = selectedSendOrder();
-        } else if (e.shiftKey) {
-            inp.sel.add(cn.id);
-            syncNodeSelectionFlags();
-            dragSelection = selectedSendOrder();
-            if (typeof AudioFX !== 'undefined') AudioFX.select();
-        } else {
-            selectNodeIds([cn.id], false);
-            dragSelection = { sources: [cn.id], fleetIds: [] };
-            if (typeof AudioFX !== 'undefined') AudioFX.select();
-        }
-        if ((dragSelection.sources.length + dragSelection.fleetIds.length) > 0) {
-            inp.dragPending = true;
-            inp.dragDownNodeId = cn.id;
-            inp.dragDownScreen = { x: e.offsetX, y: e.offsetY };
-            inp.dragNodeIds = dragSelection.sources.slice();
-            inp.dragFleetIds = dragSelection.fleetIds.slice();
-            var startPt = centroidForSources(dragSelection.sources, dragSelection.fleetIds);
-            inp.dragStart = startPt || { x: cn.pos.x, y: cn.pos.y };
-            inp.dragEnd = w;
-        }
-        return;
-    }
-
-    if (hf) {
-        pruneSelectedFleetIds();
-        var fleetDragSelection = null;
-        if (inp.selFleets.has(hf.id) && (inp.sel.size > 0 || inp.selFleets.size > 0)) {
-            fleetDragSelection = selectedSendOrder();
-        } else if (e.shiftKey) {
-            inp.selFleets.add(hf.id);
-            syncNodeSelectionFlags();
-            fleetDragSelection = selectedSendOrder();
-            if (typeof AudioFX !== 'undefined') AudioFX.select();
-        } else {
-            selectFleetIds([hf.id], false);
-            fleetDragSelection = { sources: [], fleetIds: [hf.id] };
-            if (typeof AudioFX !== 'undefined') AudioFX.select();
-        }
-        if ((fleetDragSelection.sources.length + fleetDragSelection.fleetIds.length) > 0) {
-            inp.dragPending = true;
-            inp.dragDownFleetId = hf.id;
-            inp.dragDownScreen = { x: e.offsetX, y: e.offsetY };
-            inp.dragNodeIds = fleetDragSelection.sources.slice();
-            inp.dragFleetIds = fleetDragSelection.fleetIds.slice();
-            var fleetStartPt = centroidForSources(fleetDragSelection.sources, fleetDragSelection.fleetIds);
-            inp.dragStart = fleetStartPt || { x: hf.x, y: hf.y };
-            inp.dragEnd = w;
-        }
-        return;
-    }
-
-    if (cn && (inp.sel.size > 0 || inp.selFleets.size > 0)) {
-        sendFromSelectionTo(cn.id);
-        return;
-    }
-
-    if (!e.shiftKey && (inp.sel.size > 0 || inp.selFleets.size > 0)) {
-        var mousePointSelection = selectedSendOrder();
-        if (mousePointSelection.sources.length > 0 || mousePointSelection.fleetIds.length > 0) {
-            inp.dragPending = true;
-            inp.dragDownNodeId = mousePointSelection.sources.length > 0 ? mousePointSelection.sources[0] : -1;
-            inp.dragDownFleetId = mousePointSelection.fleetIds.length > 0 ? mousePointSelection.fleetIds[0] : -1;
-            inp.dragDownScreen = { x: e.offsetX, y: e.offsetY };
-            inp.dragNodeIds = mousePointSelection.sources.slice();
-            inp.dragFleetIds = mousePointSelection.fleetIds.slice();
-            inp.dragStart = centroidForSources(mousePointSelection.sources, mousePointSelection.fleetIds) || w;
-            inp.dragEnd = w;
-            inp.mousePointOrderPending = true;
-            return;
-        }
-    }
-    if (!e.shiftKey) clearSelection(false);
-    inp.marqActive = true; inp.marqStart = { x: e.offsetX, y: e.offsetY }; inp.marqEnd = { x: e.offsetX, y: e.offsetY };
-});
-cv.addEventListener('mousemove', function (e) {
-    var w = s2w(e.offsetX, e.offsetY); inp.mw = w; inp.ms = { x: e.offsetX, y: e.offsetY };
-    if (inp.panActive) { var dx = (e.offsetX - inp.panLast.x) / G.cam.zoom, dy = (e.offsetY - inp.panLast.y) / G.cam.zoom; G.cam.x -= dx; G.cam.y -= dy; inp.panLast = { x: e.offsetX, y: e.offsetY }; return; }
-    if (inp.mousePointOrderPending && !inp.dragActive) {
-        var mdx = e.offsetX - inp.dragDownScreen.x;
-        var mdy = e.offsetY - inp.dragDownScreen.y;
-        var movedPx = Math.sqrt(mdx * mdx + mdy * mdy);
-        if (movedPx >= inp.dragThreshold) {
-            inp.mousePointOrderPending = false;
-            inp.dragPending = false;
-            inp.dragDownNodeId = -1;
-            inp.dragDownFleetId = -1;
-            inp.dragNodeIds = [];
-            inp.dragFleetIds = [];
-            if (!inp.shift) clearSelection(false);
-            inp.marqActive = true;
-            inp.marqStart = { x: inp.dragDownScreen.x, y: inp.dragDownScreen.y };
-            inp.marqEnd = { x: e.offsetX, y: e.offsetY };
-            return;
-        }
-    } else if (inp.dragPending && !inp.dragActive) {
-        var mdx2 = e.offsetX - inp.dragDownScreen.x;
-        var mdy2 = e.offsetY - inp.dragDownScreen.y;
-        var movedPx2 = Math.sqrt(mdx2 * mdx2 + mdy2 * mdy2);
-        if (shouldStartDragSend({ downOnOwnedNode: inp.dragDownNodeId >= 0 || inp.dragDownFleetId >= 0, movedPx: movedPx2, thresholdPx: inp.dragThreshold })) {
-            beginDragSend(inp.dragNodeIds, inp.dragFleetIds, w);
-        }
-    }
-    if (inp.dragActive) { inp.dragEnd = w; return; }
-    if (inp.marqActive) { inp.marqEnd = { x: e.offsetX, y: e.offsetY }; }
-});
-cv.addEventListener('mouseup', function (e) {
-    if (e.button === 1) { inp.panActive = false; return; }
-    if (inp.dragActive) {
-        var w = s2w(e.offsetX, e.offsetY), tn = hitNode(w);
-        if (tn) sendFromSourcesTo(inp.dragNodeIds, inp.dragFleetIds, tn.id);
-        else sendFromSourcesToPoint(inp.dragNodeIds, inp.dragFleetIds, w);
-        resetDragState(); return;
-    }
-    if (inp.mousePointOrderPending) {
-        sendFromSourcesToPoint(inp.dragNodeIds, inp.dragFleetIds, s2w(e.offsetX, e.offsetY));
-        resetDragState();
-        return;
-    }
-    inp.dragPending = false;
-    inp.dragDownNodeId = -1;
-    inp.dragDownFleetId = -1;
-    if (inp.marqActive) {
-        var sw = s2w(inp.marqStart.x, inp.marqStart.y), ew = s2w(inp.marqEnd.x, inp.marqEnd.y), ids = nodesInRect(sw, ew, G.human), fleetIds = holdingFleetIdsInRect(sw, ew, G.human);
-        if (ids.length > 0 || fleetIds.length > 0) selectEntityIds(ids, fleetIds, inp.shift);
-        inp.marqActive = false;
-    }
-});
-cv.addEventListener('wheel', function (e) {
-    if (G.state !== 'playing') return;
-    var f = e.deltaY > 0 ? (1 - ZOOM_SPD) : (1 + ZOOM_SPD); G.cam.zoom *= f; G.cam.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, G.cam.zoom)); e.preventDefault();
-}, { passive: false });
-cv.addEventListener('contextmenu', function (e) { e.preventDefault(); });
-cv.addEventListener('touchstart', function (e) {
-    if (G.state === 'playing' && e.touches.length === 2) {
-        beginTouchPinch(touchScreenPos(e.touches[0]), touchScreenPos(e.touches[1]));
-        e.preventDefault();
-        return;
-    }
-    if (e.touches.length === 1 && G.state === 'playing') {
-        var pos = touchScreenPos(e.touches[0]);
-        inp.touchStart = pos;
-        inp.pinchActive = false;
-        inp.dragPending = false;
-        inp.dragDownNodeId = -1;
-        inp.dragDownFleetId = -1;
-        var w = s2w(pos.x, pos.y); var cn = hitNode(w), hf = null; if (!cn) hf = hitHoldingFleet(w);
-        if (inp.commandMode) {
-            if (cn) applyCommandModeTarget(cn.id);
-            else {
-                clearCommandMode();
-                showGameToast('Flow modu iptal edildi.');
-            }
-            e.preventDefault();
-            return;
-        }
-        if (cn && cn.owner === G.human && (inp.sel.size > 0 || inp.selFleets.size > 0) && !inp.sel.has(cn.id)) {
-            if (sendFromSelectionTo(cn.id)) { e.preventDefault(); return; }
-        }
-        if (cn && cn.owner === G.human) {
-            var touchSelection = null;
-            if (inp.sel.has(cn.id) && (inp.sel.size > 0 || inp.selFleets.size > 0)) {
-                touchSelection = selectedSendOrder();
-            } else {
-                selectNodeIds([cn.id], false);
-                touchSelection = { sources: [cn.id], fleetIds: [] };
-                if (typeof AudioFX !== 'undefined') AudioFX.select();
-            }
-            inp.dragPending = true;
-            inp.dragDownNodeId = cn.id;
-            inp.dragDownScreen = { x: pos.x, y: pos.y };
-            inp.dragNodeIds = touchSelection.sources.slice();
-            inp.dragFleetIds = touchSelection.fleetIds.slice();
-            var touchStartPt = centroidForSources(touchSelection.sources, touchSelection.fleetIds);
-            inp.dragStart = touchStartPt || { x: cn.pos.x, y: cn.pos.y };
-            inp.dragEnd = w;
-        } else if (hf) {
-            selectFleetIds([hf.id], false);
-            inp.dragPending = true;
-            inp.dragDownFleetId = hf.id;
-            inp.dragDownScreen = { x: pos.x, y: pos.y };
-            inp.dragNodeIds = [];
-            inp.dragFleetIds = [hf.id];
-            inp.dragStart = { x: hf.x, y: hf.y };
-            inp.dragEnd = w;
-            if (typeof AudioFX !== 'undefined') AudioFX.select();
-        } else if (cn && (inp.sel.size > 0 || inp.selFleets.size > 0)) {
-            sendFromSelectionTo(cn.id);
-        } else if (inp.sel.size > 0 || inp.selFleets.size > 0) {
-            var pointSelection = selectedSendOrder();
-            if (pointSelection.sources.length > 0 || pointSelection.fleetIds.length > 0) {
-                inp.dragPending = true;
-                inp.dragDownNodeId = pointSelection.sources.length > 0 ? pointSelection.sources[0] : -1;
-                inp.dragDownFleetId = pointSelection.fleetIds.length > 0 ? pointSelection.fleetIds[0] : -1;
-                inp.dragDownScreen = { x: pos.x, y: pos.y };
-                inp.dragNodeIds = pointSelection.sources.slice();
-                inp.dragFleetIds = pointSelection.fleetIds.slice();
-                inp.dragStart = centroidForSources(pointSelection.sources, pointSelection.fleetIds) || w;
-                inp.dragEnd = w;
-                inp.touchPointOrderPending = true;
-            }
-        } else {
-            clearSelection(false);
-            inp.marqActive = true; inp.marqStart = pos; inp.marqEnd = pos;
-        }
-        e.preventDefault();
-    }
-}, { passive: false });
-cv.addEventListener('touchmove', function (e) {
-    if (G.state === 'playing' && e.touches.length === 2) {
-        var posA = touchScreenPos(e.touches[0]);
-        var posB = touchScreenPos(e.touches[1]);
-        if (!inp.pinchActive) beginTouchPinch(posA, posB);
-        updateTouchPinch(posA, posB);
-        e.preventDefault();
-        return;
-    }
-    if (e.touches.length === 1 && G.state === 'playing') {
-        var pos = touchScreenPos(e.touches[0]);
-        var w = s2w(pos.x, pos.y);
-        if (inp.dragPending && !inp.dragActive) {
-            var mdx = pos.x - inp.dragDownScreen.x;
-            var mdy = pos.y - inp.dragDownScreen.y;
-            var movedPx = Math.sqrt(mdx * mdx + mdy * mdy);
-            if (shouldStartDragSend({ downOnOwnedNode: inp.dragDownNodeId >= 0 || inp.dragDownFleetId >= 0, movedPx: movedPx, thresholdPx: inp.dragThreshold })) {
-                beginDragSend(inp.dragNodeIds, inp.dragFleetIds, w);
-            }
-        }
-        if (inp.dragActive) inp.dragEnd = w;
-        else if (inp.marqActive) inp.marqEnd = pos;
-        e.preventDefault();
-    }
-}, { passive: false });
-cv.addEventListener('touchend', function (e) {
-    if (inp.pinchActive && e.touches.length < 2) {
-        inp.pinchActive = false;
-        if (e.touches.length === 1) {
-            inp.dragPending = false;
-            inp.dragActive = false;
-        }
-    }
-    if (e.changedTouches.length === 1 && G.state === 'playing') {
-        var pos = touchScreenPos(e.changedTouches[0]);
-        var w = s2w(pos.x, pos.y);
-        if (inp.dragActive) {
-            var tn = hitNode(w);
-            if (tn) sendFromSourcesTo(inp.dragNodeIds, inp.dragFleetIds, tn.id);
-            else sendFromSourcesToPoint(inp.dragNodeIds, inp.dragFleetIds, w);
-            resetDragState();
-        } else if (inp.touchPointOrderPending) {
-            sendFromSourcesToPoint(inp.dragNodeIds, inp.dragFleetIds, w);
-            resetDragState();
-        } else if (inp.marqActive) {
-            var sw = s2w(inp.marqStart.x, inp.marqStart.y), ew = s2w(pos.x, pos.y), ids = nodesInRect(sw, ew, G.human), fleetIds = holdingFleetIdsInRect(sw, ew, G.human);
-            if (ids.length > 0 || fleetIds.length > 0) selectEntityIds(ids, fleetIds, false);
-            inp.marqActive = false;
-        } else {
-            inp.dragPending = false;
-            inp.dragDownNodeId = -1;
-            inp.dragDownFleetId = -1;
-        }
-    }
-}, { passive: false });
-window.addEventListener('keydown', function (e) {
-    var pauseKey = e.key === 'Escape' || e.key === 'p' || e.key === 'P';
-    if (e.key === 'Escape' && howToPlayOv && !howToPlayOv.classList.contains('hidden')) {
-        closeHowToPlayModal();
-        e.preventDefault();
-        return;
-    }
-    if (G.state === 'playing') {
-        if (pauseKey) {
-            togglePauseMenu();
-            e.preventDefault();
-            return;
-        }
-        if (inGameMenuOpen) return;
-        if (e.key === 'a') {
-            clearSelection(true);
-            G.nodes.forEach(function (n) { if (n.owner === G.human) inp.sel.add(n.id); });
-            syncNodeSelectionFlags();
-        }
-        if (e.key === 'u' || e.key === 'U') {
-            activateSelectionUpgrade();
-        }
-        if (e.key === 'q' || e.key === 'Q') {
-            if (triggerHumanDoctrine()) e.preventDefault();
-        }
-        if (e.key >= '1' && e.key <= '9') {
-            setSendPct(parseInt(e.key, 10) * 10);
-        } else if (e.key === '0') {
-            setSendPct(100);
-        }
-    }
-    else if (G.state === 'paused') {
-        if (pauseKey) {
-            closePauseMenu();
-            e.preventDefault();
-        }
-    }
+attachGameInputController({
+    canvas: cv,
+    windowTarget: window,
+    gameState: G,
+    inputState: inp,
+    screenToWorld: s2w,
+    touchScreenPos: touchScreenPos,
+    hitNode: hitNode,
+    hitHoldingFleet: hitHoldingFleet,
+    resolveRightClickAction: resolveRightClickAction,
+    shouldStartDragSend: shouldStartDragSend,
+    issueOnlineCommand: issueOnlineCommand,
+    toggleDefense: toggleDefense,
+    applyPlayerCommand: applyPlayerCommand,
+    pruneSelectedFleetIds: pruneSelectedFleetIds,
+    syncNodeSelectionFlags: syncNodeSelectionFlags,
+    clearSelection: clearSelection,
+    selectEntityIds: selectEntityIds,
+    selectNodeIds: selectNodeIds,
+    selectFleetIds: selectFleetIds,
+    selectedSendOrder: selectedSendOrder,
+    sendFromSelectionTo: sendFromSelectionTo,
+    sendFromSourcesTo: sendFromSourcesTo,
+    sendFromSourcesToPoint: sendFromSourcesToPoint,
+    nodesInRect: nodesInRect,
+    holdingFleetIdsInRect: holdingFleetIdsInRect,
+    centroidForSources: centroidForSources,
+    beginDragSend: beginDragSend,
+    resetDragState: resetDragState,
+    clearCommandMode: clearCommandMode,
+    applyCommandModeTarget: applyCommandModeTarget,
+    beginTouchPinch: beginTouchPinch,
+    updateTouchPinch: updateTouchPinch,
+    showGameToast: showGameToast,
+    togglePauseMenu: togglePauseMenu,
+    closePauseMenu: closePauseMenu,
+    isInGameMenuOpen: function () { return inGameMenuOpen; },
+    isHowToPlayVisible: function () { return howToPlayOv && !howToPlayOv.classList.contains('hidden'); },
+    closeHowToPlayModal: closeHowToPlayModal,
+    activateSelectionUpgrade: activateSelectionUpgrade,
+    triggerHumanDoctrine: triggerHumanDoctrine,
+    setSendPct: setSendPct,
+    clamp: clamp,
+    zoomMin: ZOOM_MIN,
+    zoomMax: ZOOM_MAX,
+    zoomSpeed: ZOOM_SPD,
+    selectAllHumanNodes: function () {
+        clearSelection(true);
+        G.nodes.forEach(function (n) { if (n.owner === G.human) inp.sel.add(n.id); });
+        syncNodeSelectionFlags();
+    },
+    audioSelect: function () {
+        if (typeof AudioFX !== 'undefined') AudioFX.select();
+    },
 });
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ GAME LOOP Ã¢â€â‚¬Ã¢â€â‚¬
@@ -6550,48 +5673,49 @@ function loop(ts) {
             acc += rawDt * G.speed;
             while (acc >= TICK_DT) { gameTick(); acc -= TICK_DT; }
         }
-        var featureName = G.mapFeature.type === 'wormhole' ? 'Wormhole' : (G.mapFeature.type === 'gravity' ? 'Gravity' : (G.mapFeature.type === 'barrier' ? 'Barrier' : 'Standart'));
-        var pulseText = '';
-        if (G.strategicPulse && G.strategicPulse.active) {
-            var pulseNode = G.nodes[G.strategicPulse.nodeId];
-            var pulseOwner = pulseNode ? pulseNode.owner : -1;
-            var pulseOwnerText = pulseOwner < 0 ? 'Tarafsız' : (pulseOwner === G.human ? 'Sen' : ('P' + (pulseOwner + 1)));
-            pulseText = ' | Pulse: ' + pulseOwnerText + ' ' + Math.max(1, Math.ceil((G.strategicPulse.remainingTicks || 0) / 30)) + 's';
-        }
-        hudTick.textContent = 'Tick: ' + G.tick + ' | ' + G.diff + pulseText;
+        var pulseNode = G.strategicPulse ? G.nodes[G.strategicPulse.nodeId] : null;
+        hudTick.textContent = buildHudTickText({
+            tick: G.tick,
+            diff: G.diff,
+            pulseActive: !!(G.strategicPulse && G.strategicPulse.active),
+            pulseOwner: pulseNode ? pulseNode.owner : -1,
+            pulseRemainingTicks: G.strategicPulse ? G.strategicPulse.remainingTicks : 0,
+            humanIndex: G.human,
+        });
         if (hudCap) {
-            var hu = Math.floor((G.unitByPlayer && G.unitByPlayer[G.human]) || 0);
-            var hc = Math.floor((G.capByPlayer && G.capByPlayer[G.human]) || 0);
-            var humanCapPressure = hc > 0 ? hu / hc : 0;
-            var capText = 'Cap ' + hu + '/' + hc;
-            if (humanCapPressure > CAP_SOFT_START) {
-                capText += ' | Strain ' + Math.round(humanCapPressure * 100) + '%';
-            }
-            hudCap.textContent = capText;
+            hudCap.textContent = buildHudCapText({
+                units: G.unitByPlayer && G.unitByPlayer[G.human],
+                cap: G.capByPlayer && G.capByPlayer[G.human],
+                strainThreshold: CAP_SOFT_START,
+            });
         }
         if (hudMeta) hudMeta.textContent = selectionMetaText();
+        syncHudAssistiveText();
         if (doctrineBtn) {
             var doctrineId = humanDoctrineId();
-            if (!doctrineId) {
-                doctrineBtn.disabled = true;
-                doctrineBtn.textContent = 'DOC';
-                doctrineBtn.title = 'Doktrin yok';
-            } else {
-                var doctrineStatus = doctrineCooldownSummary(G.doctrines, G.doctrineStates, G.human);
-                var ready = G.state === 'playing' && canActivateDoctrine(G.doctrines, G.doctrineStates, G.human);
-                doctrineBtn.disabled = !ready;
-                doctrineBtn.textContent = doctrineActiveName(doctrineId).toUpperCase();
-                doctrineBtn.title = doctrineName(doctrineId) + ' | ' + doctrineStatus;
-            }
+            var doctrineButtonState = buildDoctrineButtonState({
+                doctrineId: doctrineId,
+                doctrineName: doctrineId ? doctrineName(doctrineId) : '',
+                doctrineStatus: doctrineId ? doctrineCooldownSummary(G.doctrines, G.doctrineStates, G.human) : '',
+                ready: doctrineId ? (G.state === 'playing' && canActivateDoctrine(G.doctrines, G.doctrineStates, G.human)) : false,
+            });
+            doctrineBtn.disabled = doctrineButtonState.disabled;
+            doctrineBtn.textContent = doctrineButtonState.text;
+            doctrineBtn.title = doctrineButtonState.title;
+            doctrineBtn.setAttribute('data-help', doctrineButtonState.help);
+            doctrineBtn.setAttribute('data-help-disabled', doctrineButtonState.helpDisabled);
         }
         syncMatchHudControls();
         var pingEl = document.getElementById('pingDisplay');
         if (pingEl) {
-            var pingText = net.online && net.lastPingMs !== undefined ? ('Ping: ' + Math.round(net.lastPingMs) + 'ms') : '';
-            if (net.online && net.syncWarningText && G.tick - net.syncWarningTick < SYNC_HASH_INTERVAL_TICKS * 2) {
-                pingText += (pingText ? ' | ' : '') + 'SYNC';
-            }
-            pingEl.textContent = pingText;
+            pingEl.textContent = buildPingDisplayText({
+                online: net.online,
+                lastPingMs: net.lastPingMs,
+                syncWarningText: net.syncWarningText,
+                currentTick: G.tick,
+                syncWarningTick: net.syncWarningTick,
+                syncWindowTicks: SYNC_HASH_INTERVAL_TICKS * 2,
+            });
         }
     }
     if (G.state === 'playing' || G.state === 'paused') updatePowerSidebar();
