@@ -3510,6 +3510,11 @@ function updateMultiplayerMenuState(patch) {
     if (patch.roomType !== undefined) menuState.multiplayer.roomType = normalizeMenuRoomType(patch.roomType);
     applyMultiplayerMenuState();
 }
+function resetMainMenuScroll() {
+    if (!mainMenu) return;
+    mainMenu.scrollTop = 0;
+    mainMenu.scrollLeft = 0;
+}
 function setMenuPanel(panel, opts) {
     opts = opts || {};
     var next = normalizeMenuPanel(panel);
@@ -3525,6 +3530,7 @@ function setMenuPanel(panel, opts) {
     if (menuBackBtn) menuBackBtn.dataset.target = menuBackTarget(next);
     if (next === 'multiplayer' || next === 'host_setup') requestLobby();
     if (!opts.keepOverlay) closeScenarioMenu();
+    resetMainMenuScroll();
 }
 
 applyMenuStateToInputs();
@@ -4823,11 +4829,22 @@ function resize() {
     cv.height = h;
     syncInputLayoutHints();
 }
+if (typeof history !== 'undefined' && history && 'scrollRestoration' in history) {
+    try { history.scrollRestoration = 'manual'; } catch (e) {}
+}
 window.addEventListener('resize', resize);
 if (window.visualViewport) {
     window.visualViewport.addEventListener('resize', resize);
     window.visualViewport.addEventListener('scroll', resize);
 }
+window.addEventListener('pageshow', function () {
+    restoreUiAfterPageLifecycle();
+});
+document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState !== 'visible') return;
+    resize();
+    if (prefersCompactTuningLayout() && tuningOpen) closeTuningPanel();
+});
 resize();
 roomButtonState();
 setRoomStatus('', false);
@@ -4869,6 +4886,10 @@ function closeTuningPanel() {
     tuningOpen = false;
     if (tunePanel) tunePanel.classList.add('hidden');
     if (tuneOpen) tuneOpen.classList.remove('hidden');
+    if (tunePanel) {
+        tunePanel.scrollTop = 0;
+        tunePanel.scrollLeft = 0;
+    }
     syncTuningBackdrop();
 }
 function openTuningPanel() {
@@ -4909,6 +4930,15 @@ function showUI(st) {
     syncHudTelemetryVisibility();
     syncHudAssistiveText();
     refreshCampaignMissionPanels();
+}
+
+function restoreUiAfterPageLifecycle() {
+    resize();
+    closeHowToPlayModal();
+    closeScenarioMenu();
+    if (tuningOpen) closeTuningPanel();
+    showUI(G && G.state ? G.state : 'mainMenu');
+    if (!G || !G.state || G.state === 'mainMenu') resetMainMenuScroll();
 }
 
 function setRoomStatus(msg, error) {
