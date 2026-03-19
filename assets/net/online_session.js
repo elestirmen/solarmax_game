@@ -115,6 +115,9 @@ export function beginOnlineMatch(net, payload, socketId) {
     net.pendingJoin = false;
     net.resumePending = false;
     net.matchId = payload.matchId || '';
+    if (payload.roomCode !== undefined && payload.roomCode !== null && String(payload.roomCode).trim() !== '') {
+        net.roomCode = String(payload.roomCode).trim().toUpperCase();
+    }
     net.authoritativeEnabled = payload.authoritative === true;
     net.authoritativeReady = false;
     net.online = true;

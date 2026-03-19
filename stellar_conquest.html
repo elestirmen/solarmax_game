@@ -17,6 +17,8 @@
         }
 
         :root {
+            --app-vvh: 100dvh;
+            --app-vvw: 100vw;
             --bg: #0a0e17;
             --panel-bg: rgba(12, 18, 34, 0.92);
             --panel-border: rgba(80, 140, 255, 0.2);
@@ -30,24 +32,44 @@
             --radius: 8px
         }
 
+        html {
+            height: 100%;
+            height: -webkit-fill-available;
+        }
+
         body {
             background: var(--bg);
             color: var(--text);
             font-family: var(--font);
             overflow: hidden;
-            width: 100vw;
-            height: 100vh;
+            width: 100%;
+            min-width: 100vw;
+            max-width: 100vw;
+            min-height: 100vh;
             min-height: 100dvh;
+            min-height: -webkit-fill-available;
             overscroll-behavior: none;
         }
 
         canvas {
             display: block;
-            width: 100vw;
+            width: 100%;
+            max-width: 100vw;
             height: 100vh;
             height: 100dvh;
+            height: var(--app-vvh, 100dvh);
             touch-action: none;
             cursor: crosshair
+        }
+
+        /* Oyun alanı: HUD / tuning üstte kalsın; mobilde taşma ve boşluk tutarsızlığını azaltır */
+        #gameCanvas {
+            position: fixed;
+            inset: 0;
+            width: 100%;
+            max-width: none;
+            height: var(--app-vvh, 100dvh);
+            z-index: 0;
         }
 
         .overlay {
@@ -3178,13 +3200,15 @@
             #campaignMissionHud {
                 top: max(8px, env(safe-area-inset-top));
                 left: 8px;
-                right: 8px;
+                /* Üst sağda Tuning (Ayar) düğmesi — üst üste binmesin */
+                right: max(8px, calc(92px + env(safe-area-inset-right)));
                 bottom: auto;
                 width: auto;
                 max-width: none;
                 max-height: min(26dvh, 210px);
                 overflow-y: auto;
                 padding: 10px 12px;
+                z-index: 54;
             }
 
             .chat-panel {
@@ -3342,11 +3366,12 @@
             #powerSidebar {
                 top: max(8px, env(safe-area-inset-top));
                 left: 8px;
-                right: 8px;
+                right: max(8px, calc(92px + env(safe-area-inset-right)));
                 width: auto;
                 max-height: min(20dvh, 160px);
                 border-radius: 16px;
                 padding: 8px;
+                z-index: 53;
             }
 
             #powerList {
@@ -3376,6 +3401,7 @@
             #tuningBackdrop {
                 backdrop-filter: none;
                 background: rgba(4, 8, 18, 0.58);
+                z-index: 71;
             }
 
             #tuningPanel {
@@ -3385,7 +3411,7 @@
                 bottom: 0;
                 width: 100%;
                 height: auto !important;
-                max-height: min(46dvh, 400px) !important;
+                max-height: min(58svh, 58dvh, calc(var(--app-vvh, 100dvh) * 0.58), 480px) !important;
                 border-left: none;
                 border-top: 1px solid var(--panel-border);
                 border-radius: 20px 20px 0 0;
@@ -3395,6 +3421,7 @@
                 overflow-y: auto;
                 -webkit-overflow-scrolling: touch;
                 overscroll-behavior: contain;
+                z-index: 72;
             }
 
             #tuningPanel.hidden {
@@ -3438,19 +3465,25 @@
                 background: rgba(255, 255, 255, 0.06);
             }
 
+            /* Ayarlar: alt HUD ile görünür alan uzlaşmazlığında kaybolmasın diye üst sağ */
             #tuneOpenBtn {
-                top: auto;
-                right: 8px;
-                bottom: calc(176px + env(safe-area-inset-bottom));
+                top: max(10px, env(safe-area-inset-top));
+                right: max(8px, env(safe-area-inset-right));
+                bottom: auto;
+                left: auto;
                 transform: none;
                 width: auto;
-                min-width: 68px;
-                height: 38px;
-                padding: 0 12px;
+                min-width: 72px;
+                height: 40px;
+                padding: 0 14px;
+                border: 1px solid var(--panel-border);
                 border-right: 1px solid var(--panel-border);
                 border-radius: 999px;
                 font-size: 0.78rem;
-                backdrop-filter: blur(10px);
+                backdrop-filter: blur(12px);
+                -webkit-backdrop-filter: blur(12px);
+                z-index: 65;
+                box-shadow: 0 4px 18px rgba(4, 8, 18, 0.35);
             }
 
         }
@@ -3618,7 +3651,9 @@
             }
 
             #tuneOpenBtn {
-                bottom: calc(176px + env(safe-area-inset-bottom));
+                top: max(8px, env(safe-area-inset-top));
+                right: max(8px, env(safe-area-inset-right));
+                bottom: auto;
             }
         }
     </style>

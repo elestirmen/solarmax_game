@@ -37,6 +37,90 @@ export function createInputState() {
     };
 }
 
+function isOwnedNode(nodes, humanIndex, id) {
+    var nodeId = Math.floor(Number(id));
+    if (!Number.isFinite(nodeId) || nodeId < 0) return false;
+    var node = Array.isArray(nodes) ? nodes[nodeId] : null;
+    return !!node && node.owner === humanIndex;
+}
+
+function isOwnedHoldingFleet(fleets, humanIndex, id) {
+    var fleetId = Math.floor(Number(id));
+    if (!Number.isFinite(fleetId) || fleetId < 0) return false;
+    var list = Array.isArray(fleets) ? fleets : [];
+    for (var i = 0; i < list.length; i++) {
+        var fleet = list[i];
+        if (!fleet || !fleet.active || !fleet.holding || fleet.owner !== humanIndex) continue;
+        if ((Number(fleet.id) || 0) === fleetId) return true;
+    }
+    return false;
+}
+
+export function reconcileInputStateAfterAuthoritativeSync(inputState, gameState) {
+    inputState = inputState && typeof inputState === 'object' ? inputState : {};
+    gameState = gameState && typeof gameState === 'object' ? gameState : {};
+
+    var humanIndex = Number.isFinite(Number(gameState.human)) ? Math.floor(Number(gameState.human)) : 0;
+    var nodes = Array.isArray(gameState.nodes) ? gameState.nodes : [];
+    var fleets = Array.isArray(gameState.fleets) ? gameState.fleets : [];
+
+    if (!(inputState.sel instanceof Set)) {
+        inputState.sel = new Set(Array.isArray(inputState.sel) ? inputState.sel : []);
+    }
+    if (!(inputState.selFleets instanceof Set)) {
+        inputState.selFleets = new Set(Array.isArray(inputState.selFleets) ? inputState.selFleets : []);
+    }
+
+    var staleNodeSelections = [];
+    inputState.sel.forEach(function (id) {
+        if (!isOwnedNode(nodes, humanIndex, id)) staleNodeSelections.push(id);
+    });
+    for (var i = 0; i < staleNodeSelections.length; i++) inputState.sel.delete(staleNodeSelections[i]);
+
+    var staleFleetSelections = [];
+    inputState.selFleets.forEach(function (id) {
+        if (!isOwnedHoldingFleet(fleets, humanIndex, id)) staleFleetSelections.push(id);
+    });
+    for (var fi = 0; fi < staleFleetSelections.length; fi++) inputState.selFleets.delete(staleFleetSelections[fi]);
+
+    var nextDragNodeIds = [];
+    var dragNodeIds = Array.isArray(inputState.dragNodeIds) ? inputState.dragNodeIds : [];
+    for (var di = 0; di < dragNodeIds.length; di++) {
+        if (isOwnedNode(nodes, humanIndex, dragNodeIds[di])) nextDragNodeIds.push(Math.floor(Number(dragNodeIds[di])));
+    }
+    inputState.dragNodeIds = nextDragNodeIds;
+
+    var nextDragFleetIds = [];
+    var dragFleetIds = Array.isArray(inputState.dragFleetIds) ? inputState.dragFleetIds : [];
+    for (var dfi = 0; dfi < dragFleetIds.length; dfi++) {
+        if (isOwnedHoldingFleet(fleets, humanIndex, dragFleetIds[dfi])) nextDragFleetIds.push(Math.floor(Number(dragFleetIds[dfi])));
+    }
+    inputState.dragFleetIds = nextDragFleetIds;
+
+    if (!isOwnedNode(nodes, humanIndex, inputState.dragDownNodeId)) {
+        inputState.dragDownNodeId = nextDragNodeIds.length ? nextDragNodeIds[0] : -1;
+    }
+    if (!isOwnedHoldingFleet(fleets, humanIndex, inputState.dragDownFleetId)) {
+        inputState.dragDownFleetId = nextDragFleetIds.length ? nextDragFleetIds[0] : -1;
+    }
+
+    if (!nextDragNodeIds.length && !nextDragFleetIds.length) {
+        inputState.dragActive = false;
+        inputState.dragPending = false;
+        inputState.dragDownNodeId = -1;
+        inputState.dragDownFleetId = -1;
+        inputState.touchPointOrderPending = false;
+        inputState.mousePointOrderPending = false;
+        inputState.touchEmptyAwait = false;
+    }
+
+    if (inputState.commandMode && inputState.sel.size === 0) {
+        inputState.commandMode = '';
+    }
+
+    return inputState;
+}
+
 function playSelect(audioSelect) {
     if (typeof audioSelect === 'function') audioSelect();
 }

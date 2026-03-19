@@ -230,13 +230,13 @@ export function isNodeAssimilated(node) {
 export function upgradeCost(node) {
     var radius = Number(node && node.radius) || 0;
     var level = Number(node && node.level) || 1;
-    var cost = 18 + radius * 0.85 + (level - 1) * 14;
+    var cost = 48 + radius * 2.15 + (level - 1) * 36;
     if (node && node.kind === 'relay') cost *= 0.92;
     else if (node && node.kind === 'forge') cost *= 0.95;
     else if (node && node.kind === 'bulwark') cost *= 1.08;
     else if (node && node.kind === 'turret') cost *= 1.12;
     if (node && node.supplied === true) cost *= SIM_CONSTANTS.SUPPLIED_UPGRADE_DISCOUNT;
-    return Math.max(10, Math.floor(cost));
+    return Math.max(28, Math.floor(cost));
 }
 
 export function pickAIProfile(aiIndex) {

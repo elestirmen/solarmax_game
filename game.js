@@ -37,7 +37,7 @@ import { buildCustomMapExport, normalizeCustomMapConfig } from './assets/sim/cus
 import { resolveMatchEndState } from './assets/sim/end_state.js';
 import { todayDateKey } from './assets/sim/match_manifest.js';
 import { playlistName, resolvePlaylistConfig } from './assets/sim/playlists.js';
-import { attachGameInputController, createInputState } from './assets/app/input_controller.js';
+import { attachGameInputController, createInputState, reconcileInputStateAfterAuthoritativeSync } from './assets/app/input_controller.js';
 import { runAiAndWrapTickPhase, runCombatTickPhase, runEconomyTickPhase, runOnlineTickSyncPhase } from './assets/app/game_tick_phases.js';
 import { renderMarqueeLayer, renderMinimapLayer, renderWorldLayers } from './assets/app/render_layers.js';
 import { applyCampaignRunState, applyDailyChallengeRunState, applySkirmishRunState, buildCampaignLevelStartConfig, buildCustomMapStartConfig, buildDailyChallengeStartConfig, buildSkirmishStartConfig } from './assets/app/start_flow.js';
@@ -554,6 +554,8 @@ var net = {
     resumePending: false,
 };
 
+var pendingAuthoritativeState = null;
+
 // Ã¢â€â‚¬Ã¢â€â‚¬ FOG Ã¢â€â‚¬Ã¢â€â‚¬
 function initFog(pc, nc) { var v = [], ls = []; for (var p = 0; p < pc; p++) { v.push({}); var a = []; for (var n = 0; n < nc; n++)a.push({ tick: -1, owner: -1, units: 0 }); ls.push(a); } return { vis: v, ls: ls }; }
 function updateVis(fog, pi, nodes, tick) {
@@ -611,13 +613,13 @@ function preferredCameraNodeForPlayer(playerIndex) {
     return G.nodes[0] || null;
 }
 function upgradeCost(node) {
-    var cost = 18 + node.radius * 0.85 + (node.level - 1) * 14;
+    var cost = 48 + node.radius * 2.15 + (node.level - 1) * 36;
     if (node.kind === 'relay') cost *= 0.92;
     else if (node.kind === 'forge') cost *= 0.95;
     else if (node.kind === 'bulwark') cost *= 1.08;
     else if (node.kind === 'turret') cost *= 1.12;
     if (node.supplied === true) cost *= SUPPLIED_UPGRADE_DISCOUNT;
-    return Math.max(10, Math.floor(cost));
+    return Math.max(28, Math.floor(cost));
 }
 function initNodeKind(node) {
     var roll = G.rng.next();
@@ -4564,8 +4566,29 @@ function advanceTransientVisuals(dt) {
     }
 }
 
+function flushPendingAuthoritativeStateIfNeeded() {
+    if (!pendingAuthoritativeState) return;
+    if (!net.online || !net.matchId) {
+        pendingAuthoritativeState = null;
+        return;
+    }
+    if (pendingAuthoritativeState.matchId !== net.matchId) {
+        pendingAuthoritativeState = null;
+        return;
+    }
+    var buffered = pendingAuthoritativeState;
+    pendingAuthoritativeState = null;
+    handleAuthoritativeState(buffered);
+}
+
 function handleAuthoritativeState(payload) {
-    if (!net.online || !payload || payload.matchId !== net.matchId || !payload.snapshot) return;
+    if (!payload || typeof payload !== 'object' || !payload.snapshot) return;
+    if (!net.online || !net.matchId) {
+        pendingAuthoritativeState = payload;
+        return;
+    }
+    if (payload.matchId !== net.matchId) return;
+    pendingAuthoritativeState = null;
     var firstAuthoritativeFrame = !net.authoritativeReady;
     if (!applySyncSnapshot(payload.snapshot)) return;
     net.authoritativeReady = true;
@@ -4696,8 +4719,8 @@ function applySyncSnapshot(snapshot) {
     G.rng.s = Math.floor(Number(snapshot.rngState) || 1) || 1;
     stepEncounterState(G);
     net.lastAppliedSeq = typeof snapshot.lastAppliedSeq === 'number' ? snapshot.lastAppliedSeq : -1;
-    clearSelection(true);
-    resetDragState();
+    reconcileInputStateAfterAuthoritativeSync(inp, G);
+    syncNodeSelectionFlags();
     powerRenderKey = '';
     return true;
 }
@@ -4784,6 +4807,14 @@ function resize() {
     var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
     var w = window.innerWidth;
     var h = window.innerHeight;
+    var docEl = document.documentElement;
+    if (vv) {
+        docEl.style.setProperty('--app-vvh', Math.max(1, Math.round(vv.height)) + 'px');
+        docEl.style.setProperty('--app-vvw', Math.max(1, Math.round(vv.width)) + 'px');
+    } else {
+        docEl.style.removeProperty('--app-vvh');
+        docEl.style.removeProperty('--app-vvw');
+    }
     if (coarse && vv) {
         w = Math.max(1, Math.round(vv.width));
         h = Math.max(1, Math.round(vv.height));
@@ -4793,7 +4824,10 @@ function resize() {
     syncInputLayoutHints();
 }
 window.addEventListener('resize', resize);
-if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', resize);
+    window.visualViewport.addEventListener('scroll', resize);
+}
 resize();
 roomButtonState();
 setRoomStatus('', false);
@@ -4847,6 +4881,11 @@ function openTuningPanel() {
 
 function showUI(st) {
     if (st !== 'playing') inGameMenuOpen = false;
+    // Ana menü / game over vb. çıkışta tuningOpen sıfırlanmazsa, sonraki showUI('playing')
+    // yanlışlıkla tuning panelini açar (mobilde alt sayfa neredeyse tam ekran).
+    if (st !== 'playing' && st !== 'paused') {
+        closeTuningPanel();
+    }
     var pauseVisible = st === 'paused' || (st === 'playing' && inGameMenuOpen);
     mainMenu.classList.toggle('hidden', st !== 'mainMenu'); pauseOv.classList.toggle('hidden', !pauseVisible); goOv.classList.toggle('hidden', st !== 'gameOver');
     var ig = st === 'playing' || st === 'paused';
@@ -4929,6 +4968,7 @@ function renderRoomList(rooms) {
 
 function clearRoomState(message, opts) {
     opts = opts || {};
+    pendingAuthoritativeState = null;
     inGameMenuOpen = false;
     resetOnlineRoomState(net, opts);
     clearChatMessages();
@@ -5011,6 +5051,12 @@ function issueOnlineCommand(type, data) {
             tick: computeOnlineCommandTick(G.tick, net.lastPingMs),
             matchId: net.matchId,
         });
+        // Authoritative maçlarda istemci gameTick çalıştırmıyor; komut yalnızca sunucu
+        // snapshot'ıyla görünür. Emit sonrası aynı tickte yerel uygulama (optimistic)
+        // verilir; authoritativeState gelince tam state ile hizalanır.
+        if (net.authoritativeEnabled) {
+            applyPlayerCommand(G.human, type, sanitized);
+        }
         return true;
     }
     return false;
@@ -5158,6 +5204,7 @@ function ensureSocket() {
         applyAudioPreference();
         showUI('playing');
         showHintToast('Ana menü için sağ üstteki CIKIS butonunu kullan.');
+        flushPendingAuthoritativeStateIfNeeded();
     });
 
     net.socket.on('roomCommand', function (cmd) {

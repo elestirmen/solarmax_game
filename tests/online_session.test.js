@@ -121,6 +121,7 @@ test('computeOnlineCommandTick clamps latency-derived dispatch delay', function 
 test('beginOnlineMatch and init/status helpers derive runtime metadata', function () {
     var net = {};
     var payload = {
+        roomCode: 'zqpmn',
         players: [{ index: 0, socketId: 'a' }, { index: 1, socketId: 'b' }],
         matchId: 'match-9',
         authoritative: true,
@@ -138,6 +139,7 @@ test('beginOnlineMatch and init/status helpers derive runtime metadata', functio
     var statusText = buildOnlineMatchStatusText(payload, net.localPlayerIndex, net.authoritativeEnabled);
 
     assert.equal(net.online, true);
+    assert.equal(net.roomCode, 'ZQPMN');
     assert.equal(net.localPlayerIndex, 1);
     assert.equal(initOptions.localPlayerIndex, 1);
     assert.equal(initOptions.humanCount, 2);
