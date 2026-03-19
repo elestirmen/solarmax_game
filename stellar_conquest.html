@@ -2625,6 +2625,22 @@
             color: var(--accent)
         }
 
+        #tuningBackdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 59;
+            background: rgba(4, 8, 18, 0.48);
+            backdrop-filter: blur(6px);
+        }
+
+        #tuningBackdrop.hidden {
+            display: none;
+        }
+
+        .tune-mobile-close {
+            display: none;
+        }
+
         ::-webkit-scrollbar {
             width: 4px
         }
@@ -2691,6 +2707,16 @@
             font-size: 0.85rem;
             color: var(--text-dim);
             letter-spacing: 0.02em;
+        }
+
+        .tutorial-lead {
+            margin: 14px 0 0;
+            font-size: 0.88rem;
+            line-height: 1.55;
+            color: var(--text-secondary, #b8c0d4);
+            max-width: 36rem;
+            margin-left: auto;
+            margin-right: auto;
         }
 
         .tutorial-nav {
@@ -2910,6 +2936,10 @@
             color: #c9a0dc;
         }
 
+        .color-turret {
+            color: #8ff0ff;
+        }
+
         .tutorial-shortcut-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
@@ -2986,6 +3016,26 @@
 
             .pause-menu-grid {
                 grid-template-columns: 1fr;
+            }
+
+            #pauseOverlay {
+                align-items: flex-end;
+                justify-content: center;
+                padding: 0 8px calc(10px + env(safe-area-inset-bottom)) 8px;
+                overflow-y: hidden;
+                background: rgba(2, 4, 10, 0.66);
+            }
+
+            #pauseOverlay .pause-menu-panel {
+                width: 100%;
+                max-width: 100%;
+                margin: 0;
+                border-radius: 20px 20px 0 0;
+                max-height: min(70dvh, 460px);
+                overflow-x: hidden;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                overscroll-behavior: contain;
             }
 
             .menu-panel-wide {
@@ -3197,6 +3247,13 @@
                 flex-direction: column;
                 align-items: stretch;
                 gap: 10px;
+                -webkit-tap-highlight-color: transparent;
+            }
+
+            #hud button,
+            #hud .send-quick-btn,
+            #hud input[type="range"] {
+                touch-action: manipulation;
             }
 
             #hudLeft,
@@ -3316,23 +3373,56 @@
                 font-size: 0.72rem;
             }
 
+            #tuningBackdrop {
+                backdrop-filter: none;
+                background: rgba(4, 8, 18, 0.58);
+            }
+
             #tuningPanel {
                 top: auto;
                 right: 0;
                 left: 0;
                 bottom: 0;
                 width: 100%;
-                height: auto;
-                max-height: min(72dvh, 560px);
+                height: auto !important;
+                max-height: min(46dvh, 400px) !important;
                 border-left: none;
                 border-top: 1px solid var(--panel-border);
                 border-radius: 20px 20px 0 0;
-                padding: 16px 14px calc(18px + env(safe-area-inset-bottom));
+                padding: 12px 14px calc(14px + env(safe-area-inset-bottom));
                 box-shadow: 0 -20px 42px rgba(4, 8, 18, 0.28);
+                overflow-x: hidden;
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                overscroll-behavior: contain;
             }
 
             #tuningPanel.hidden {
                 transform: translateY(100%);
+                display: none;
+            }
+
+            .tune-mobile-close {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                width: 100%;
+                margin: 0 0 10px 0;
+                padding: 11px 14px;
+                border: 1px solid var(--panel-border);
+                border-radius: 12px;
+                background: rgba(255, 255, 255, 0.08);
+                color: var(--text);
+                font-family: var(--font);
+                font-size: 0.86rem;
+                font-weight: 600;
+                cursor: pointer;
+                -webkit-tap-highlight-color: transparent;
+                touch-action: manipulation;
+            }
+
+            #tuningPanel #tuneToggleBtn {
                 display: none;
             }
 
@@ -3928,135 +4018,131 @@
     <div id="howToPlayOverlay" class="overlay hidden">
         <div class="menu-panel tutorial-modal">
             <div class="tutorial-header">
-                <h2>Stellar Conquest</h2>
-                <p class="tutorial-subtitle">Yıldızları fethet. Akışı yönet.</p>
+                <h2>Nasıl oynanır</h2>
+                <p class="tutorial-subtitle">Stellar Conquest — denetim, lojistik ve cephe</p>
+                <p class="tutorial-lead">Zafer: rakibin tüm gezegenlerini ve aktif filolarını yok etmek. Bunu yaparken üretim, <b>flow</b> (otomatik nakliye), savunma ve <b>asimilasyon</b> (yeni fetihte “oturma”) birbirine bağlıdır.</p>
             </div>
             <nav class="tutorial-nav">
-                <a href="#tut-modlar">Başlangıç</a>
+                <a href="#tut-modlar">Menü ve modlar</a>
                 <a href="#tut-kontroller">Kontroller</a>
                 <a href="#tut-kisayollar">Kısayollar</a>
-                <a href="#tut-flow">Flow & Park</a>
+                <a href="#tut-flow">Flow ve park</a>
                 <a href="#tut-asimilasyon">Asimilasyon</a>
-                <a href="#tut-savas">Savaş</a>
-                <a href="#tut-doktrin">Doktrin</a>
-                <a href="#tut-gezegenler">Gezegenler</a>
-                <a href="#tut-harita">Harita</a>
-                <a href="#tut-hud">HUD</a>
-                <a href="#tut-ipuclari">İpuçları</a>
+                <a href="#tut-savas">Savaş ve ekonomi</a>
+                <a href="#tut-doktrin">Playlist ve doktrin</a>
+                <a href="#tut-gezegenler">Gezegen tipleri</a>
+                <a href="#tut-harita">Harita özellikleri</a>
+                <a href="#tut-hud">Arayüz (HUD)</a>
+                <a href="#tut-ipuclari">Maç içi yardım</a>
             </nav>
             <div class="tutorial-quickstart">
-                <h3>İlk 60 saniye planı</h3>
+                <h3>İlk birkaç hamle</h3>
                 <div class="tutorial-quickstart-grid">
                     <div class="tutorial-quickstart-step">
                         <span class="tutorial-quickstart-index">1</span>
-                        <div><strong>İlk node'u al</strong><span>Yakın nötr hedefe tek dalga gönder, gereksiz flow açma.</span></div>
+                        <div><strong>Ekonomiyi aç</strong><span>Yakın nötr dünyaya tek dalga; hemen her yere flow bağlama.</span></div>
                     </div>
                     <div class="tutorial-quickstart-step">
                         <span class="tutorial-quickstart-index">2</span>
-                        <div><strong>Yeni fetihte savun</strong><span>Asimilasyon oturana kadar kısa süre defense kullan, garnizonu boşaltma.</span></div>
+                        <div><strong>Fetih sonrası koru</strong><span>Asimilasyon dolana kadar kısa savunma; garnizonu eritme.</span></div>
                     </div>
                     <div class="tutorial-quickstart-step">
                         <span class="tutorial-quickstart-index">3</span>
-                        <div><strong>İkinci hattı kur</strong><span>Relay, gate, pulse veya wormhole çevresinde flow ya da park filo ile staging başlat.</span></div>
+                        <div><strong>Omurga kur</strong><span>Relay, solucan deliği, kapı veya pulse etrafında flow veya park filosu ile ikinci hattı hazırla.</span></div>
                     </div>
                 </div>
             </div>
             <div class="tutorial-body">
                 <div class="tutorial-section" id="tut-modlar">
-                    <h3>1) Başlangıç Akışı</h3>
+                    <h3>1) Menü ve oyun modları</h3>
                     <ul>
-                        <li><b>Hızlı Başlat:</b> Ana ekrandaki <b>Hemen Başla</b> tek tıkla standart local maç açar. İlk deneme için en temiz akış budur.</li>
-                        <li><b>Oyunu Özelleştir:</b> Seed, node sayısı, zorluk, playlist, doktrin, oyun modu ve sis ayarları bu paneldedir. Aynı ayarlar standart çok oyunculu host kurulumunda da kullanılır.</li>
-                        <li><b>Senaryo ve Challenge:</b> Kampanya bölümleri ve günlük challenge burada toplanır. Günlük challenge serbest maçtan ayrı kurallarla açılır.</li>
-                        <li><b>Çok Oyunculu:</b> Nick gir, <b>Oda Kur</b> ile kayıtlı ayarlarla hemen host ol veya <b>Oda Kurulumu</b> panelinde detayları değiştir. 5 haneli <b>Oda Kodu</b> ile mevcut odaya katıl.</li>
-                        <li><b>Araçlar:</b> Özel harita yükleme, liderlik ve yardım içerikleri ana başlatma akışından ayrıdır.</li>
+                        <li><b>Hemen Başla:</b> Tek tıkla yerel standart maç; kuralları öğrenmek için en sade giriş.</li>
+                        <li><b>Özelleştir:</b> Tohum, gezegen sayısı, zorluk, playlist, doktrin, kurallar ve sis. Çok oyunculu ev sahibi bu profili de kullanır.</li>
+                        <li><b>Kampanya / günlük:</b> Senaryo hedefleri ve günlük meydan okuma ayrı akıştır; zafer koşulları panelde yazar.</li>
+                        <li><b>Çok oyunculu:</b> Takma ad, <b>Oda Kur</b> veya <b>Oda Kodu</b> ile katılım; ayrılınca yerin genelde AI ile dolar.</li>
+                        <li><b>Araçlar:</b> Özel harita içe/dışa aktarma ve skor tabloları; ana savaş akışından ayrı tutulmuştur.</li>
                     </ul>
-                    <div class="tutorial-tip"><strong>İpucu:</strong> İlk turlarda <b>Standart</b> veya <b>Zen</b> playlist ile başlamak sistemi daha rahat okutuyor.</div>
+                    <div class="tutorial-tip"><strong>Öneri:</strong> Mekaniği tanımak için <b>Zen</b> veya <b>Standart</b> playlist, ardından <b>Chaos</b> veya <b>Frontier</b> ile tempo artır.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-kontroller">
-                    <h3>2) Temel Kontroller (PC)</h3>
+                    <h3>2) Kontroller (masaüstü ve mobil)</h3>
                     <ul>
-                        <li><b>Sol tık:</b> Kendi gezegenini seçer. <b>Shift + sol tık</b> ile çoklu seçim yap (seçime ekler).</li>
-                        <li><b>Boş alanda sürükle:</b> Dikdörtgen kutu seçimi yapar; içindeki kendi gezegenlerini seçer.</li>
-                        <li><b>Ctrl + boş alanda sürükle:</b> Seçili kaynaklardan hedefe bırakınca toplu birlik gönderir. Bıraktığın yer boş uzaysa orada park filosu oluşturursun.</li>
-                        <li><b>Seçiliyken hedefe sol tık:</b> Seçili gezegenlerden hedefe, HUD'daki <b>Send %</b> kadar birlik yollar (örneğin %50 = yarısı).</li>
-                        <li><b>Transfer:</b> Seçili grup içindeyken başka kendi gezegenine sol tıkla birlik transferi yapabilirsin. Dolu hedefe fazla takviye basarsan bir kısım geri dönmeye çalışır.</li>
-                        <li><b>Park filosu:</b> Boş uzayda bekleyen park filosuna yeniden emir verebilir, onu başka bir node'a veya başka bir boş noktaya fırlatabilirsin.</li>
-                        <li><b>Sağ tık (kendi gezegen):</b> Hedef seçiliyse savunma modunu aç/kapat. Başka kendi kaynakların seçiliyken seçili olmayan kendi hedefe sağ tık, otomatik transferi (flow) aç/kapatır.</li>
-                        <li><b>Sağ tık (düşman veya tarafsız):</b> Seçili kaynaklardan hedefe <b>Flow</b> bağlantısı aç/kapat. Bu, tek saldırı değil, sürekli baskı emridir.</li>
-                        <li><b>HUD orta bilgi satırı:</b> Seçili node için upgrade maliyeti, defense tradeoff'u, supply indirimi, savunma alanı, gate, mutatör ve aktif pulse bonusları gösterilir.</li>
-                        <li><b>Orta tuş + sürükle:</b> Kamerayı kaydır. <b>Mouse tekeri:</b> Zoom in/out.</li>
-                        <li><b>Mobil:</b> Tek parmakla seç ve sürükle. İki parmakla haritayı pan/zoom yap. Yükseltme, savunma ve flow için HUD'daki <b>YÜK</b>, <b>SAV</b> ve <b>FLOW</b> düğmelerini kullan.</li>
+                        <li><b>PC — seçim:</b> Sol tık kendi dünyanı seçer; <b>Shift+sol</b> ile çoklu seçime eklenir. Boş alanda sürükleme kutu seçer.</li>
+                        <li><b>PC — gönderim:</b> <b>Ctrl+boş alanda sürükle</b> ile seçili kaynaklardan hedefe bırak: dünya veya nötr üzerine toplu gönderim, tamamen boş uzaya <b>park filosu</b>.</li>
+                        <li><b>PC — hedef tık:</b> Kaynak seçiliyken hedefe sol tık: HUD’daki <b>Gönder %</b> kadar birlik gider. Kendi dünyan arasında da aynı hareket takviye sayılır; dolu hedefte fazla basılırsa kısım geri dönebilir.</li>
+                        <li><b>PC — sağ tık:</b> Seçtiğin <i>kendi</i> dünyada savunmayı aç/kapat. Başka düşman/tarafsız hedefte sağ tık: bu kaynaklardan o hedefe <b>flow</b> (otomatik akış) bağla veya kes.</li>
+                        <li><b>Kamera:</b> Orta tuş sürükleme veya kenar kaydırma; tekerlek yakınlaştırır.</li>
+                        <li><b>Mobil — dokunma:</b> Kaba işaretçide kısa dokunuş seçim; boş alanda kaydırma haritayı kaydırır (pan). İki parmak yakınlaştırma.</li>
+                        <li><b>Mobil — komutlar:</b> <b>YÜK</b>, <b>SAV</b>, <b>FLOW</b> ve <b>DOK</b> HUD düğmeleri masaüstündeki U / savunma / flow / doktrin eşleniğidir.</li>
                     </ul>
                 </div>
 
                 <div class="tutorial-section" id="tut-kisayollar">
-                    <h3>3) Kısayollar</h3>
+                    <h3>3) Klavye kısayolları</h3>
                     <div class="tutorial-shortcut-grid">
-                        <div class="shortcut-item"><span class="shortcut-key">1-0</span> Send % (10-100)</div>
-                        <div class="shortcut-item"><span class="shortcut-key">U</span> Upgrade</div>
-                        <div class="shortcut-item"><span class="shortcut-key">A</span> Tüm gezegenler</div>
-                        <div class="shortcut-item"><span class="shortcut-key">Q</span> Doktrin aktif</div>
+                        <div class="shortcut-item"><span class="shortcut-key">1–0</span> Gönder %10–100</div>
+                        <div class="shortcut-item"><span class="shortcut-key">U</span> Yükselt</div>
+                        <div class="shortcut-item"><span class="shortcut-key">A</span> Tüm dünyaların</div>
+                        <div class="shortcut-item"><span class="shortcut-key">Q</span> Doktrin (aktif)</div>
                         <div class="shortcut-item"><span class="shortcut-key">Esc</span> Duraklat</div>
                         <div class="shortcut-item"><span class="shortcut-key">P</span> Devam</div>
                     </div>
                     <ul>
-                        <li><b>1-9, 0:</b> Gönderim yüzdesini sırasıyla %10, %20, ... %100 yapar.</li>
-                        <li><b>U:</b> Seçili gezegenleri upgrade eder (yeterli birlik ve seviye koşulu varsa). Mobilde aynı işlev <b>YÜK</b> düğmesindedir.</li>
-                        <li><b>A:</b> Tüm kendi gezegenlerini tek seferde seçer.</li>
-                        <li><b>Q:</b> İnsan oyuncunun doktrin aktif becerisini tetikler. Aynı işlev HUD'daki <b>DOC</b> düğmesindedir.</li>
-                        <li><b>Esc / P:</b> Tek oyunculuda oyunu duraklatır veya devam ettirir.</li>
-                        <li><b>Hız butonu (1x):</b> Tek oyunculuda 1x / 2x / 4x oyun hızı.</li>
+                        <li><b>1–9 ve 0:</b> Gönderim oranını %10 … %100 yapar (HUD ile senkron).</li>
+                        <li><b>U / YÜK:</b> Seçili kendi dünyalarında seviye yükseltir (birlik ve kurallar uygunsa).</li>
+                        <li><b>A:</b> Sahip olduğun tüm gezegenleri seçer.</li>
+                        <li><b>Q / DOK:</b> Seçtiğin doktrinin aktif yeteneği — süre ve bekleme HUD’da.</li>
+                        <li><b>Esc veya P:</b> Tek oyuncuda duraklat / devam.</li>
+                        <li><b>HIZ:</b> Yerelde 1× / 2× / 4× sim hızı.</li>
                     </ul>
                 </div>
 
                 <div class="tutorial-section" id="tut-flow">
-                    <h3>4) Flow ve Park Filoları</h3>
-                    <p>Flow, bir gezegenden diğerine periyodik otomatik birlik transferi sağlar. Park filosu ise boş uzayda staging kurup dalga saldırısı hazırlamana yarar.</p>
+                    <h3>4) Flow ve park filosu</h3>
+                    <p><b>Flow</b>, iki dünya arasında düzenli otomatik birlik taşır — tek seferlik tıklama saldırısı değildir. <b>Park filosu</b> boş uzayda birikim yapıp tek dalgada vurmak içindir.</p>
                     <ul>
-                        <li><b>Nasıl çalışır:</b> Her birkaç tick'te kaynak gezegenden hedefe birlik gönderilir (yaklaşık %8 oranında). Kaynak zayıflarsa akış da kendiliğinden küçülür.</li>
-                        <li><b>Ne zaman kullan:</b> Uzun mesafe destek, asimilasyon bittikten sonra cephe besleme ve wormhole/relay hattına sürekli trafik kurmak için idealdir.</li>
-                        <li><b>Ne zaman kapat:</b> Hedef doluysa, cephe değiştiyse veya yeni fetihte garnizon kaçıyorsa flow'u kapat. Aksi halde kendi ekonomini boşaltırsın.</li>
-                        <li><b>Park filosu kullanımı:</b> Cepheye girmeden önce boş uzayda filo biriktirip tek dalga halinde yeniden gönderebilirsin. Turret ve dar geçit saldırılarında bu çok değerlidir.</li>
-                        <li><b>Risk:</b> Park filoları güvenli, tedarikli territory içinde daha emniyetlidir. Çatışmalı bölgede, karartma alanında veya tedarik dışındaysa daha kırılgan kalırlar.</li>
-                        <li><b>Relay gezegenleri:</b> Flow verimini ve filo hızını artırır; hızlı lojistik omurgası kurmak için en iyi tiptir.</li>
+                        <li><b>Dalga boyutu:</b> Kaynak nüfusunun her döngüde yaklaşık <b>%8’i</b> akar (ayarlanabilir aralık). Kaynak zayıflayınca akış doğal olarak incelir.</li>
+                        <li><b>Savunma ve flow:</b> Savunma açık bir dünyadan giden flow zayıflar; tam sayıları seçili gezegen satırında görürsün.</li>
+                        <li><b>Ne zaman aç:</b> Uzun hat, asimilasyonu bitmiş cephe beslemesi, solucan deliği veya relay omurgası.</li>
+                        <li><b>Ne zaman kapat:</b> Hedef dolu, cephe kaydı veya yeni fetihte garnizon erimesi — açık bırakmak ekonomiyi boşaltır.</li>
+                        <li><b>Park:</b> Taret ve dar geçit öncesi staging. Territory ve tedarik içi daha güvenli; cephe ve karartmada kırılgan.</li>
+                        <li><b>Relay:</b> Akışı ve filo hızını artırır; “lojistik süper yıldız” olarak düşün.</li>
                     </ul>
-                    <div class="tutorial-tip"><strong>Strateji:</strong> Önce node'u normal saldırıyla al, sonra aynı hattı Flow'a çevir. Turret veya boss öncesinde park filosu ile staging kurup tek dalga vur.</div>
+                    <div class="tutorial-tip"><strong>Ders:</strong> Önce dünyayı al, sonra aynı hattı flow’a çevir. Boss veya mega taret öncesi park ile tek dalga planla.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-asimilasyon">
-                    <h3>5) Asimilasyon ve Cephe</h3>
-                    <p>Bir gezegeni fethettiğinde hemen tam üretim yapamazsın. Asimilasyon tamamlanana kadar ekonomi, gate ve border etkileri tam açılmaz.</p>
+                    <h3>5) Asimilasyon ve cephe</h3>
+                    <p>Fetih sonrası dünya hemen “senin” değildir: kısa kilit, ardından dolum çubuğu ile asimilasyon. Çubuk dolunca üretim, kapı ve savunma alanı tam güçlenir.</p>
                     <ul>
-                        <li><b>Kilit aşaması (~6 saniye):</b> Fetih sonrası gezegen kilitte bekler; bu sürede üretim yok, savunma alanı yok, gate açılmaz.</li>
-                        <li><b>Asimilasyon aşaması:</b> Kilit bittikten sonra ilerleme çubuğu dolana kadar kısmi kontrol vardır. Tam dolunca üretim, gate ve savunma alanı tamamen açılır.</li>
-                        <li><b>Garnizon etkisi:</b> Gezegendeki birlik oranı ne kadar yüksekse asimilasyon o kadar hızlı. Birlik göndermek garnizonu düşürür, asimilasyonu yavaşlatır.</li>
-                        <li><b>Defense etkisi:</b> Defense modu asimilasyonu hızlandırır ama üretimi keser. Yeni fetihte kısa süreli defense açmak genelde doğrudur.</li>
-                        <li><b>Çatışmalı bölge:</b> İki rakibin tam asimile territory sınırları çakışırsa <b>cephe / contested zone</b> oluşur. Bu alanda border bonusu çalışmaz.</li>
-                        <li><b>Park filo etkisi:</b> Çatışmalı bölge ve karartma alanı, park filolarının border korumasını düşürür. Cephede staging yaparken bunu hesaba kat.</li>
-                        <li><b>Direnç:</b> Yüksek seviye gezegenler ve Bulwark tipi daha yavaş asimile olur. Turret istasyonları ise ele geçirmesi ayrı olarak daha zordur.</li>
+                        <li><b>Kilit (~6 sn @30 Hz):</b> Üretim kapalı, savunma alanı yok, kapı kullanılamaz.</li>
+                        <li><b>Dolum:</b> Kilit bitince kısmi kontrol; yüzde 100 olunca tüm bonuslar açılır.</li>
+                        <li><b>Garnizon:</b> Üzerinde duran birlik ne kadar kalabalıksa asimilasyon o kadar hızlanır; agresif gönderim eritir ve yavaşlatır.</li>
+                        <li><b>Savunma + asimilasyon:</b> Savunma açıkken asimilasyon hızlanır; buna karşılık üretim ve flow çıkışı ceza yer (HUD’da net yazar).</li>
+                        <li><b>Çatışmalı bölge:</b> İki tarafın asimile sınırları üst üste gelince sınır bonusları susar.</li>
+                        <li><b>Park filosu:</b> Çatışma ve karartmada koruma zayıflar; staging planını buna göre yap.</li>
+                        <li><b>Direnç:</b> Yüksek seviye ve Bulwark yavaş asimile olur; taret istasyonları ayrı mekanikle zordur.</li>
                     </ul>
-                    <div class="tutorial-warning">Fethettikten hemen sonra çok birlik göndermek en yaygın hata. Önce node'u oturt, sonra ileri hatta asker çek.</div>
+                    <div class="tutorial-warning">Yaygın hata: fetheder etmez fabrikayı boşaltmak. Önce oturt, sonra ileri hat.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-savas">
-                    <h3>6) Savaş, Tedarik ve Zafer</h3>
+                    <h3>6) Savaş, tedarik, kapasite</h3>
                     <ul>
-                        <li><b>Savunma modu:</b> Savunma gücü %25 artar, asimilasyon hızlanır; üretim %25 ceza alır. Yeni fetihte ve dar boğazda çok güçlüdür.</li>
-                        <li><b>Savunma alanı:</b> Asimile olmuş sahipli gezegenler yakın çevresindeki düşman filoları eritir. Bu alan cepheyi yumuşatır ama tek başına dev armadayı durdurmaz.</li>
-                        <li><b>Turretler:</b> Daha uzun menzilli, daha yüksek hasarlı ve ele geçirmesi zor istasyonlardır. Tek bir dalga yerine toplu kuşatma gerekir.</li>
-                        <li><b>Tedarik hattı:</b> Başkente veya bağlı gezegenlere 220 birim mesafede bağlı olmayan node'lar %40 üretim cezası alır. Supply altındaki node'lar daha ucuza upgrade olur.</li>
-                        <li><b>Cap strain:</b> Toplam birlik sayın cap'in %82'sine yaklaşınca üretim yavaşlar. Dolu beklemek yerine birlikleri cepheye, flow'a veya upgrade'e çevir.</li>
-                        <li><b>Upgrade:</b> Gezegen seviyesi 2 ve 3'e çıkar; üretim, kapasite ve savunma etkisi artar. Supply altında yapmak daha verimlidir.</li>
-                        <li><b>Zafer koşulu:</b> Serbest maçta tüm rakiplerin hem node'larını hem aktif filolarını bitiren oyuncu kazanır.</li>
-                        <li><b>Senaryo (kampanya):</b> Görevler ilerleme, faz ve koç ipuçları içindir; hedefleri bitirmek tek başına maçı sonlandırmaz — bölümü kazanmak için rakip oyuncuların tüm düğümlerini ve aktif filolarını yok etmek gerekir.</li>
-                        <li><b>Diğer modlar:</b> Günlük challenge veya özel harita akışında kurallar farklı olabilir; serbest maçta zafer yine rakipleri tamamen silmekle gelir.</li>
+                        <li><b>Savunma modu (özet):</b> Düello ve garnizonda yaklaşık <b>%14</b> dayanıklılık artışı; asimilasyonda ~<b>%6</b> hız bonusu; üretim hızı ~<b>%40</b> kesilir. Aynı dünyadan giden <b>flow</b> dalgaları belirgin şekilde zayıflar — tam oran seçili gezegen satırında.</li>
+                        <li><b>Savunma alanı:</b> Asimile dünyanın çevresinde düşman filosunu yavaşça eritir; tek başına tüm orduları durdurmaz.</li>
+                        <li><b>Taret:</b> Uzun menzil, yüksek DPS; tek dalga yerine birikim veya çok yönlü baskı.</li>
+                        <li><b>Tedarik:</b> Omurgaya (ör. ~220 birim mesafe) bağlı değilsen üretim ciddi düşer; tedarik dışı yükseltme indirimi vardır.</li>
+                        <li><b>Kapasite gerginliği:</b> Toplam birlik kapasiteye yaklaşınca (~%82+) üretim yumuşar; stoğu cephe veya flow’a çevir.</li>
+                        <li><b>Seviye:</b> 2–3. seviye üretim, tavan ve dayanıklılığı büyütür; mümkünse tedarik altında yap.</li>
+                        <li><b>Zafer:</b> Serbest maçta rakibin tüm dünyaları ve aktif filoları silinir.</li>
+                        <li><b>Kampanya / özel:</b> Görev metni ilerlemeyi anlatır; bölüm sonu genelde yine tam eliminasyon ister — paneli oku.</li>
                     </ul>
                 </div>
 
                 <div class="tutorial-section" id="tut-doktrin">
-                    <h3>7) Playlist ve Doktrin</h3>
+                    <h3>7) Playlist ve doktrin</h3>
                     <ul>
                         <li><b>Standart:</b> Varsayılan kurallar. Harita tohumu oyunun kimliğini belirler.</li>
                         <li><b>Chaos:</b> Daha hızlı tempo, daha sert baskı ve genelde kuşatma odaklı açılışlar üretir.</li>
@@ -4075,38 +4161,38 @@
                 </div>
 
                 <div class="tutorial-section" id="tut-gezegenler">
-                    <h3>8) Gezegen Sınıfları</h3>
-                    <p>Her gezegen bir tip ile doğar. Harf kodu ve rengi haritada görünür.</p>
+                    <h3>8) Gezegen tipleri (güncel çarpanlar)</h3>
+                    <p>Her dünya bir sınıfla başlar; haritada harf ve halka rengiyle okunur. Sayılar Core = 1.0’a göre kabaca yüzdedir.</p>
                     <div class="node-types">
                         <div class="node-type-card">
-                            <strong class="color-core">C - Core</strong>
-                            <p>Dengeli temel gezegen. Üretim, savunma ve kapasite 1.0x.</p>
+                            <strong class="color-core">C — Core</strong>
+                            <p>Referans dünya: üretim, savunma, kapasite ve akış 1.0×.</p>
                         </div>
                         <div class="node-type-card">
-                            <strong class="color-forge">F - Forge</strong>
-                            <p>Üretim +35%, savunma -10%, kapasite -10%. Hızlı üretim için.</p>
+                            <strong class="color-forge">F — Forge</strong>
+                            <p>Üretim ~+44%; savunma ve kapasite biraz düşük. Ekonomi motoru, tek başına kırılgan.</p>
                         </div>
                         <div class="node-type-card">
-                            <strong class="color-bulwark">B - Bulwark</strong>
-                            <p>Savunma +45%, üretim -25%, kapasite +25%. Kaleler için ideal.</p>
+                            <strong class="color-bulwark">B — Bulwark</strong>
+                            <p>Üretim ~−34%; savunma ve kapasite güçlü. Garnizon kalesi.</p>
                         </div>
                         <div class="node-type-card">
-                            <strong class="color-relay">R - Relay</strong>
-                            <p>Flow +35%, filo hızı +35%, kapasite -15%. Akış ve hareket odaklı.</p>
+                            <strong class="color-relay">R — Relay</strong>
+                            <p>Akış ~+45%, filo hızı ~+42%; kapasite hafif eksik. Lojistik yıldızı.</p>
                         </div>
                         <div class="node-type-card">
-                            <strong class="color-nexus">N - Nexus</strong>
-                            <p>Tüm alanlarda +10-15% bonus. En dengeli özel tip.</p>
+                            <strong class="color-nexus">N — Nexus</strong>
+                            <p>Tüm alanlarda küçük artılar (~%10–22 bandı); esnek orta oyun.</p>
                         </div>
                         <div class="node-type-card">
-                            <strong class="color-relay">T - Turret</strong>
-                            <p>Üretim yapmaz ama ağır savunur. Kuşatmadan önce çevresini temizle, tek filo gönderip eritme.</p>
+                            <strong class="color-turret">T — Turret</strong>
+                            <p>Üretmez; menzilde düşmana otomatik ateş. Önce çevreyi temizle, tek hafif dalga ile deneme.</p>
                         </div>
                     </div>
                 </div>
 
                 <div class="tutorial-section" id="tut-harita">
-                    <h3>9) Harita, Mutatör ve Objective</h3>
+                    <h3>9) Harita özellikleri ve hedefler</h3>
                     <ul>
                         <li><b>Wormhole:</b> Bağlı iki uç arasında birimler anında ışınlanır; halkası olan gezegenler köprü ucudur. Haritanın en hızlı baskın ve yardım koridorudur.</li>
                         <li><b>Gravity alan:</b> Merkezdeki ~170 birim yarıçaptaki alandan geçen filolar 1.35x hız kazanır. Uzun yolu kısaltmak için rotayı içinden geçir.</li>
@@ -4121,32 +4207,31 @@
                 </div>
 
                 <div class="tutorial-section" id="tut-hud">
-                    <h3>10) HUD ve Görev Panelleri</h3>
+                    <h3>10) HUD: neye bakmalı?</h3>
                     <ul>
-                        <li><b>Power paneli (sağ üst):</b> Oyuncuların anlık güç sıralamasını gösterir. Renkler oyuncuya göre.</li>
-                        <li><b>Send % / Slider:</b> Her tıklamada gönderilecek birlik oranı. 1-0 tuşlarıyla da değiştirilebilir.</li>
-                        <li><b>Tick / Ping:</b> Oyun temposu, pulse süresi ve (çok oyunculuda) ağ gecikmesi.</li>
-                        <li><b>Cap satırı:</b> Toplam birlik/cap oranını ve strain başlangıcını gösterir. Yüzde yükseliyorsa ekonomi daralıyor demektir.</li>
-                        <li><b>Görev paneli:</b> Campaign ve challenge modlarında zorunlu ve bonus objective'leri gösterir. Maçı neyin bitireceğini buradan okursun.</li>
-                        <li><b>Orta bilgi satırı:</b> Seçili node'un upgrade maliyeti, field menzili, gate durumu, asimilasyon yüzdesi, mutatör etkisi ve pulse bonuslarını tek satırda okursun.</li>
-                        <li><b>Bağlam rozeti ve ipucu satırı:</b> Seçimine göre kısa durum özeti (tek node, çoklu seçim, park filo, FLOW hedef modu) ve ne yapman gerektiğini hatırlatan bir satır görünür. FLOW modundayken hedef gezegene tıklayınca flow açılır; boş uzaya tıklayınca mod kapanır.</li>
-                        <li><b>DOC düğmesi:</b> Doktrinin aktif becerisini açar. Hazır değilse cooldown durumunu yazar.</li>
-                        <li><b>Minimap:</b> Genel durumu hızlı okumak için. CHAT ile sohbet paneli açılır.</li>
-                        <li><b>THEME:</b> Açık/koyu tema değiştirir.</li>
+                        <li><b>Güç sıralaması:</b> Sağ üstte anlık kuvvet; renk oyuncuya göre.</li>
+                        <li><b>Gönder %:</b> Klavye 1–0 veya slider; her manuel gönderimde kullanılan pay.</li>
+                        <li><b>Tick / ping:</b> Simülasyon adımı, pulse geri sayımı; çevrimiçinde gecikme.</li>
+                        <li><b>Cap satırı:</b> Toplam birlik / üst sınır; “strain” uyarısı doluluk yaklaşınca yanar.</li>
+                        <li><b>Görev kartı:</b> Kampanya ve meydan okumada zorunlu ve bonus hedefler; zafer koşulunu karıştırmaz.</li>
+                        <li><b>Üst meta satır:</b> Seçili dünyada yükseltme maliyeti, asimilasyon, savunma alanı, kapı, mutatör, pulse.</li>
+                        <li><b>Durum rozeti + ipucu:</b> Çoklu seçim, park filosu veya flow hedef modunda ne yapacağını söyler. Mod takılırsa boş alana tek dokunuş.</li>
+                        <li><b>DOK / TEMA / CHAT:</b> Doktrin yeteneği; arayüz teması; çok oyunculu sohbet.</li>
+                        <li><b>Minimap:</b> Cepheyi tek bakışta oku.</li>
                     </ul>
                 </div>
 
                 <div class="tutorial-section" id="tut-ipuclari">
-                    <h3>11) Canlı ipuçları, hover ve kampanya koçu</h3>
-                    <p>Oyun sadece bu pencereyi okumayı gerektirmez; masaüstünde seçim ve hedefin üzerine gelince kısa açıklamalar ve komut hatırlatmaları gösterilir.</p>
+                    <h3>11) Maç içi yardım ve koç</h3>
+                    <p>Bu pencere referanstır; asıl rehber HUD’daki kısa cümleler, gezegen üzerinde bekleyince çıkan kart ve seçim altı “koç çipleri”dir.</p>
                     <ul>
-                        <li><b>Gezegen üzerinde gezinme:</b> İmleci bir düğümün üzerinde tut; tip (Core, Forge, Relay, …) ve kısa strateji özeti alttaki HUD <b>Durum</b> blokunda, seçim yokken orta bilgi satırında görünür.</li>
-                        <li><b>HUD üst komut çubuğu:</b> Yükseltme, savunma, flow ve doktrin düğmelerinin üzerine gel; ne işe yaradıkları ve varsa ilgili kısayol burada yazılır.</li>
-                        <li><b>Duraklat menüsü:</b> <b>İpucu: Açık/Kapalı</b> ile maç içi koç mesajlarını ve hatırlatmaları kapatıp açabilirsin; ilk saatlerde açık bırakmak genelde faydalıdır.</li>
-                        <li><b>Kampanya ve challenge:</b> Görev satırlarında hedef ilerlemesi yanında kısa <b>coach</b> ipuçları belirir; özellikle ilk bölümlerde bir sonraki hamleyi öğretmek içindir. Bonus (opsiyonel) hedefler ana zaferi değiştirmez, skor ve alışkanlık için denenir.</li>
-                        <li><b>Mission script:</b> Bazı senaryolarda görev ilerlemesi veya anlatı olayları otomatik tetiklenir; paneldeki ana hedefi ve üstteki görev bölümünü takip etmek yeterlidir.</li>
+                        <li><b>Hover kartı:</b> İmleci dünyada tut; tip ve rol özeti Durum bloğunda belirir.</li>
+                        <li><b>Komut ipucu:</b> MENÜ, HIZ, YÜK, SAV, FLOW, DOK üzerine gel; kısayol ve görev tek cümlede.</li>
+                        <li><b>Duraklat:</b> <b>İpucu: Açık/Kapalı</b> coach satırını keser; öğrenirken açık tut.</li>
+                        <li><b>Kampanya:</b> Görev yanında kısa koç metni; bonuslar skor içindir, zaferi değiştirmez.</li>
+                        <li><b>Senaryo script:</b> Bazı bölümlerde olaylar otomatik ilerler; üst panel ana hedefi gösterir.</li>
                     </ul>
-                    <div class="tutorial-tip"><strong>İpucu:</strong> Kısayol veya flow modunda kaldığını sanıyorsan önce boş haritaya tek tıkla; bağlam rozeti “Hazır” veya normal seçime dönmeli.</div>
+                    <div class="tutorial-tip"><strong>Takılı kaldın mı?</strong> Boş uzaya bir tık — rozet <b>Hazır — kaynak seç</b>e dönmeli.</div>
                 </div>
 
                 <div class="tutorial-footer-btn">
@@ -4202,7 +4287,7 @@
     </div>
     <div id="nodeHoverTip" class="node-hover-tip hidden" aria-hidden="true">
         <div id="nodeHoverTipTitle" class="node-hover-tip-title">Core</div>
-        <div id="nodeHoverTipBody" class="node-hover-tip-body">Dengeli temel gezegen. Güvenli açılışlar ve genel amaçlı cepheler için uygundur.</div>
+        <div id="nodeHoverTipBody" class="node-hover-tip-body">Referans tip: üretim, savunma ve kapasite dengeli. Öğrenme ve genel cephe için güvenli varsayılan.</div>
     </div>
     <div id="hud" class="hidden">
         <div id="hudLeft">
@@ -4221,35 +4306,37 @@
         <div id="hudCenter">
             <div class="hud-block-heading"><span class="hud-block-title">Durum</span><span id="hudContextBadge" class="hud-context-badge">Hazır</span></div>
             <div id="hudTelemetryRow" class="hud-center-top"><span id="hudTick">Tick: 0</span><span id="hudCap">Cap 0/0</span><span id="pingDisplay" class="ping-display"></span></div>
-            <span id="hudMeta">Seçili node bilgisi burada görünür.</span>
-            <div id="hudHintLine" class="hud-hint-line">Sol tıkla bir gezegen seç, sonra hedefe emir ver.</div>
+            <span id="hudMeta">Seçili dünya: yükseltme, asimilasyon ve modlar burada özetlenir.</span>
+            <div id="hudHintLine" class="hud-hint-line">Sol tıkla kendi gezegenini seç; hedefe tıkla veya sağ tıkla savunma / flow.</div>
             <div id="hudCoachRow" class="hud-coach-row" aria-live="polite"></div>
             <div id="hudAdvisorCard" class="hud-advisor-card hidden" aria-live="polite">
-                <div id="hudAdvisorTitle" class="hud-advisor-title">Açılış Planı</div>
-                <div id="hudAdvisorBody" class="hud-advisor-body">Yakın nötr node ile başla, yeni fetihte savunma aç ve ilk relay ya da gate hattını erken oku.</div>
+                <div id="hudAdvisorTitle" class="hud-advisor-title">İlk dakikalar</div>
+                <div id="hudAdvisorBody" class="hud-advisor-body">Yakın nötrü kap, yeni fetihte kısa savunma kullan; relay, solucan deliği veya kapı hattını erken gör.</div>
             </div>
         </div>
         <div id="hudRight">
             <div class="hud-block-heading"><span class="hud-block-title">Komutlar</span><span class="hud-context-badge hud-context-badge-muted">Mouse + kısayol</span></div>
             <div class="hud-actions-wrap">
                 <div class="hud-action-group">
-                    <button id="pauseBtn" title="Duraklat" data-importance="primary" data-help="Tek oyunculuda duraklatır, çok oyunculuda maç menüsünü açar.">MENÜ</button>
-                    <button id="speedBtn" title="Hız" data-importance="primary" data-help="Tek oyunculuda oyun hızını 1x, 2x ve 4x arasında değiştirir.">HIZ 1x</button>
-                    <button id="upgradeHudBtn" class="hud-mobile-action" title="Seçili gezegenleri yükselt" data-importance="primary" data-help="Seçili kendi node'larını upgrade eder. Kısayol: U.">YÜK</button>
-                    <button id="defenseHudBtn" class="hud-mobile-action" title="Seçili gezegenlerde savunmayı aç veya kapat" data-importance="primary" data-help="Seçili kendi node'larında defense modunu açıp kapatır.">SAV</button>
-                    <button id="flowHudBtn" class="hud-mobile-action" title="Seçili kaynaklar için flow hedefi seç" data-importance="primary" data-help="Seçili kaynaklardan flow hattı kurmak için hedef modu açar.">FLOW</button>
-                    <button id="doctrineBtn" title="Doktrin" data-importance="primary" data-help="Doktrinin aktif becerisini tetikler. Kısayol: Q.">DOK</button>
+                    <button id="pauseBtn" title="Duraklat" data-importance="primary" data-help="Yerel oyunda duraklatır; çevrim içinde maç menüsü ve bağlantı seçenekleri.">MENÜ</button>
+                    <button id="speedBtn" title="Hız" data-importance="primary" data-help="Yerel maçta simülasyon hızı: 1×, 2×, 4×. Çevrim içinde devre dışı olabilir.">HIZ 1x</button>
+                    <button id="upgradeHudBtn" class="hud-mobile-action" title="Yükselt" data-importance="primary" data-help="Seçili kendi dünyalarında seviye atlar (birlik ve kurallar uygunsa). Kısayol: U">YÜK</button>
+                    <button id="defenseHudBtn" class="hud-mobile-action" title="Savunma" data-importance="primary" data-help="Seçili kendi gezegenlerde savunma modu: dayanıklılık ve asimilasyon artar; üretim ve flow çıkışı düşer.">SAV</button>
+                    <button id="flowHudBtn" class="hud-mobile-action" title="Flow hedefi" data-importance="primary" data-help="Seçili kaynaklardan otomatik akış bağlamak için hedef seçim modu. Sağ tık ile de açılır.">FLOW</button>
+                    <button id="doctrineBtn" title="Doktrin" data-importance="primary" data-help="Yüklü doktrinin aktif yeteneği. Kısayol: Q">DOK</button>
                 </div>
                 <div class="hud-action-group">
-                    <button id="themeBtn" title="Tema" data-importance="meta" data-help="Açık ve koyu arayüz teması arasında geçiş yapar.">TEMA</button>
-                    <button id="chatToggle" title="Sohbet" data-importance="meta" data-help="Çok oyunculuda sohbet panelini açar veya kapatır.">CHAT</button>
-                    <button id="exportMapHudBtn" title="Haritayı Dışa Aktar" data-importance="meta" data-help="Mevcut maçı JSON custom map olarak dışa aktarır.">HARİTA</button>
+                    <button id="themeBtn" title="Tema" data-importance="meta" data-help="Açık / koyu arayüz. Tercih yerelde saklanır.">TEMA</button>
+                    <button id="chatToggle" title="Sohbet" data-importance="meta" data-help="Çok oyunculu maçta sohbet paneli. Tek oyuncuda gizlenebilir.">CHAT</button>
+                    <button id="exportMapHudBtn" title="Haritayı dışa aktar" data-importance="meta" data-help="Anlık haritayı özel harita JSON’u olarak indirir (düzenleme ve paylaşım).">HARİTA</button>
                 </div>
             </div>
-            <div id="hudActionTip" class="hud-action-tip">Komutların üstüne gel: ne yaptıkları ve kısayolları burada görünür.</div>
+            <div id="hudActionTip" class="hud-action-tip">Komutların üzerine gel: kısayol ve kısa açıklama burada görünür.</div>
         </div>
     </div>
+    <div id="tuningBackdrop" class="hidden" aria-hidden="true"></div>
     <div id="tuningPanel" class="hidden">
+        <button type="button" id="tuneMobileClose" class="tune-mobile-close" aria-label="Tuning panelini kapat">Kapat</button>
         <h3>Tuning</h3>
         <div class="tune-field"><label>Production x</label><input type="range" id="tuneProduction" min="0.1" max="5"
                 step="0.1" value="1" /><span id="tuneProductionVal">1.0</span></div>

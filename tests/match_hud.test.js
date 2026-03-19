@@ -33,7 +33,7 @@ test('buildDoctrineButtonState describes missing and ready doctrines', function 
     });
 
     assert.equal(emptyState.disabled, true);
-    assert.match(emptyState.help, /doctrine yükü yok/i);
+    assert.match(emptyState.help, /doktrin yüklemesi yok/i);
     assert.equal(readyState.disabled, false);
     assert.match(readyState.title, /Siege/);
     assert.match(readyState.help, /Kısayol: Q/);

@@ -23,8 +23,8 @@ export var SIM_CONSTANTS = {
     HOLD_DECAY_GRACE_TICKS: 300,
     HOLD_DECAY_INTERVAL_TICKS: 36,
     ISOLATED_PROD_PENALTY: 0.6,
-    DEFENSE_PROD_PENALTY: 0.75,
-    DEFENSE_BONUS: 1.25,
+    DEFENSE_PROD_PENALTY: 0.6,
+    DEFENSE_BONUS: 1.14,
     ASSIM_BASE_RATE: 0.0012,
     ASSIM_UNIT_BONUS: 0.00014,
     ASSIM_GARRISON_FLOOR: 0.35,
@@ -34,7 +34,7 @@ export var SIM_CONSTANTS = {
     TURRET_DPS: 16,
     TURRET_MIN_GARRISON: 8,
     TURRET_CAPTURE_RESIST: 1.7,
-    DEFENSE_FIELD_DEFENSE_BONUS: 1.25,
+    DEFENSE_FIELD_DEFENSE_BONUS: 1.1,
     STRATEGIC_PULSE_CYCLE: 540,
     STRATEGIC_PULSE_ACTIVE: 300,
     STRATEGIC_PULSE_PROD: 1.35,
@@ -42,9 +42,16 @@ export var SIM_CONSTANTS = {
     STRATEGIC_PULSE_ASSIM: 1.3,
     STRATEGIC_PULSE_CAP: 18,
     STRATEGIC_PULSE_AI_BONUS: 52,
+    /** Güneş patlaması: iki olay arası minimum süre (~3 dk @30 tick/s). */
+    SOLAR_FLARE_GAP_MIN_TICKS: 5400,
+    /** Güneş patlaması: iki olay arası maksimum süre (~5 dk). */
+    SOLAR_FLARE_GAP_MAX_TICKS: 9000,
+    /** Patlamadan önce uyarı süresi (tick, ~6 sn). */
+    SOLAR_FLARE_WARN_TICKS: 180,
     CAP_SOFT_START: 0.82,
     CAP_SOFT_FLOOR: 0.28,
-    DEFENSE_ASSIM_BONUS: 1.18,
+    DEFENSE_ASSIM_BONUS: 1.06,
+    DEFENSE_FLOW_MULT: 0.72,
     SUPPLIED_UPGRADE_DISCOUNT: 0.94,
     SYNC_HASH_INTERVAL_TICKS: 90,
     BEZ_CURV: 0.15,
@@ -55,11 +62,11 @@ export var PLAYER_COLORS = ['#4a8eff', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6
 
 export var NODE_TYPE_DEFS = {
     core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#8db3ff' },
-    forge: { label: 'Forge', prod: 1.35, def: 0.9, cap: 0.9, flow: 1.1, speed: 1.0, color: '#ffad66' },
-    bulwark: { label: 'Bulwark', prod: 0.75, def: 1.45, cap: 1.25, flow: 0.9, speed: 0.95, color: '#b6c1d9' },
-    relay: { label: 'Relay', prod: 0.95, def: 0.95, cap: 0.85, flow: 1.35, speed: 1.35, color: '#7de3ff' },
-    nexus: { label: 'Nexus', prod: 1.1, def: 1.1, cap: 1.1, flow: 1.15, speed: 1.1, color: '#c9a0dc' },
-    turret: { label: 'Turret', prod: 0.0, def: 2.25, cap: 0.8, flow: 0.8, speed: 1.0, color: '#8ff0ff' },
+    forge: { label: 'Forge', prod: 1.44, def: 0.84, cap: 0.87, flow: 1.08, speed: 1.0, color: '#ffad66' },
+    bulwark: { label: 'Bulwark', prod: 0.66, def: 1.58, cap: 1.3, flow: 0.86, speed: 0.93, color: '#b6c1d9' },
+    relay: { label: 'Relay', prod: 0.86, def: 0.92, cap: 0.8, flow: 1.45, speed: 1.42, color: '#7de3ff' },
+    nexus: { label: 'Nexus', prod: 1.17, def: 1.13, cap: 1.13, flow: 1.22, speed: 1.12, color: '#c9a0dc' },
+    turret: { label: 'Turret', prod: 0.0, def: 2.38, cap: 0.78, flow: 0.78, speed: 1.0, color: '#8ff0ff' },
 };
 
 export var AI_ARCHETYPES = [

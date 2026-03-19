@@ -6,45 +6,45 @@ export function buildHudAdvisorCard(opts) {
     opts = opts && typeof opts === 'object' ? opts : {};
 
     if (opts.commandMode === 'flow') {
-        return makeCard('accent', 'FLOW Hazır', 'Kaynaklarını bağlamak için hedef node seç. Boş alana tıklarsan komut modu kapanır.');
+        return makeCard('accent', 'Flow hedefi', 'Bağlamak istediğin gezegene tıkla. Vazgeçmek için boş alana dokun.');
     }
 
     if (opts.selectedOwnedUnassimilated) {
-        return makeCard('warning', 'Yeni Fetih', 'Bu node henüz oturmadı. Kısa süre defense aç, garnizonu boşaltma ve asimilasyon bitmeden ileri hatta fazla birlik çekme.');
+        return makeCard('warning', 'Yeni fetih', 'Asimilasyon oturana kadar kısa savunma aç, garnizonu eritme; tamamlanınca flow veya ileri hat.');
     }
 
     if (opts.holdingFleetSelected) {
-        return makeCard('accent', 'Park Filo', 'Bu grup staging için ideal. Nodea tekrar fırlatabilir veya boş alana taşıyıp kuşatma hattını yeniden kurabilirsin.');
+        return makeCard('accent', 'Park filosu', 'Kuşatma öncesi birikim için uygun. Tekrar bir dünyaya gönder veya boşlukta konum değiştir.');
     }
 
     if (opts.selectedOwnedUnsupplied) {
-        return makeCard('warning', 'Supply Zayıf', 'Seçili node supply dışında. Önce bağlantı kur; aksi halde üretim düşer ve upgrade daha pahalı kalır.');
+        return makeCard('warning', 'Tedarik dışı', 'Bu dünya omurgaya bağlı değil; üretim düşer. Önce zinciri kapat, sonra yükselt.');
     }
 
     if ((Number(opts.capPressure) || 0) > 0.82) {
-        return makeCard('warning', 'Cap Strain', 'Birlik kapasiten doluyor. Stok bekletmek yerine cepheye it, flow aç veya upgrade ile yükü erit.');
+        return makeCard('warning', 'Kapasite doluyor', 'Birikmiş birlik ekonomiyi boğuyor. Cepheye it, flow aç veya seviye yükselt.');
     }
 
     if (opts.primaryObjectiveLabel) {
         var objectiveBody = (opts.primaryObjectiveProgress ? (opts.primaryObjectiveLabel + ' | ' + opts.primaryObjectiveProgress) : opts.primaryObjectiveLabel);
         if (opts.primaryObjectiveCoach) objectiveBody += ' | ' + opts.primaryObjectiveCoach;
-        return makeCard('objective', opts.primaryObjectiveTitle || 'Öncelikli Hedef', objectiveBody);
+        return makeCard('objective', opts.primaryObjectiveTitle || 'Görev', objectiveBody);
     }
 
     if (opts.mapFeatureType === 'barrier' && (Number(opts.readyGateCount) || 0) <= 0) {
-        return makeCard('objective', 'Barrier', 'Karşı tarafa geçiş için önce GATE nodeunu ele geçir ve asimilasyonun tamamlanmasını bekle.');
+        return makeCard('objective', 'Bariyer', 'Karşı sahaya geçmek için GATE düğümünü al ve asimilasyonun bitmesini bekle.');
     }
 
     if (opts.pulseOwnedActive) {
-        return makeCard('accent', 'Pulse Penceresi', 'Pulse sende. Bu kısa pencerede üretim, hız ve asimilasyon bonusunu kullanıp ikinci hattı kır.');
+        return makeCard('accent', 'Stratejik pulse', 'Kısa bonus penceresi: üretim ve tempo avantajını kullanıp ikinci hatı kır.');
     }
 
     if ((Number(opts.tick) || 0) < 600) {
-        return makeCard('info', 'Açılış Planı', 'Yakın nötr node ile ekonomiyi büyüt, yeni fetihte defense kullan ve ilk relay, wormhole ya da gate hattını erkenden oku.');
+        return makeCard('info', 'İlk dakikalar', 'Yakın nötrü al, yeni fetihte savunmayı unutma; relay, solucan deliği veya kapı hattını erken oku.');
     }
 
     if ((Number(opts.encounterCount) || 0) > 0) {
-        return makeCard('objective', 'Encounter', 'Haritadaki özel hedefleri okumadan genişleme. Relay Core ve Mega Turret maç temposunu değiştirir.');
+        return makeCard('objective', 'Özel hedefler', 'Relay Core ve Mega Turret gibi işaretler maç ritmini değiştirir; genişlemeden önce oku.');
     }
 
     return null;

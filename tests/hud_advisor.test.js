@@ -10,7 +10,7 @@ test('advisor prioritizes flow mode guidance', function () {
         tick: 10,
     });
 
-    assert.equal(card.title, 'FLOW Hazır');
+    assert.equal(card.title, 'Flow hedefi');
     assert.equal(card.tone, 'accent');
 });
 
@@ -20,7 +20,7 @@ test('advisor highlights new capture before generic opening tips', function () {
         selectedOwnedUnassimilated: true,
     });
 
-    assert.equal(card.title, 'Yeni Fetih');
+    assert.equal(card.title, 'Yeni fetih');
     assert.equal(card.tone, 'warning');
 });
 
@@ -44,6 +44,6 @@ test('advisor warns about cap strain before objective text', function () {
         primaryObjectiveLabel: 'Relay Core tut',
     });
 
-    assert.equal(card.title, 'Cap Strain');
+    assert.equal(card.title, 'Kapasite doluyor');
     assert.equal(card.tone, 'warning');
 });

@@ -1,12 +1,12 @@
-export var HUD_ACTION_HELP_DEFAULT = 'Komutların üstüne gel: ne yaptıkları ve kısayolları burada görünür.';
+export var HUD_ACTION_HELP_DEFAULT = 'Komutların üzerine gel: kısayol ve kısa açıklama burada görünür.';
 
 var NODE_TYPE_TIPS = {
-    core: 'Dengeli temel gezegen. Güvenli açılışlar ve genel amaçlı cepheler için uygundur.',
-    forge: 'Üretimi yüksek ama savunması zayıf. Ekonomiyi hızlandırır, yalnız kalırsa çabuk düşer.',
-    bulwark: 'Savunma ve kapasite odaklıdır. Dar boğaz tutmak ve kuşatma emmek için idealdir.',
-    relay: 'Akış ve filo hızı güçlüdür. Takviye hattı kurmak ve cepheyi hızlı çevirmek için kullan.',
-    nexus: 'Her alanda hafif bonus veren hibrit gezegendir. Esnek orta oyun nodu olarak öne çıkar.',
-    turret: 'Üretim yapmaz; menzile giren düşmana otomatik ateş eder. Saldırıdan önce çevresi temizlenmelidir.',
+    core: 'Referans tip: üretim, savunma ve kapasite dengeli. Öğrenme ve genel cephe için güvenli varsayılan.',
+    forge: 'Üretim yüksek; savunma ve kapasite biraz zayıf. Ekonomiyi büyütür, tek başına kalınca çabuk düşer.',
+    bulwark: 'Kalın garnizon ve yüksek kapasite; üretim nispeten düşük. Dar geçit ve kuşatmayı emmek için ideal.',
+    relay: 'Akış (flow) ve filo hızı güçlü. Uzun hatta takviye ve hızlı cephe taşıması için omurga düğümü.',
+    nexus: 'Hibrit bonus: biraz üretim, savunma, akış ve kapasite. Esnek orta oyun ve yedek “iyi her şey” köşesi.',
+    turret: 'Üretmez; menzil içindeki düşmanı otomatik vurur. Saldırıdan önce çevreyi temizle, tek dalga ile deneme.',
 };
 
 var NODE_TYPE_LABELS = {
@@ -23,10 +23,10 @@ export function buildHudContextBadge(opts) {
     var nodeCount = Math.max(0, Math.floor(Number(opts.nodeCount) || 0));
     var fleetCount = Math.max(0, Math.floor(Number(opts.fleetCount) || 0));
 
-    if (opts.commandMode === 'flow') return 'FLOW hedefi';
-    if (!nodeCount && !fleetCount) return opts.online ? 'Canlı maç' : 'Hazır';
-    if (fleetCount && !nodeCount) return fleetCount > 1 ? (fleetCount + ' park filo') : 'Park filo';
-    if (nodeCount + fleetCount > 1) return (nodeCount + fleetCount) + ' seçim';
+    if (opts.commandMode === 'flow') return 'Flow hedefi seçiliyor';
+    if (!nodeCount && !fleetCount) return opts.online ? 'Canlı maç' : 'Hazır — kaynak seç';
+    if (fleetCount && !nodeCount) return fleetCount > 1 ? (fleetCount + ' park filosu') : 'Park filosu';
+    if (nodeCount + fleetCount > 1) return (nodeCount + fleetCount) + ' öğe seçili';
     if (nodeCount === 1 && opts.selectedNodeLabel) return String(opts.selectedNodeLabel);
     return 'Seçim';
 }
@@ -37,13 +37,25 @@ export function buildHudHintText(opts) {
     var fleetCount = Math.max(0, Math.floor(Number(opts.fleetCount) || 0));
     var ownedCount = Math.max(0, Math.floor(Number(opts.ownedCount) || 0));
 
-    if (opts.commandMode === 'flow') return 'FLOW modu: hedef gezegene tıkla. Boş alana tıklarsan komut modu kapanır.';
-    if (!nodeCount && !fleetCount) return 'Sol tıkla bir gezegen seç. Sağ tık flow veya savunma açar; boş uzaya bırakmak park filo kurar.';
-    if (fleetCount && !nodeCount) return 'Park filo seçili: hedef node\'a tıkla ya da boş noktaya bırakıp staging hattını taşı.';
-    if (ownedCount > 1 || fleetCount > 1) return 'Toplu emir hazır: hedefe sol tıkla, sağ tıkla flow veya savunma kullan, boşluğa bırakıp staging kur.';
-    if (ownedCount === 1) return 'Seçili node hazır: hedefe sol tıkla birlik gönder, sağ tıkla flow veya defense değiştir.';
-    if (nodeCount > 0) return 'Bu node sana ait değil. Emir vermek için önce kendi bir node veya park filo seç.';
-    return 'Seçimi hedefe sürükle ya da kısa yol tuşlarıyla gönderim yüzdesini değiştir.';
+    if (opts.commandMode === 'flow') {
+        return 'Flow: hedef gezegene tıkla, bağlantıyı aç veya kapat. İptal için boş alana tıkla.';
+    }
+    if (!nodeCount && !fleetCount) {
+        return 'Sol tıkla kendi gezegenini seç. Sağ tık: savunma veya flow. Boş uzaya bırakınca park filosu oluşur.';
+    }
+    if (fleetCount && !nodeCount) {
+        return 'Park filosu seçili: hedefe sol tıkla gönder veya boş noktaya taşı (staging). Shift ile çoklu seçim.';
+    }
+    if (ownedCount > 1 || fleetCount > 1) {
+        return 'Çoklu seçim: hedefe sol tıkla gönder. Sağ tıkla savunma (kendi dünya) veya flow (düşman/tarafsız).';
+    }
+    if (ownedCount === 1) {
+        return 'Kaynak hazır: hedefe sol tıkla gönderim yap. Sağ tık bu dünyada savunmayı açar veya kapatır.';
+    }
+    if (nodeCount > 0) {
+        return 'Bu dünya senin değil. Emir için önce kendi gezegenini veya park filonu seç.';
+    }
+    return 'Gönderim oranını 1–0 tuşları veya slider ile değiştir; Ctrl+sürükleyerek toplu gönder.';
 }
 
 export function buildNodeHoverTip(opts) {

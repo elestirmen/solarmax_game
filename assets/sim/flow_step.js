@@ -8,9 +8,11 @@ export function stepFlowLinks(params) {
     var flowInterval = Number(params.flowInterval);
     var flowFraction = Number(constants.flowFraction);
     var minReserve = Number(constants.minReserve);
+    var defenseFlowMult = Number(constants.defenseFlowMult);
     if (!Number.isFinite(flowInterval) || flowInterval < 1) flowInterval = 1;
     if (!Number.isFinite(flowFraction) || flowFraction <= 0) flowFraction = 0.08;
     if (!Number.isFinite(minReserve) || minReserve < 0) minReserve = 2;
+    if (!Number.isFinite(defenseFlowMult) || defenseFlowMult <= 0) defenseFlowMult = 1;
 
     var dispatches = [];
     for (var i = 0; i < flows.length; i++) {
@@ -33,7 +35,8 @@ export function stepFlowLinks(params) {
 
         flow.tickAcc = 0;
         var srcUnits = Number(src.units) || 0;
-        var amount = Math.max(1, Math.floor(srcUnits * flowFraction));
+        var effFrac = flowFraction * (src.defense ? defenseFlowMult : 1);
+        var amount = Math.max(1, Math.floor(srcUnits * effFrac));
         if (srcUnits > amount + minReserve) {
             dispatches.push({
                 owner: flow.owner,

@@ -12,7 +12,7 @@ test('HUD coach suggests selection basics when nothing is selected', function ()
 
 test('HUD coach switches to flow instructions in command mode', function () {
     var items = buildHudCoachItems({ commandMode: 'flow', sendPct: 75 });
-    assert.equal(items[0].text, 'Hedef node seç');
+    assert.equal(items[0].text, 'Hedef gezegen: flow');
     assert.equal(items[2].key, '%75');
 });
 

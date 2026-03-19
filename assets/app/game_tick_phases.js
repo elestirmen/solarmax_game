@@ -133,6 +133,8 @@ export function runCombatTickPhase(opts) {
     var constants = opts.constants || {};
     var callbacks = opts.callbacks || {};
 
+    if (typeof callbacks.maybeApplySolarFlareCombat === 'function') callbacks.maybeApplySolarFlareCombat();
+
     var turretReport = callbacks.applyTurretDamage({
         nodes: game.nodes,
         fleets: game.fleets,
@@ -265,6 +267,7 @@ export function runCombatTickPhase(opts) {
         constants: {
             flowFraction: constants.flowFraction,
             minReserve: 2,
+            defenseFlowMult: constants.defenseFlowMult,
         },
     });
     game.flows = flowReport.flows;

@@ -27,9 +27,9 @@ export function buildDoctrineButtonState(opts) {
         return {
             disabled: true,
             text: 'DOK',
-            title: 'Doktrin yok',
-            help: 'Bu maçta doctrine yükü yok.',
-            helpDisabled: 'Bu maçta doctrine yükü yok.',
+            title: 'Doktrin seçilmedi',
+            help: 'Bu maçta doktrin yüklemesi yok.',
+            helpDisabled: 'Bu maçta doktrin yüklemesi yok.',
         };
     }
 
@@ -38,8 +38,8 @@ export function buildDoctrineButtonState(opts) {
         disabled: !opts.ready,
         text: 'DOK',
         title: label,
-        help: label + ' | Kısayol: Q.',
-        helpDisabled: label,
+        help: label + ' — Kısayol: Q',
+        helpDisabled: label + ' — henüz hazır değil',
     };
 }
 

@@ -1,3 +1,5 @@
+import { getSolarFlareFrame } from '../sim/solar_flare.js';
+
 function nodeIsWormholeEndpoint(game, nodeId) {
     var links = game && Array.isArray(game.wormholes) ? game.wormholes : [];
     for (var wi = 0; wi < links.length; wi++) {
@@ -6,6 +8,36 @@ function nodeIsWormholeEndpoint(game, nodeId) {
         if (w.a === nodeId || w.b === nodeId) return true;
     }
     return false;
+}
+
+function drawSolarFlareCorona(ctx, game, tick, constants) {
+    var cfg = constants.solarFlare;
+    if (!cfg || !game || (game.state !== 'playing' && game.state !== 'paused')) return;
+    var frame = getSolarFlareFrame(tick, game.seed, cfg);
+    if (frame.phase !== 'warn') return;
+    var mw = Number(constants.mapWidth) || 1600;
+    var mh = Number(constants.mapHeight) || 1000;
+    var cx = mw * 0.5;
+    var cy = mh * 0.5;
+    var u = Number(frame.warnProgress) || 0;
+    var throb = 0.65 + 0.35 * Math.sin(tick * 0.31);
+    var r = (Math.min(mw, mh) * 0.22) * (0.85 + u * 0.35) * throb;
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    var g = ctx.createRadialGradient(cx, cy, r * 0.08, cx, cy, r);
+    g.addColorStop(0, 'rgba(255,250,220,' + (0.35 + u * 0.25) + ')');
+    g.addColorStop(0.55, 'rgba(255,140,40,' + (0.12 + u * 0.18) + ')');
+    g.addColorStop(1, 'rgba(255,60,20,0)');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * (1.05 + u * 0.08), 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(255,220,160,' + (0.22 + u * 0.2) + ')';
+    ctx.lineWidth = 2 + u * 2;
+    ctx.stroke();
+    ctx.restore();
 }
 
 function drawGridLayer(ctx, game, hw, hh) {
@@ -58,6 +90,113 @@ function drawFlowLinksLayer(ctx, game, constants, helpers) {
     }
 }
 
+/** Wormhole sevkiyat — ışınlanma anı: tünel, enerji başı, dönen portal kıvılcımları */
+function drawWormholeTeleportBeam(ctx, beam, lifeAlpha, ownerColor, tick, helpers) {
+    var fx = beam.fromX, fy = beam.fromY, tx = beam.toX, ty = beam.toY;
+    var u = 1 - lifeAlpha;
+    var spawnPhase = Number(beam.spawnTick) || 0;
+    var flick = 0.6 + 0.4 * Math.sin((tick - spawnPhase) * 0.88);
+    var headT = 1 - Math.pow(1 - u, 2.15);
+    if (headT > 1) headT = 1;
+    var hx = fx + (tx - fx) * headT;
+    var hy = fy + (ty - fy) * headT;
+    var burstA = lifeAlpha * (1 - u * 0.88);
+    var rSpin = (tick - spawnPhase) * 0.15;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    ctx.lineTo(tx, ty);
+    ctx.strokeStyle = 'rgba(95, 60, 240,' + (0.26 * lifeAlpha * flick) + ')';
+    ctx.lineWidth = 24 + 11 * u;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+
+    ctx.strokeStyle = helpers.hexToRgba(ownerColor, 0.32 * lifeAlpha);
+    ctx.lineWidth = 12;
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(150, 245, 255,' + (0.36 * lifeAlpha) + ')';
+    ctx.lineWidth = 5.8;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    ctx.lineTo(hx, hy);
+    ctx.strokeStyle = 'rgba(255, 248, 225,' + (0.82 * lifeAlpha) + ')';
+    ctx.lineWidth = 3.6;
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255, 255, 255,' + (0.93 * lifeAlpha) + ')';
+    ctx.lineWidth = 1.45;
+    ctx.stroke();
+
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    var dashUnit = 12;
+    ctx.setLineDash([dashUnit * 0.5, dashUnit * 0.95]);
+    ctx.lineDashOffset = -((tick - spawnPhase) * 7) % (dashUnit * 2.9);
+    ctx.beginPath();
+    ctx.moveTo(fx, fy);
+    ctx.lineTo(tx, ty);
+    ctx.strokeStyle = 'rgba(255, 255, 255,' + (0.38 * lifeAlpha * flick) + ')';
+    ctx.lineWidth = 2.1;
+    ctx.lineCap = 'butt';
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    var pi;
+    for (pi = 0; pi < 3; pi++) {
+        var a0 = rSpin + pi * (Math.PI * 2 / 3);
+        var pr = 5 + u * 27;
+        ctx.beginPath();
+        ctx.arc(fx, fy, pr, a0, a0 + 1.12);
+        ctx.strokeStyle = 'rgba(205, 180, 255,' + (0.52 * burstA) + ')';
+        ctx.lineWidth = 2.3;
+        ctx.stroke();
+    }
+    var rSpin2 = -rSpin * 1.08;
+    for (pi = 0; pi < 3; pi++) {
+        var b0 = rSpin2 + pi * (Math.PI * 2 / 3);
+        var pr2 = 6 + u * 31;
+        ctx.beginPath();
+        ctx.arc(tx, ty, pr2, b0, b0 + 1.05);
+        ctx.strokeStyle = 'rgba(255, 210, 140,' + (0.5 * burstA) + ')';
+        ctx.lineWidth = 2.05;
+        ctx.stroke();
+    }
+    ctx.restore();
+
+    var coreR = 2.8 + (1 - u) * 5 + flick * 0.55;
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    var g = ctx.createRadialGradient(hx, hy, 0, hx, hy, coreR * 3.1);
+    g.addColorStop(0, 'rgba(255,255,255,' + (0.96 * lifeAlpha) + ')');
+    g.addColorStop(0.4, 'rgba(190, 238, 255,' + (0.48 * lifeAlpha) + ')');
+    g.addColorStop(1, 'rgba(110, 70, 220, 0)');
+    ctx.beginPath();
+    ctx.arc(hx, hy, coreR * 2.9, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.beginPath();
+    ctx.arc(fx, fy, 2.4 + lifeAlpha * 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(225, 200, 255,' + (0.7 * lifeAlpha) + ')';
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(tx, ty, 2.6 + lifeAlpha * 2.7, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 234, 195,' + (0.72 * lifeAlpha) + ')';
+    ctx.fill();
+}
+
 function drawFleetsAndBeamsLayer(ctx, game, tick, inputState, hw, hh, constants, helpers) {
     var fhw = hw + 30;
     var fhh = hh + 30;
@@ -105,6 +244,12 @@ function drawFleetsAndBeamsLayer(ctx, game, tick, inputState, hw, hh, constants,
         var fieldBeam = game.fieldBeams[fbi];
         var fieldBeamAlpha = helpers.clamp(fieldBeam.life / Math.max(fieldBeam.maxLife, 0.0001), 0, 1);
         var fieldBeamCol = fieldBeam.owner >= 0 && game.players[fieldBeam.owner] ? game.players[fieldBeam.owner].color : '#8db3ff';
+        var isWh = fieldBeam.wormholeFlash === true;
+        if (isWh) {
+            drawWormholeTeleportBeam(ctx, fieldBeam, fieldBeamAlpha, fieldBeamCol, tick, helpers);
+            continue;
+        }
+        ctx.save();
         ctx.beginPath();
         ctx.moveTo(fieldBeam.fromX, fieldBeam.fromY);
         ctx.lineTo(fieldBeam.toX, fieldBeam.toY);
@@ -112,6 +257,15 @@ function drawFleetsAndBeamsLayer(ctx, game, tick, inputState, hw, hh, constants,
         ctx.lineWidth = 3;
         ctx.lineCap = 'round';
         ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(fieldBeam.fromX, fieldBeam.fromY);
+        ctx.lineTo(fieldBeam.toX, fieldBeam.toY);
+        ctx.strokeStyle = helpers.hexToRgba('#ffffff', 0.45 * fieldBeamAlpha);
+        ctx.lineWidth = 1;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        ctx.restore();
 
         ctx.beginPath();
         ctx.arc(fieldBeam.toX, fieldBeam.toY, 1.2 + fieldBeamAlpha, 0, Math.PI * 2);
@@ -323,7 +477,10 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
         } else {
             var bodyCol = col;
             if ((vis || n.owner === game.human) && col.indexOf('#') === 0) {
-                var typeBlend = n.owner === -1 ? 0.5 : 0.22;
+                var typeBlend = 0.22;
+                if (n.owner === -1) typeBlend = 0.66;
+                else if (n.kind === 'core') typeBlend = 0.13;
+                else typeBlend = 0.49;
                 bodyCol = helpers.blendHex(col, tdef.color, typeBlend);
             }
             var planetCanvas = helpers.getPlanetTexture(n.id, n.radius);
@@ -334,6 +491,15 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             }
             ctx.drawImage(planetCanvas, n.pos.x - n.radius, n.pos.y - n.radius, n.radius * 2, n.radius * 2);
             ctx.restore();
+            if (n.kind !== 'turret' && (vis || n.owner === game.human || n.owner === -1)) {
+                var rimAlpha = n.owner === -1 ? 0.5 : (n.kind === 'core' ? 0.24 : 0.58);
+                var rimW = n.kind === 'core' ? 1.2 : 2.45;
+                ctx.beginPath();
+                ctx.arc(n.pos.x, n.pos.y, n.radius + 1.38, 0, Math.PI * 2);
+                ctx.strokeStyle = helpers.hexToRgba(tdef.color, rimAlpha);
+                ctx.lineWidth = rimW;
+                ctx.stroke();
+            }
             if (whEnd && (vis || n.owner === game.human)) {
                 ctx.save();
                 ctx.beginPath();
@@ -496,6 +662,7 @@ export function renderWorldLayers(opts) {
 
     helpers.drawWorldBackdrop(ctx, tick, hw, hh);
     drawGridLayer(ctx, game, hw, hh);
+    drawSolarFlareCorona(ctx, game, tick, constants);
     helpers.drawMapFeature(ctx, tick);
     helpers.drawTerritories(ctx, tick);
     drawDefenseRangeLayer(ctx, game, tick, constants, helpers);
@@ -513,6 +680,12 @@ export function renderMinimapLayer(opts) {
     var game = opts.game;
     var viewportCanvas = opts.viewportCanvas;
     var constants = opts.constants || {};
+    var helpers = opts.helpers || {};
+    var blendHex = typeof helpers.blendHex === 'function' ? helpers.blendHex : function (a) { return a; };
+    var nodeTypeOf = typeof helpers.nodeTypeOf === 'function' ? helpers.nodeTypeOf : function (n) {
+        var defs = constants.nodeTypeDefs;
+        return defs && n && defs[n.kind] ? defs[n.kind] : { color: '#8db3ff' };
+    };
     if (!canvas || !ctx || !(game.state === 'playing' || game.state === 'paused') || game.nodes.length <= 0) {
         if (wrapper) wrapper.classList.add('hidden');
         return;
@@ -530,10 +703,22 @@ export function renderMinimapLayer(opts) {
     ctx.scale(scale, scale);
     for (var i = 0; i < game.nodes.length; i++) {
         var mn = game.nodes[i];
-        var mcol = mn.owner < 0 ? '#5a6272' : (game.players[mn.owner] ? game.players[mn.owner].color : '#888');
+        var tdef = nodeTypeOf(mn);
+        var baseCol = mn.owner < 0 ? '#5a6272' : (game.players[mn.owner] ? game.players[mn.owner].color : '#888');
+        var mcol = baseCol;
+        var tc = tdef && tdef.color ? tdef.color : '#8db3ff';
+        if (mn.owner >= 0) {
+            mcol = blendHex(baseCol, tc, mn.kind === 'core' ? 0.15 : 0.42);
+        } else {
+            mcol = blendHex(baseCol, tc, 0.38);
+        }
+        var mr = 7.6;
+        if (mn.kind === 'turret') mr = 10.2;
+        else if (mn.kind === 'forge' || mn.kind === 'bulwark' || mn.kind === 'nexus') mr = 8.9;
+        else if (mn.kind === 'relay') mr = 8.35;
         ctx.fillStyle = mcol;
         ctx.beginPath();
-        ctx.arc(mn.pos.x, mn.pos.y, 8, 0, Math.PI * 2);
+        ctx.arc(mn.pos.x, mn.pos.y, mr, 0, Math.PI * 2);
         ctx.fill();
     }
     ctx.restore();

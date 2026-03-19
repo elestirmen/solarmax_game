@@ -19,6 +19,7 @@ import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } f
 import { computeFriendlyReinforcementRoom } from './assets/sim/reinforcement.js';
 import { buildFleetSpawnProfile, getFleetUnitSpacingT, hashMix } from './assets/sim/shared_config.js';
 import { getStrategicPulseState, isStrategicPulseActiveForNode } from './assets/sim/strategic_pulse.js';
+import { applySolarFlareFleetWipe, getSolarFlareFrame } from './assets/sim/solar_flare.js';
 import { computeSyncHash } from './assets/sim/state_hash.js';
 import { applyPlayerCommandWithOps } from './assets/sim/command_apply.js';
 import { sanitizeCommandData } from './assets/sim/command_schema.js';
@@ -77,8 +78,8 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     HOLD_DECAY_GRACE_TICKS = 300,
     HOLD_DECAY_INTERVAL_TICKS = 36,
     ISOLATED_PROD_PENALTY = 0.6,
-    DEFENSE_PROD_PENALTY = 0.75,
-    DEFENSE_BONUS = 1.25,
+    DEFENSE_PROD_PENALTY = 0.6,
+    DEFENSE_BONUS = 1.14,
     ASSIM_BASE_RATE = 0.0012,
     ASSIM_UNIT_BONUS = 0.00014,
     ASSIM_GARRISON_FLOOR = 0.35,
@@ -92,7 +93,7 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     DEFENSE_FIELD_LEVEL_RANGE = 4,
     DEFENSE_FIELD_DPS = 2.6,
     DEFENSE_FIELD_LEVEL_DPS = 0.3,
-    DEFENSE_FIELD_DEFENSE_BONUS = 1.25,
+    DEFENSE_FIELD_DEFENSE_BONUS = 1.1,
     DEFENSE_FIELD_BULWARK_BONUS = 1.18,
     DEFENSE_FIELD_RELAY_RANGE = 6,
     STRATEGIC_PULSE_CYCLE = 540,
@@ -102,9 +103,14 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     STRATEGIC_PULSE_ASSIM = 1.3,
     STRATEGIC_PULSE_CAP = 18,
     STRATEGIC_PULSE_AI_BONUS = 52,
+    SOLAR_FLARE_GAP_MIN_TICKS = 5400,
+    SOLAR_FLARE_GAP_MAX_TICKS = 9000,
+    SOLAR_FLARE_WARN_TICKS = 180,
     CAP_SOFT_START = 0.82,
     CAP_SOFT_FLOOR = 0.28,
-    DEFENSE_ASSIM_BONUS = 1.18,
+    DEFENSE_ASSIM_BONUS = 1.06,
+    /** Defense açık kaynak düğümlerinden flow ile çıkan birim payı bu kadar çarpılır (<1 = zayıf hub). */
+    DEFENSE_FLOW_MULT = 0.72,
     SUPPLIED_UPGRADE_DISCOUNT = 0.94,
     DAILY_CHALLENGE_TIMEZONE = 'Europe/Istanbul';
 var SYNC_HASH_INTERVAL_TICKS = 90, TICK_RATE = Math.round(1 / TICK_DT);
@@ -113,11 +119,11 @@ var NODE_HOVER_DWELL_MS = 420;
 
 var NODE_TYPE_DEFS = {
     core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#8db3ff' },
-    forge: { label: 'Forge', prod: 1.35, def: 0.9, cap: 0.9, flow: 1.1, speed: 1.0, color: '#ffad66' },
-    bulwark: { label: 'Bulwark', prod: 0.75, def: 1.45, cap: 1.25, flow: 0.9, speed: 0.95, color: '#b6c1d9' },
-    relay: { label: 'Relay', prod: 0.95, def: 0.95, cap: 0.85, flow: 1.35, speed: 1.35, color: '#7de3ff' },
-    nexus: { label: 'Nexus', prod: 1.1, def: 1.1, cap: 1.1, flow: 1.15, speed: 1.1, color: '#c9a0dc' },
-    turret: { label: 'Turret', prod: 0.0, def: 2.25, cap: 0.8, flow: 0.8, speed: 1.0, color: '#8ff0ff' },
+    forge: { label: 'Forge', prod: 1.44, def: 0.84, cap: 0.87, flow: 1.08, speed: 1.0, color: '#ffad66' },
+    bulwark: { label: 'Bulwark', prod: 0.66, def: 1.58, cap: 1.3, flow: 0.86, speed: 0.93, color: '#b6c1d9' },
+    relay: { label: 'Relay', prod: 0.86, def: 0.92, cap: 0.8, flow: 1.45, speed: 1.42, color: '#7de3ff' },
+    nexus: { label: 'Nexus', prod: 1.17, def: 1.13, cap: 1.13, flow: 1.22, speed: 1.12, color: '#c9a0dc' },
+    turret: { label: 'Turret', prod: 0.0, def: 2.38, cap: 0.78, flow: 0.78, speed: 1.0, color: '#8ff0ff' },
 };
 
 var AI_ARCHETYPES = [
@@ -387,6 +393,7 @@ var G = {
     particles: [], turretBeams: [], fieldBeams: [], shockwaves: [], mapMode: 'random',
     playerCapital: {}, strategicNodes: [],
     strategicPulse: { active: false, nodeId: -1, cycle: 0, phase: 0, remainingTicks: 0, announcedCycle: -1 },
+    solarFlareFx: { blastFlash: 0 },
     powerByPlayer: {}, capByPlayer: {}, unitByPlayer: {},
     campaign: { active: false, levelIndex: -1, unlocked: 1, completed: 0, reminderShown: {} },
     daily: { active: false, challenge: null, reminderShown: {}, bestTick: 0, completed: false },
@@ -685,6 +692,49 @@ function currentStrategicPulse(tick) {
 function strategicPulseAppliesToNode(nodeId) {
     return isStrategicPulseActiveForNode(nodeId, G.strategicPulse);
 }
+function solarFlareCfg() {
+    return {
+        gapMinTicks: SOLAR_FLARE_GAP_MIN_TICKS,
+        gapMaxTicks: SOLAR_FLARE_GAP_MAX_TICKS,
+        warnTicks: SOLAR_FLARE_WARN_TICKS,
+    };
+}
+function maybeApplySolarFlareCombat() {
+    if (G.state !== 'playing') return;
+    var cfg = solarFlareCfg();
+    var cur = getSolarFlareFrame(G.tick, G.seed, cfg);
+    var prev = G.tick <= 0 ? { phase: 'idle' } : getSolarFlareFrame(G.tick - 1, G.seed, cfg);
+    if (cur.phase === 'warn' && prev.phase !== 'warn') {
+        showHintToast('UYARI: Güneş patlaması geliyor — uzaydaki filolarını gezegenlere çek!');
+        if (typeof AudioFX !== 'undefined' && typeof AudioFX.solarFlareWarning === 'function') AudioFX.solarFlareWarning();
+    }
+    if (cur.phase === 'blast') {
+        var wiped = applySolarFlareFleetWipe(G.fleets);
+        G.solarFlareFx.blastFlash = 1.05;
+        enqueueShockwave(MAP_W * 0.5, MAP_H * 0.5, {
+            radius: 120,
+            grow: 520,
+            life: 0.85,
+            color: '#ffcc66',
+            alpha: 0.42,
+            fillAlpha: 0.08,
+            lineWidth: 2.4,
+        });
+        spawnParticles(MAP_W * 0.5, MAP_H * 0.5, Math.min(56, 32 + wiped * 2), '#ff9a4a', false, {
+            spread: Math.PI * 2,
+            speedMin: 3,
+            speedMax: 14,
+            drag: 0.88,
+            lifeMin: 0.35,
+            lifeMax: 0.9,
+            glow: 1.2,
+        });
+        showHintToast(wiped > 0
+            ? ('Güneş patlaması: ' + wiped + ' filo buharlaştı. Gezegenlerdeki birlikler güvende.')
+            : 'Güneş patlaması: uzaydaki filolar yok oldu (şu an yolda filo yoktu).');
+        if (typeof AudioFX !== 'undefined' && typeof AudioFX.solarFlareBlast === 'function') AudioFX.solarFlareBlast();
+    }
+}
 function strategicPulseToast() {
     if (G.state !== 'playing' || !G.strategicPulse.active) return;
     if (G.strategicPulse.announcedCycle === G.strategicPulse.cycle) return;
@@ -982,6 +1032,7 @@ function initGame(seedStr, nc, diff, opts) {
     G.turretBeams = [];
     G.fieldBeams = [];
     G.shockwaves = [];
+    G.solarFlareFx = { blastFlash: 0 };
     resetOrbitalVisuals();
     for (var i = 0; i < pool.length; i++) { pool[i].active = false; pool[i].trail = []; }
     G.fleets = [];
@@ -1278,7 +1329,10 @@ function dispatch(owner, srcIds, tgtId, pct) {
             sourcePos: src.pos,
             targetPos: targetPoint,
         });
-        if (usedWormhole) anyWormholeSend = true;
+        if (usedWormhole) {
+            anyWormholeSend = true;
+            if (tgt) spawnWormholeTeleportVfx(src, tgt, owner);
+        }
         if (owner === G.human && usedWormhole) G.stats.wormholeDispatches++;
     }
     for (var fi = 0; fi < order.fleetIds.length; fi++) {
@@ -1376,6 +1430,106 @@ function spawnParticles(x, y, count, color, isCapture, opts) {
         });
     }
     if (G.particles.length > 120) G.particles = G.particles.slice(-100);
+}
+
+function spawnWormholeTeleportVfx(srcNode, tgtNode, owner) {
+    if (!srcNode || !tgtNode || !srcNode.pos || !tgtNode.pos) return;
+    if (G.tune.fogEnabled) {
+        var hum = G.human;
+        var fogHum = G.fog && G.fog.vis && G.fog.vis[hum];
+        var vFrom = srcNode.owner === hum || !!(fogHum && fogHum[srcNode.id]);
+        var vTo = tgtNode.owner === hum || !!(fogHum && fogHum[tgtNode.id]);
+        if (!vFrom && !vTo) return;
+    }
+    var fx = srcNode.pos.x;
+    var fy = srcNode.pos.y;
+    var tx = tgtNode.pos.x;
+    var ty = tgtNode.pos.y;
+    var dx = tx - fx;
+    var dy = ty - fy;
+    var dlen = Math.sqrt(dx * dx + dy * dy) || 1;
+    var ux = dx / dlen;
+    var uy = dy / dlen;
+    var pcol = owner >= 0 && G.players[owner] ? G.players[owner].color : '#a8c8ff';
+    var rs = Math.max(12, (Number(srcNode.radius) || 18) * 0.72);
+    var rt = Math.max(12, (Number(tgtNode.radius) || 18) * 0.72);
+
+    enqueueShockwave(fx, fy, {
+        color: '#9b7aff',
+        radius: rs,
+        grow: 50,
+        life: 0.38,
+        alpha: 0.5,
+        fillAlpha: 0.12,
+        lineWidth: 2.5,
+    });
+    enqueueShockwave(tx, ty, {
+        color: '#ffb45c',
+        radius: rt,
+        grow: 54,
+        life: 0.4,
+        alpha: 0.48,
+        fillAlpha: 0.11,
+        lineWidth: 2.3,
+    });
+
+    enqueueShockwave(fx, fy, {
+        color: '#f5f0ff',
+        radius: Math.max(6, rs * 0.42),
+        grow: 20,
+        life: 0.12,
+        alpha: 0.72,
+        fillAlpha: 0.32,
+        lineWidth: 1.5,
+    });
+    enqueueShockwave(tx, ty, {
+        color: '#fffaf0',
+        radius: Math.max(6, rt * 0.42),
+        grow: 24,
+        life: 0.14,
+        alpha: 0.68,
+        fillAlpha: 0.28,
+        lineWidth: 1.45,
+    });
+
+    spawnParticles(fx, fy, 42, pcol, false, {
+        dirX: ux,
+        dirY: uy,
+        spread: Math.PI * 0.75,
+        speedMin: 4.8,
+        speedMax: 14,
+        lifeMin: 0.28,
+        lifeMax: 0.62,
+        drag: 0.92,
+        radiusScale: 1.28,
+        glow: 0.52,
+    });
+    spawnParticles(tx, ty, 36, '#ffe8c8', false, {
+        dirX: -ux,
+        dirY: -uy,
+        spread: Math.PI * 0.78,
+        speedMin: 4.2,
+        speedMax: 12.5,
+        lifeMin: 0.26,
+        lifeMax: 0.55,
+        drag: 0.92,
+        radiusScale: 1.12,
+        glow: 0.55,
+    });
+
+    var beamLife = 0.32;
+    G.fieldBeams.push({
+        fromX: fx,
+        fromY: fy,
+        toX: tx,
+        toY: ty,
+        owner: owner,
+        life: beamLife,
+        maxLife: beamLife,
+        wormholeFlash: true,
+        spawnTick: G.tick,
+    });
+    if (G.fieldBeams.length > 120) G.fieldBeams = G.fieldBeams.slice(-120);
 }
 
 function enqueueShockwave(x, y, opts) {
@@ -1559,8 +1713,10 @@ function gameTick(runtimeOpts) {
             holdDecayGraceTicks: HOLD_DECAY_GRACE_TICKS,
             holdDecayIntervalTicks: HOLD_DECAY_INTERVAL_TICKS,
             flowFraction: FLOW_FRAC,
+            defenseFlowMult: DEFENSE_FLOW_MULT,
         },
         callbacks: {
+            maybeApplySolarFlareCombat: maybeApplySolarFlareCombat,
             applyTurretDamage: applyTurretDamage,
             applyImpactFeedback: applyImpactFeedback,
             stepFleetMovement: stepFleetMovement,
@@ -1790,13 +1946,22 @@ function nodeTypeLetter(kind) {
 }
 
 function drawTypeBadge(ctx, n, tdef) {
-    var bx = n.pos.x, by = n.pos.y + n.radius * 0.6, br = Math.max(4, n.radius * 0.18);
+    var bx = n.pos.x, by = n.pos.y + n.radius * 0.6, br = Math.max(5, n.radius * 0.2);
     var letter = nodeTypeLetter(n.kind);
-    ctx.font = 'bold ' + Math.max(6, br) + 'px Outfit,sans-serif';
-    ctx.fillStyle = hexToRgba(tdef.color, 0.9);
+    ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.beginPath();
+    ctx.arc(bx, by, br * 1.05, 0, Math.PI * 2);
+    ctx.fillStyle = hexToRgba(tdef.color, 0.42);
+    ctx.fill();
+    ctx.strokeStyle = hexToRgba('#ffffff', 0.55);
+    ctx.lineWidth = 1.15;
+    ctx.stroke();
+    ctx.font = 'bold ' + Math.max(7, br * 1.08) + 'px Outfit,sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.94)';
     ctx.fillText(letter, bx, by);
+    ctx.restore();
 }
 
 // Override with clearer, lightweight class silhouettes.
@@ -2671,6 +2836,36 @@ function drawTerritories(ctx, tick) {
     drawContestedFronts(ctx, territorySets, tick);
 }
 
+function drawSolarFlareScreenOverlay(ctx, cv, tick) {
+    if (G.state !== 'playing' && G.state !== 'paused') return;
+    var frame = getSolarFlareFrame(tick, G.seed, solarFlareCfg());
+    var w = cv.width;
+    var h = cv.height;
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (frame.phase === 'warn') {
+        var u = Number(frame.warnProgress) || 0;
+        var pulse = 0.14 + 0.1 * Math.sin(tick * 0.38) + u * 0.38;
+        var g = ctx.createRadialGradient(w * 0.5, h * 0.55, Math.min(w, h) * 0.06, w * 0.5, h * 0.5, Math.max(w, h) * 0.75);
+        g.addColorStop(0, 'rgba(255,245,220,' + (0.05 + u * 0.07) + ')');
+        g.addColorStop(0.5, 'rgba(255,150,60,' + (pulse * 0.22) + ')');
+        g.addColorStop(1, 'rgba(45,12,8,' + (pulse * 0.52) + ')');
+        ctx.fillStyle = g;
+        ctx.fillRect(0, 0, w, h);
+        ctx.strokeStyle = 'rgba(255,220,160,' + (0.16 + u * 0.22) + ')';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(3, 3, w - 6, h - 6);
+    }
+    var flash = Number(G.solarFlareFx && G.solarFlareFx.blastFlash) || 0;
+    if (flash > 0) {
+        ctx.globalCompositeOperation = 'screen';
+        ctx.fillStyle = 'rgba(255,252,235,' + Math.min(0.94, flash * 0.9) + ')';
+        ctx.fillRect(0, 0, w, h);
+        ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.restore();
+}
+
 function render(ctx, cv, tick) {
     pruneSelectedFleetIds();
     drawScreenBackdrop(ctx, cv, tick);
@@ -2690,6 +2885,9 @@ function render(ctx, cv, tick) {
             assimLockTicks: ASSIM_LOCK_TICKS,
             colNeutral: COL_NEUTRAL,
             colFog: COL_FOG,
+            mapWidth: MAP_W,
+            mapHeight: MAP_H,
+            solarFlare: solarFlareCfg(),
             nodeTypeDefs: NODE_TYPE_DEFS,
         },
         helpers: {
@@ -2725,8 +2923,14 @@ function render(ctx, cv, tick) {
         constants: {
             mapWidth: MAP_W,
             mapHeight: MAP_H,
+            nodeTypeDefs: NODE_TYPE_DEFS,
+        },
+        helpers: {
+            blendHex: blendHex,
+            nodeTypeOf: nodeTypeOf,
         },
     });
+    drawSolarFlareScreenOverlay(ctx, cv, G.tick);
     renderMarqueeLayer({
         ctx: ctx,
         inputState: inp,
@@ -2890,6 +3094,17 @@ function updateTouchPinch(a, b) {
     G.cam.y = inp.pinchWorldCenter.y - (center.y - cv.height / 2) / G.cam.zoom;
 }
 function hitNode(wp) { for (var i = 0; i < G.nodes.length; i++) { var n = G.nodes[i]; if (dist(wp, n.pos) <= n.radius + 5) return n; } return null; }
+function hitNodeForTouch(wp) {
+    var slackWorld = 0;
+    if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
+        slackWorld = 18 / Math.max(0.001, G.cam.zoom || 1);
+    }
+    for (var i = 0; i < G.nodes.length; i++) {
+        var n = G.nodes[i];
+        if (dist(wp, n.pos) <= n.radius + 5 + slackWorld) return n;
+    }
+    return null;
+}
 function findHoldingFleetById(id) {
     for (var i = 0; i < G.fleets.length; i++) {
         var fleet = G.fleets[i];
@@ -3077,6 +3292,7 @@ function resetDragState() {
     inp.dragFleetIds = [];
     inp.touchPointOrderPending = false;
     inp.mousePointOrderPending = false;
+    inp.touchEmptyAwait = false;
 }
 function clearCommandMode() {
     inp.commandMode = '';
@@ -3554,7 +3770,7 @@ function syncMatchHudControls() {
     if (defenseHudBtn) {
         defenseHudBtn.disabled = G.state !== 'playing' || !selectedOwnedNodeIds().length;
         defenseHudBtn.title = 'Seçili gezegenlerde savunmayı aç veya kapat';
-        defenseHudBtn.setAttribute('data-help', 'Defense modu savunmayı ve asimilasyonu güçlendirir, üretimi düşürür.');
+        defenseHudBtn.setAttribute('data-help', 'Defense: cephede daha dayanıklı ve alan hasarı güçlü; üretim, asimilasyon ve flow çıkışı düşer.');
         defenseHudBtn.setAttribute('data-help-disabled', 'Defense için önce kendi bir node seç.');
     }
     if (flowHudBtn) {
@@ -3798,7 +4014,7 @@ function selectionMetaText() {
             } else {
                 parts.push('Upgrade OFF');
             }
-            parts.push(node.defense ? ('Defense ON | Assim +' + Math.round((DEFENSE_ASSIM_BONUS - 1) * 100) + '% | Prod -' + Math.round((1 - DEFENSE_PROD_PENALTY) * 100) + '%') : 'Defense OFF');
+            parts.push(node.defense ? ('Defense ON | Assim +' + Math.round((DEFENSE_ASSIM_BONUS - 1) * 100) + '% | Prod -' + Math.round((1 - DEFENSE_PROD_PENALTY) * 100) + '% | Flow çıkış -' + Math.round((1 - DEFENSE_FLOW_MULT) * 100) + '%') : 'Defense OFF');
             if (node.kind !== 'turret') parts.push(defenseFieldSummary(node));
             if (node.supplied === true) parts.push('Supply upgrade -' + Math.round((1 - SUPPLIED_UPGRADE_DISCOUNT) * 100) + '%');
             if (!isNodeAssimilated(node)) parts.push('Assim ' + Math.round(clamp(node.assimilationProgress || 0, 0, 1) * 100) + '%');
@@ -4343,6 +4559,9 @@ function advanceTransientVisuals(dt) {
         G.shockwaves[swi].life -= dt;
         if (G.shockwaves[swi].life <= 0) G.shockwaves.splice(swi, 1);
     }
+    if (G.solarFlareFx && Number(G.solarFlareFx.blastFlash) > 0) {
+        G.solarFlareFx.blastFlash = Math.max(0, Number(G.solarFlareFx.blastFlash) - dt * 0.95);
+    }
 }
 
 function handleAuthoritativeState(payload) {
@@ -4556,8 +4775,26 @@ function openScenarioMenu() {
     scenarioOv.classList.remove('hidden');
 }
 
-function resize() { cv.width = window.innerWidth; cv.height = window.innerHeight; }
-window.addEventListener('resize', resize); resize();
+function syncInputLayoutHints() {
+    var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    inp.dragThreshold = coarse ? 14 : 6;
+}
+function resize() {
+    var vv = window.visualViewport;
+    var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+    if (coarse && vv) {
+        w = Math.max(1, Math.round(vv.width));
+        h = Math.max(1, Math.round(vv.height));
+    }
+    cv.width = w;
+    cv.height = h;
+    syncInputLayoutHints();
+}
+window.addEventListener('resize', resize);
+if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
+resize();
 roomButtonState();
 setRoomStatus('', false);
 ensureSocket();
@@ -4583,6 +4820,31 @@ if (roomListEl) {
     });
 }
 
+function prefersCompactTuningLayout() {
+    if (!window.matchMedia) return false;
+    return window.matchMedia('(max-width: 900px)').matches || window.matchMedia('(pointer: coarse)').matches;
+}
+function syncTuningBackdrop() {
+    var bd = $('tuningBackdrop');
+    if (!bd) return;
+    var on = G.state === 'playing' && tuningOpen;
+    bd.classList.toggle('hidden', !on);
+    bd.setAttribute('aria-hidden', on ? 'false' : 'true');
+}
+function closeTuningPanel() {
+    tuningOpen = false;
+    if (tunePanel) tunePanel.classList.add('hidden');
+    if (tuneOpen) tuneOpen.classList.remove('hidden');
+    syncTuningBackdrop();
+}
+function openTuningPanel() {
+    tuningOpen = true;
+    if (tunePanel) tunePanel.classList.remove('hidden');
+    if (tuneOpen) tuneOpen.classList.add('hidden');
+    syncTune();
+    syncTuningBackdrop();
+}
+
 function showUI(st) {
     if (st !== 'playing') inGameMenuOpen = false;
     var pauseVisible = st === 'paused' || (st === 'playing' && inGameMenuOpen);
@@ -4602,6 +4864,7 @@ function showUI(st) {
     if (st === 'playing' && tuningOpen) { tunePanel.classList.remove('hidden'); tuneOpen.classList.add('hidden'); }
     else if (st === 'playing') { tunePanel.classList.add('hidden'); tuneOpen.classList.remove('hidden'); }
     else { tunePanel.classList.add('hidden'); tuneOpen.classList.add('hidden'); }
+    syncTuningBackdrop();
     syncPauseOverlayContent();
     syncMatchHudControls();
     syncHudTelemetryVisibility();
@@ -5349,10 +5612,16 @@ function startSinglePlayerGame() {
 }
 function startSandboxGame() {
     startSinglePlayerGame();
-    tuningOpen = true;
-    if (tunePanel && tuneOpen && G.state === 'playing') {
-        tunePanel.classList.remove('hidden');
-        tuneOpen.classList.add('hidden');
+    if (prefersCompactTuningLayout()) {
+        tuningOpen = false;
+        showUI('playing');
+    } else {
+        tuningOpen = true;
+        if (tunePanel && tuneOpen && G.state === 'playing') {
+            tunePanel.classList.remove('hidden');
+            tuneOpen.classList.add('hidden');
+        }
+        syncTuningBackdrop();
     }
 }
 function startDailyChallengeGame() {
@@ -5755,8 +6024,12 @@ tuneResetBtn.addEventListener('click', function () {
     if (tuneAiAssistCb) tuneAiAssistCb.checked = true;
     syncTune();
 });
-tuneTogBtn.addEventListener('click', function () { tuningOpen = false; tunePanel.classList.add('hidden'); tuneOpen.classList.remove('hidden'); });
-tuneOpen.addEventListener('click', function () { tuningOpen = true; tunePanel.classList.remove('hidden'); tuneOpen.classList.add('hidden'); syncTune(); });
+tuneTogBtn.addEventListener('click', function (e) { e.stopPropagation(); closeTuningPanel(); });
+tuneOpen.addEventListener('click', function () { openTuningPanel(); });
+var tuneMobileCloseEl = $('tuneMobileClose');
+if (tuneMobileCloseEl) tuneMobileCloseEl.addEventListener('click', function (e) { e.stopPropagation(); closeTuningPanel(); });
+var tuningBackdropEl = $('tuningBackdrop');
+if (tuningBackdropEl) tuningBackdropEl.addEventListener('click', closeTuningPanel);
 if (menuFogCb) menuFogCb.addEventListener('change', function () { tuneFogCb.checked = menuFogCb.checked; });
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ CANVAS MOUSE Ã¢â€â‚¬Ã¢â€â‚¬
@@ -5765,6 +6038,12 @@ attachGameInputController({
     windowTarget: window,
     gameState: G,
     inputState: inp,
+    isCoarsePointer: function () {
+        return window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    },
+    touchPanThresholdPx: 14,
+    touchTapThresholdPx: 11,
+    hitNodeTouch: hitNodeForTouch,
     syncHoverTooltip: function (payload) {
         payload = payload && typeof payload === 'object' ? payload : {};
         if (payload.pointerInsideCanvas !== true) {

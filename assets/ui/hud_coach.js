@@ -11,56 +11,56 @@ export function buildHudCoachItems(opts) {
 
     if (opts.commandMode === 'flow') {
         return [
-            coachItem('SOL', 'Hedef node seç'),
-            coachItem('BOŞ', 'Boşa tıklayıp iptal et'),
-            coachItem('%' + sendPct, 'Flow dalga oranı hazır'),
+            coachItem('SOL', 'Hedef gezegen: flow'),
+            coachItem('BOŞ', 'İptal'),
+            coachItem('%' + sendPct, 'Dalga gücü'),
         ];
     }
 
     if (!nodeCount && !fleetCount) {
         return [
-            coachItem('SOL', 'Bir node seç'),
-            coachItem('SHIFT', 'Çoklu seçime ekle'),
-            coachItem('1-0', 'Gönderim %' + sendPct),
+            coachItem('SOL', 'Gezegen seç'),
+            coachItem('SHIFT', 'Seçime ekle'),
+            coachItem('1–0', 'Gönder %' + sendPct),
         ];
     }
 
     if (fleetCount && !nodeCount) {
         return [
-            coachItem('SOL', 'Nodea tekrar fırlat'),
-            coachItem('BOŞ', 'Park hattını taşı'),
-            coachItem('SHIFT', 'Filoya seçim ekle'),
+            coachItem('SOL', 'Hedefe gönder'),
+            coachItem('BOŞ', 'Konumu taşı'),
+            coachItem('SHIFT', 'Filo ekle'),
         ];
     }
 
     if (ownedCount > 1 || fleetCount > 1) {
         return [
             coachItem('SOL', 'Toplu gönder'),
-            coachItem('SAĞ', 'Flow ya da savunma'),
-            coachItem('%' + sendPct, 'Aktif gönderim oranı'),
+            coachItem('SAĞ', 'Savunma / flow'),
+            coachItem('%' + sendPct, 'Gönderim oranı'),
         ];
     }
 
     if (ownedCount === 1) {
         return [
-            coachItem('SOL', 'Hedefe birlik gönder'),
-            coachItem('SAĞ', 'Defense veya flow'),
-            coachItem('U', 'Upgrade dene'),
+            coachItem('SOL', 'Gönder'),
+            coachItem('SAĞ', 'Savunma veya flow'),
+            coachItem('U', 'Yükselt'),
         ];
     }
 
     if (nodeCount > 0) {
         return [
-            coachItem('SHIFT', 'Kendi nodeunu seçime ekle'),
-            coachItem('A', 'Tüm node\'larını seç'),
-            coachItem('%' + sendPct, 'Hazır gönderim oranı'),
+            coachItem('SHIFT', 'Kendi dünyanı ekle'),
+            coachItem('A', 'Hepsini seç'),
+            coachItem('%' + sendPct, 'Oran %' + sendPct),
         ];
     }
 
     return [
-        coachItem('SOL', 'Komut başlat'),
-        coachItem('SAĞ', 'Alternatif emir'),
-        coachItem('%' + sendPct, 'Gönderim oranı'),
+        coachItem('SOL', 'Başlat'),
+        coachItem('SAĞ', 'Alternatif'),
+        coachItem('%' + sendPct, '%' + sendPct + ' gönder'),
     ];
 }
 

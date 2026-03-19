@@ -32,6 +32,8 @@ export function createInputState() {
         mousePointOrderPending: false,
         commandMode: '',
         touchStart: { x: 0, y: 0 },
+        touchEmptyAwait: false,
+        touchEmptyStart: { x: 0, y: 0 },
     };
 }
 
@@ -46,6 +48,11 @@ export function attachGameInputController(opts) {
     var windowTarget = opts.windowTarget || window;
     var gameState = opts.gameState;
     var inputState = opts.inputState;
+
+    function hitNodeForTouchPath(w) {
+        if (typeof opts.hitNodeTouch === 'function') return opts.hitNodeTouch(w);
+        return opts.hitNode(w);
+    }
 
     function syncHoverTooltip(node) {
         if (typeof opts.syncHoverTooltip !== 'function') return;
@@ -376,7 +383,7 @@ export function attachGameInputController(opts) {
         inputState.dragDownNodeId = -1;
         inputState.dragDownFleetId = -1;
         var w = opts.screenToWorld(pos.x, pos.y);
-        var cn = opts.hitNode(w);
+        var cn = hitNodeForTouchPath(w);
         var hf = cn ? null : opts.hitHoldingFleet(w);
 
         if (inputState.commandMode) {
@@ -438,6 +445,9 @@ export function attachGameInputController(opts) {
                 inputState.dragEnd = w;
                 inputState.touchPointOrderPending = true;
             }
+        } else if (typeof opts.isCoarsePointer === 'function' && opts.isCoarsePointer()) {
+            inputState.touchEmptyAwait = true;
+            inputState.touchEmptyStart = { x: pos.x, y: pos.y };
         } else {
             opts.clearSelection(false);
             inputState.marqActive = true;
@@ -462,7 +472,48 @@ export function attachGameInputController(opts) {
         var pos = opts.touchScreenPos(e.touches[0]);
         var w = opts.screenToWorld(pos.x, pos.y);
         clearHoverState();
-        if (inputState.dragPending && !inputState.dragActive) {
+
+        if (inputState.panActive) {
+            var pdx = (pos.x - inputState.panLast.x) / gameState.cam.zoom;
+            var pdy = (pos.y - inputState.panLast.y) / gameState.cam.zoom;
+            gameState.cam.x -= pdx;
+            gameState.cam.y -= pdy;
+            inputState.panLast = { x: pos.x, y: pos.y };
+            e.preventDefault();
+            return;
+        }
+
+        if (inputState.touchEmptyAwait && typeof opts.isCoarsePointer === 'function' && opts.isCoarsePointer()) {
+            var edx = pos.x - inputState.touchEmptyStart.x;
+            var edy = pos.y - inputState.touchEmptyStart.y;
+            var emptyMoved = Math.sqrt(edx * edx + edy * edy);
+            var panThr = typeof opts.touchPanThresholdPx === 'number' ? opts.touchPanThresholdPx : 12;
+            if (emptyMoved >= panThr) {
+                inputState.touchEmptyAwait = false;
+                inputState.panActive = true;
+                inputState.panLast = { x: pos.x, y: pos.y };
+                e.preventDefault();
+                return;
+            }
+        }
+
+        if (inputState.touchPointOrderPending && !inputState.dragActive) {
+            var tpdx = pos.x - inputState.dragDownScreen.x;
+            var tpdy = pos.y - inputState.dragDownScreen.y;
+            var tpMoved = Math.sqrt(tpdx * tpdx + tpdy * tpdy);
+            if (tpMoved >= inputState.dragThreshold) {
+                inputState.touchPointOrderPending = false;
+                inputState.dragPending = false;
+                inputState.dragDownNodeId = -1;
+                inputState.dragDownFleetId = -1;
+                inputState.dragNodeIds = [];
+                inputState.dragFleetIds = [];
+                if (!inputState.shift) opts.clearSelection(false);
+                inputState.marqActive = true;
+                inputState.marqStart = { x: inputState.dragDownScreen.x, y: inputState.dragDownScreen.y };
+                inputState.marqEnd = pos;
+            }
+        } else if (inputState.dragPending && !inputState.dragActive) {
             var mdx = pos.x - inputState.dragDownScreen.x;
             var mdy = pos.y - inputState.dragDownScreen.y;
             var movedPx = Math.sqrt(mdx * mdx + mdy * mdy);
@@ -487,12 +538,31 @@ export function attachGameInputController(opts) {
                 inputState.dragActive = false;
             }
         }
-        if (e.changedTouches.length !== 1 || gameState.state !== 'playing') return;
+        if (gameState.state !== 'playing') return;
+
+        if (inputState.panActive && e.touches.length === 0) {
+            inputState.panActive = false;
+            return;
+        }
+
+        if (inputState.touchEmptyAwait && e.touches.length === 0 && e.changedTouches.length >= 1) {
+            inputState.touchEmptyAwait = false;
+            var tapPos = opts.touchScreenPos(e.changedTouches[0]);
+            var tedx = tapPos.x - inputState.touchEmptyStart.x;
+            var tedy = tapPos.y - inputState.touchEmptyStart.y;
+            var tapMoved = Math.sqrt(tedx * tedx + tedy * tedy);
+            var tapThr = typeof opts.touchTapThresholdPx === 'number' ? opts.touchTapThresholdPx : 10;
+            if (tapMoved < tapThr) opts.clearSelection(false);
+            return;
+        }
+
+        if (e.changedTouches.length !== 1) return;
 
         var pos = opts.touchScreenPos(e.changedTouches[0]);
         var w = opts.screenToWorld(pos.x, pos.y);
+
         if (inputState.dragActive) {
-            var tn = opts.hitNode(w);
+            var tn = hitNodeForTouchPath(w);
             if (tn) opts.sendFromSourcesTo(inputState.dragNodeIds, inputState.dragFleetIds, tn.id);
             else opts.sendFromSourcesToPoint(inputState.dragNodeIds, inputState.dragFleetIds, w);
             opts.resetDragState();

@@ -47,3 +47,35 @@ test('stepFlowLinks deactivates invalid flows and skips drained sources', functi
     assert.equal(flows[0].active, false);
     assert.equal(result.dispatches.length, 0);
 });
+
+test('stepFlowLinks reduces fraction when source node is in defense mode', function () {
+    var flows = [
+        { srcId: 0, tgtId: 1, owner: 0, tickAcc: 2, active: true },
+    ];
+    var nodes = [
+        { owner: 0, units: 100, defense: true },
+        { owner: 0, units: 5 },
+    ];
+
+    var withDefense = stepFlowLinks({
+        flows: flows,
+        nodes: nodes,
+        flowInterval: 2,
+        constants: { flowFraction: 0.1, minReserve: 2, defenseFlowMult: 0.5 },
+    });
+    var flows2 = [{ srcId: 0, tgtId: 1, owner: 0, tickAcc: 2, active: true }];
+    var nodes2 = [
+        { owner: 0, units: 100, defense: false },
+        { owner: 0, units: 5 },
+    ];
+    var noDefense = stepFlowLinks({
+        flows: flows2,
+        nodes: nodes2,
+        flowInterval: 2,
+        constants: { flowFraction: 0.1, minReserve: 2, defenseFlowMult: 0.5 },
+    });
+
+    assert.equal(withDefense.dispatches.length, 1);
+    assert.equal(noDefense.dispatches.length, 1);
+    assert.ok(withDefense.dispatches[0].pct < noDefense.dispatches[0].pct);
+});
