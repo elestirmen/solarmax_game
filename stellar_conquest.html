@@ -597,14 +597,17 @@
             letter-spacing: .02em;
         }
 
+        /* 50 bölüm: flex + max-height iç scroll birçok ortamda “sadece ~26 tane var” hissi veriyordu.
+           Grid ile satır sayısını düşür; taşarsa tüm scenario-modal zaten overflow-y: auto. */
         .scenario-bubbles {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
+            display: grid;
+            grid-template-columns: repeat(auto-fill, 36px);
+            gap: 6px;
+            justify-content: start;
             margin-bottom: 8px;
-            max-height: 140px;
-            overflow-y: auto;
-            padding-right: 2px;
+            max-height: none;
+            overflow: visible;
+            padding-right: 0;
         }
 
         .scenario-bubble {
@@ -2003,12 +2006,12 @@
             display: flex;
             align-items: stretch;
             justify-content: space-between;
-            gap: 12px;
-            padding: 10px 16px;
+            gap: 8px;
+            padding: 6px 10px;
             background: var(--panel-bg);
             border-top: 1px solid var(--panel-border);
             z-index: 50;
-            font-size: .85rem
+            font-size: .78rem
         }
 
         #hud.hidden {
@@ -2017,13 +2020,13 @@
 
         #hudLeft {
             display: flex;
-            flex: 1 1 250px;
+            flex: 0 1 220px;
             flex-direction: column;
-            gap: 8px;
+            gap: 4px;
             min-width: 0;
-            padding: 11px 12px;
+            padding: 6px 8px;
             border: 1px solid rgba(118, 162, 255, 0.14);
-            border-radius: 14px;
+            border-radius: 10px;
             background:
                 linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
                 rgba(8, 13, 24, 0.62)
@@ -2031,32 +2034,35 @@
 
         .hud-block-title {
             font-family: 'Orbitron', var(--font);
-            font-size: .62rem;
+            font-size: .54rem;
             font-weight: 600;
-            letter-spacing: .18em;
+            letter-spacing: .14em;
             text-transform: uppercase;
             color: #dfe9ff;
+            line-height: 1.1;
         }
 
         .hud-block-heading {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            gap: 10px;
+            gap: 6px;
+            margin-bottom: 0;
+            min-height: 0;
         }
 
         .hud-context-badge {
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-height: 22px;
-            padding: 4px 9px;
+            min-height: 18px;
+            padding: 2px 7px;
             border-radius: 999px;
             border: 1px solid rgba(118, 162, 255, 0.16);
             background: rgba(255, 255, 255, 0.04);
             color: #dce8ff;
-            font-size: .66rem;
-            letter-spacing: .05em;
+            font-size: .58rem;
+            letter-spacing: .04em;
             white-space: nowrap;
         }
 
@@ -2067,36 +2073,41 @@
         .hud-send-top {
             display: flex;
             align-items: center;
-            gap: 10px;
-            flex-wrap: wrap;
+            gap: 6px;
+            flex-wrap: nowrap;
         }
 
         #hudPercent {
             color: #eef4ff;
-            font-size: .78rem;
+            font-size: .68rem;
             font-weight: 600;
-            letter-spacing: .04em;
+            letter-spacing: .03em;
+            flex: 0 0 auto;
+            white-space: nowrap;
         }
 
         #hudLeft input[type="range"] {
-            flex: 1 1 130px;
-            width: auto
+            flex: 1 1 72px;
+            width: auto;
+            height: 4px;
+            margin: 0;
+            accent-color: rgba(74, 142, 255, 0.85);
         }
 
         .send-quick-row {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
-            gap: 4px;
+            gap: 3px;
         }
 
         .send-quick-btn {
-            min-height: 34px;
-            padding: 6px 8px;
+            min-height: 26px;
+            padding: 3px 4px;
             border: 1px solid var(--panel-border);
-            border-radius: 8px;
+            border-radius: 6px;
             background: rgba(255, 255, 255, 0.06);
             color: var(--text);
-            font-size: 0.72rem;
+            font-size: 0.64rem;
             cursor: pointer;
         }
 
@@ -2107,14 +2118,14 @@
 
         #hudRight {
             display: flex;
-            flex: 1 1 320px;
+            flex: 1 1 260px;
             flex-direction: column;
-            gap: 8px;
+            gap: 4px;
             justify-content: flex-start;
             min-width: 0;
-            padding: 11px 12px;
+            padding: 6px 8px;
             border: 1px solid rgba(118, 162, 255, 0.14);
-            border-radius: 14px;
+            border-radius: 10px;
             background:
                 linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
                 rgba(8, 13, 24, 0.62)
@@ -2123,14 +2134,14 @@
         #hudCenter {
             display: flex;
             flex-direction: column;
-            flex: 1.25 1 360px;
+            flex: 1 1 300px;
             align-items: stretch;
-            gap: 7px;
+            gap: 4px;
             min-width: 0;
-            max-width: 52vw;
-            padding: 11px 12px;
+            max-width: min(52vw, 560px);
+            padding: 6px 8px;
             border: 1px solid rgba(118, 162, 255, 0.14);
-            border-radius: 14px;
+            border-radius: 10px;
             background:
                 linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
                 rgba(8, 13, 24, 0.62);
@@ -2140,7 +2151,7 @@
             display: flex;
             align-items: center;
             justify-content: flex-start;
-            gap: 10px;
+            gap: 8px;
             flex-wrap: wrap;
         }
 
@@ -2150,27 +2161,27 @@
 
         #hudCap {
             color: var(--text-dim);
-            font-size: .78rem;
+            font-size: .68rem;
         }
 
         #hudMeta {
             color: #edf4ff;
-            font-size: .74rem;
-            line-height: 1.35;
+            font-size: .66rem;
+            line-height: 1.28;
             text-align: left;
-            min-height: 2.7em;
-            padding: 8px 10px;
+            min-height: 1.5em;
+            padding: 4px 7px;
             border: 1px solid rgba(118, 162, 255, 0.12);
-            border-radius: 10px;
+            border-radius: 7px;
             background: rgba(255, 255, 255, 0.035);
         }
 
         .hud-hint-line,
         .hud-action-tip {
-            min-height: 1.2em;
+            min-height: 1.05em;
             color: var(--text-dim);
-            font-size: .71rem;
-            line-height: 1.4;
+            font-size: .64rem;
+            line-height: 1.32;
         }
 
         .node-hover-tip {
@@ -2181,11 +2192,12 @@
             border: 1px solid rgba(118, 162, 255, 0.16);
             border-radius: 12px;
             background:
-                linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018)),
-                rgba(8, 13, 24, 0.82);
+                linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.02)),
+                rgba(8, 13, 24, 0.94);
             box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
-            backdrop-filter: blur(12px);
+            /* backdrop-filter bazilesim + fixed kartlarda cift/ghost katmana yol acabiliyor; opak arka plan tercih edildi */
             pointer-events: none;
+            isolation: isolate;
         }
 
         .node-hover-tip-title {
@@ -2206,10 +2218,10 @@
         .hud-advisor-card {
             display: flex;
             flex-direction: column;
-            gap: 4px;
-            padding: 10px 12px;
+            gap: 3px;
+            padding: 6px 8px;
             border: 1px solid rgba(118, 162, 255, 0.14);
-            border-radius: 12px;
+            border-radius: 8px;
             background:
                 linear-gradient(135deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
                 rgba(8, 13, 24, 0.6);
@@ -2257,18 +2269,18 @@
         .hud-coach-row {
             display: flex;
             flex-wrap: wrap;
-            gap: 7px;
+            gap: 4px;
         }
 
         .hud-coach-chip {
             display: inline-flex;
             align-items: center;
-            gap: 7px;
+            gap: 5px;
             flex: 1 1 120px;
             min-width: 0;
-            padding: 7px 9px;
+            padding: 4px 7px;
             border: 1px solid rgba(118, 162, 255, 0.14);
-            border-radius: 10px;
+            border-radius: 7px;
             background: rgba(255, 255, 255, 0.03);
         }
 
@@ -2294,30 +2306,44 @@
         .hud-actions-wrap {
             display: flex;
             flex-direction: column;
-            gap: 7px;
+            gap: 4px;
         }
 
         .hud-action-group {
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 6px;
+            gap: 4px;
+        }
+
+        /* Geniş masaüstü: ana komutlar tek sarı — dikey yükseklik düşer */
+        @media (min-width: 1100px) {
+            .hud-actions-wrap > .hud-action-group:first-child {
+                grid-template-columns: repeat(6, minmax(0, 1fr));
+            }
         }
 
         .hud-action-tip {
-            padding-top: 8px;
-            border-top: 1px solid rgba(118, 162, 255, 0.12);
+            padding-top: 3px;
+            margin-top: 1px;
+            border-top: 1px solid rgba(118, 162, 255, 0.1);
+            font-size: .6rem;
+            line-height: 1.25;
+        }
+
+        #hudRight .hud-block-heading .hud-context-badge-muted {
+            display: none;
         }
 
         #hudRight button {
             width: 100%;
-            min-height: 36px;
-            padding: 7px 10px;
+            min-height: 28px;
+            padding: 3px 6px;
             background: rgba(255, 255, 255, 0.06);
             border: 1px solid var(--panel-border);
-            border-radius: var(--radius);
+            border-radius: 6px;
             color: var(--text);
             cursor: pointer;
-            font-size: .82rem
+            font-size: .68rem
         }
 
         #hudRight button:hover {
@@ -3233,11 +3259,19 @@
                 gap: 6px;
             }
 
+            #hudRight .hud-block-heading .hud-context-badge-muted {
+                display: inline-flex;
+            }
+
+            .hud-actions-wrap > .hud-action-group:first-child {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
             #hudRight button {
                 width: 100%;
-                min-height: 42px;
-                padding: 8px 4px;
-                font-size: 0.72rem;
+                min-height: 36px;
+                padding: 6px 4px;
+                font-size: 0.7rem;
             }
 
             .hud-action-group {
@@ -4016,7 +4050,8 @@
                         <li><b>Cap strain:</b> Toplam birlik sayın cap'in %82'sine yaklaşınca üretim yavaşlar. Dolu beklemek yerine birlikleri cepheye, flow'a veya upgrade'e çevir.</li>
                         <li><b>Upgrade:</b> Gezegen seviyesi 2 ve 3'e çıkar; üretim, kapasite ve savunma etkisi artar. Supply altında yapmak daha verimlidir.</li>
                         <li><b>Zafer koşulu:</b> Serbest maçta tüm rakiplerin hem node'larını hem aktif filolarını bitiren oyuncu kazanır.</li>
-                        <li><b>Objective maçları:</b> Campaign, günlük challenge ve bazı playlist akışlarında görev panelindeki zorunlu objective'ler maçı doğrudan bitirebilir. Her zaman tam harita temizlemek gerekmez.</li>
+                        <li><b>Senaryo (kampanya):</b> Görevler ilerleme, faz ve koç ipuçları içindir; hedefleri bitirmek tek başına maçı sonlandırmaz — bölümü kazanmak için rakip oyuncuların tüm düğümlerini ve aktif filolarını yok etmek gerekir.</li>
+                        <li><b>Diğer modlar:</b> Günlük challenge veya özel harita akışında kurallar farklı olabilir; serbest maçta zafer yine rakipleri tamamen silmekle gelir.</li>
                     </ul>
                 </div>
 
@@ -4105,7 +4140,7 @@
                     <h3>11) Canlı ipuçları, hover ve kampanya koçu</h3>
                     <p>Oyun sadece bu pencereyi okumayı gerektirmez; masaüstünde seçim ve hedefin üzerine gelince kısa açıklamalar ve komut hatırlatmaları gösterilir.</p>
                     <ul>
-                        <li><b>Gezegen üzerinde gezinme:</b> İmleci bir düğümün üzerinde tut; tip (Core, Forge, Relay, …) ve o tipe özet strateji metni tooltip olarak çıkar.</li>
+                        <li><b>Gezegen üzerinde gezinme:</b> İmleci bir düğümün üzerinde tut; tip (Core, Forge, Relay, …) ve kısa strateji özeti alttaki HUD <b>Durum</b> blokunda, seçim yokken orta bilgi satırında görünür.</li>
                         <li><b>HUD üst komut çubuğu:</b> Yükseltme, savunma, flow ve doktrin düğmelerinin üzerine gel; ne işe yaradıkları ve varsa ilgili kısayol burada yazılır.</li>
                         <li><b>Duraklat menüsü:</b> <b>İpucu: Açık/Kapalı</b> ile maç içi koç mesajlarını ve hatırlatmaları kapatıp açabilirsin; ilk saatlerde açık bırakmak genelde faydalıdır.</li>
                         <li><b>Kampanya ve challenge:</b> Görev satırlarında hedef ilerlemesi yanında kısa <b>coach</b> ipuçları belirir; özellikle ilk bölümlerde bir sonraki hamleyi öğretmek içindir. Bonus (opsiyonel) hedefler ana zaferi değiştirmez, skor ve alışkanlık için denenir.</li>

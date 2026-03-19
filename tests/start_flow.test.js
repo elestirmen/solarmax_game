@@ -89,16 +89,23 @@ test('buildCampaignLevelStartConfig preserves handcrafted campaign layouts as fi
     assert.equal(gunline.customMapConfig.nodes.length, 17);
     assert.equal(gunline.initOptions.customMap.mapMutator.type, 'ion_storm');
     assert.equal(gunline.initOptions.customMap.playerCount, 4);
+    assert.equal(coreLock.initOptions.endOnObjectives, false);
+    assert.equal(coreLock.customMapConfig.endOnObjectives, false);
+    assert.equal(gunline.initOptions.endOnObjectives, false);
 });
 
 test('buildCampaignLevelStartConfig carries scripted mission phases into init options', function () {
     var coreLock = buildCampaignLevelStartConfig(CAMPAIGN_LEVELS[20], 20);
     var darklane = buildCampaignLevelStartConfig(CAMPAIGN_LEVELS[23], 23);
+    var veilBridge = buildCampaignLevelStartConfig(CAMPAIGN_LEVELS[31], 31);
 
     assert.equal(coreLock.initOptions.missionScript.phases.length, 3);
     assert.equal(coreLock.initOptions.missionScript.phases[0].id, 'breach-lower-lane');
     assert.equal(darklane.initOptions.missionScript.phases.length, 2);
     assert.equal(darklane.initOptions.missionScript.phases[1].lossConditions[0].type, 'tick_limit');
+    assert.equal(veilBridge.customMapConfig.nodes.length, 12);
+    assert.equal(veilBridge.initOptions.customMap.wormholes.length, 1);
+    assert.equal(veilBridge.initOptions.missionScript.phases[0].id, 'veil-beachhead');
 });
 
 test('run state helpers switch campaign and daily flags predictably', function () {

@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    Stellar Conquest Ã¢â‚¬â€œ Complete Game (Plain JavaScript)
    No build tools needed. Open stellar_conquest.html directly.
    v2: Orbital warriors, fleet trails, enhanced visuals
@@ -41,7 +41,7 @@ import { runAiAndWrapTickPhase, runCombatTickPhase, runEconomyTickPhase, runOnli
 import { renderMarqueeLayer, renderMinimapLayer, renderWorldLayers } from './assets/app/render_layers.js';
 import { applyCampaignRunState, applyDailyChallengeRunState, applySkirmishRunState, buildCampaignLevelStartConfig, buildCustomMapStartConfig, buildDailyChallengeStartConfig, buildSkirmishStartConfig } from './assets/app/start_flow.js';
 import { applyRoomStateNetState, beginOnlineMatch, buildCreateRoomRequest, buildJoinRoomRequest, buildOnlineMatchInitOptions, buildOnlineMatchStatusText, buildRoomStateMenuPatches, computeOnlineCommandTick, getSocketEndpoint, resetOnlineRoomState } from './assets/net/online_session.js';
-import { canvasToViewportPoint, findHoveredNodeAtScreen } from './assets/app/hover_target.js';
+import { findHoveredNodeAtScreen } from './assets/app/hover_target.js';
 import { HUD_ACTION_HELP_DEFAULT, buildHudContextBadge, buildHudHintText, buildNodeHoverTip } from './assets/ui/hud_assistive.js';
 import { buildHudAdvisorCard } from './assets/ui/hud_advisor.js';
 import { buildHudCoachItems, renderHudCoach } from './assets/ui/hud_coach.js';
@@ -109,7 +109,8 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     SUPPLIED_UPGRADE_DISCOUNT = 0.94,
     DAILY_CHALLENGE_TIMEZONE = 'Europe/Istanbul';
 var SYNC_HASH_INTERVAL_TICKS = 90, TICK_RATE = Math.round(1 / TICK_DT);
-var NODE_HOVER_DWELL_MS = 0;
+/** İmleç bir düğüm üzerinde bu kadar ms kalınca gezegen bilgi kartı açılır (0 = anında). */
+var NODE_HOVER_DWELL_MS = 420;
 
 var NODE_TYPE_DEFS = {
     core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#8db3ff' },
@@ -2718,7 +2719,6 @@ function render(ctx, cv, tick) {
         ctx: ctx,
         inputState: inp,
     });
-    drawNodeHoverTipCanvas(ctx, cv);
 }
 function drawArrow(ctx, f, t, col, sz) {
     var dx = t.x - f.x, dy = t.y - f.y, a = Math.atan2(dy, dx); ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(a);
@@ -3352,7 +3352,7 @@ function screenNodePos(node) {
     };
 }
 function hoveredNodeAtScreen(screenPos) {
-    if (!screenPos || G.state !== 'playing') return null;
+    if (!screenPos || (G.state !== 'playing' && G.state !== 'paused')) return null;
     return findHoveredNodeAtScreen({
         nodes: G.nodes,
         screenPos: screenPos,
@@ -3370,6 +3370,14 @@ function isNodeVisibleToHuman(node) {
     return !!(G.fog && G.fog.vis && G.fog.vis[G.human] && G.fog.vis[G.human][node.id]);
 }
 function ensureNodeHoverTipElements() {
+    var dupRoots = typeof document.querySelectorAll === 'function' ? document.querySelectorAll('#nodeHoverTip') : [];
+    if (dupRoots && dupRoots.length > 1) {
+        for (var di = 1; di < dupRoots.length; di++) {
+            try {
+                dupRoots[di].parentNode.removeChild(dupRoots[di]);
+            } catch (eDup) { /* ignore */ }
+        }
+    }
     if (!nodeHoverTip) nodeHoverTip = $('nodeHoverTip');
     if (!nodeHoverTipTitle) nodeHoverTipTitle = $('nodeHoverTipTitle');
     if (!nodeHoverTipBody) nodeHoverTipBody = $('nodeHoverTipBody');
@@ -3379,29 +3387,11 @@ function hideNodeHoverTip() {
     if (!ensureNodeHoverTipElements()) return;
     nodeHoverTip.classList.add('hidden');
     nodeHoverTip.setAttribute('aria-hidden', 'true');
-}
-function showNodeHoverTipForNode(node, screenPos) {
-    if (!ensureNodeHoverTipElements() || !node || !screenPos) {
-        hideNodeHoverTip();
-        return;
-    }
-    if (G.state !== 'playing' || !isNodeVisibleToHuman(node)) {
-        hideNodeHoverTip();
-        return;
-    }
-    var tip = buildNodeHoverTip({
-        kind: node.kind,
-        label: nodeTypeOf(node).label,
-    });
-    nodeHoverTipTitle.textContent = tip.title;
-    nodeHoverTipBody.textContent = tip.body;
-    nodeHoverTip.classList.remove('hidden');
-    nodeHoverTip.setAttribute('aria-hidden', 'false');
-    positionNodeHoverTip(canvasToViewportPoint(screenPos, cv.getBoundingClientRect(), { width: cv.width, height: cv.height }));
+    if (cv) cv.removeAttribute('title');
 }
 function syncHoveredNodeStateFromPointer() {
-    if (!inp || G.state !== 'playing' || inp.pointerInsideCanvas !== true) return;
-    if (inp.panActive || inp.dragActive || inp.dragPending || inp.marqActive || inp.mousePointOrderPending || inp.touchPointOrderPending || inp.commandMode) return;
+    if (!inp || (G.state !== 'playing' && G.state !== 'paused') || inp.pointerInsideCanvas !== true) return;
+    if (inp.panActive || inp.dragActive || inp.marqActive || inp.mousePointOrderPending || inp.touchPointOrderPending) return;
     var liveNode = hoveredNodeAtScreen(inp.ms);
     var liveId = liveNode ? liveNode.id : -1;
     var currentId = Number.isFinite(Number(inp.hoverNodeId)) ? Math.floor(Number(inp.hoverNodeId)) : -1;
@@ -3411,8 +3401,8 @@ function syncHoveredNodeStateFromPointer() {
     }
 }
 function hoveredNodeForTip() {
-    if (!inp || G.state !== 'playing' || inp.pointerInsideCanvas !== true) return null;
-    if (inp.panActive || inp.dragActive || inp.dragPending || inp.marqActive || inp.mousePointOrderPending || inp.touchPointOrderPending || inp.commandMode) return null;
+    if (!inp || (G.state !== 'playing' && G.state !== 'paused') || inp.pointerInsideCanvas !== true) return null;
+    if (inp.panActive || inp.dragActive || inp.marqActive || inp.mousePointOrderPending || inp.touchPointOrderPending) return null;
     syncHoveredNodeStateFromPointer();
     var node = hoveredNodeAtScreen(inp.ms);
     if (!node && Number.isFinite(Number(inp.hoverNodeId)) && Number(inp.hoverNodeId) >= 0) {
@@ -3431,110 +3421,9 @@ function currentHoveredNodeTip() {
         label: nodeTypeOf(node).label,
     });
 }
-function positionNodeHoverTip(screenPos) {
-    if (!ensureNodeHoverTipElements() || !screenPos) return;
-    var pad = 14;
-    var offsetX = 18;
-    var offsetY = 20;
-    var viewportW = window.innerWidth || document.documentElement.clientWidth || cv.width;
-    var viewportH = window.innerHeight || document.documentElement.clientHeight || cv.height;
-    var width = nodeHoverTip.offsetWidth || 240;
-    var height = nodeHoverTip.offsetHeight || 72;
-    var left = Math.round((Number(screenPos.x) || 0) + offsetX);
-    var top = Math.round((Number(screenPos.y) || 0) + offsetY);
-    if (left + width > viewportW - pad) left = Math.max(pad, Math.round((Number(screenPos.x) || 0) - width - offsetX));
-    if (top + height > viewportH - pad) top = Math.max(pad, Math.round((Number(screenPos.y) || 0) - height - offsetY));
-    nodeHoverTip.style.left = left + 'px';
-    nodeHoverTip.style.top = top + 'px';
-}
-function wrapCanvasText(ctx, text, maxWidth) {
-    text = String(text || '').trim();
-    if (!text) return [];
-    var words = text.split(/\s+/);
-    var lines = [];
-    var line = '';
-    for (var i = 0; i < words.length; i++) {
-        var next = line ? (line + ' ' + words[i]) : words[i];
-        if (line && ctx.measureText(next).width > maxWidth) {
-            lines.push(line);
-            line = words[i];
-        } else {
-            line = next;
-        }
-    }
-    if (line) lines.push(line);
-    return lines;
-}
-function drawNodeHoverTipCanvas(ctx, canvas) {
-    if (!ctx || !canvas || !inp) return;
-    var node = hoveredNodeForTip();
-    if (!node) return;
-    var tip = buildNodeHoverTip({
-        kind: node.kind,
-        label: nodeTypeOf(node).label,
-    });
-    var anchor = screenNodePos(node) || inp.ms;
-
-    var padX = 12;
-    var padY = 10;
-    var bodyMaxWidth = Math.min(280, Math.max(180, canvas.width * 0.24));
-    ctx.save();
-    ctx.font = '700 12px Outfit, sans-serif';
-    var titleWidth = ctx.measureText(tip.title || '').width;
-    ctx.font = '12px Outfit, sans-serif';
-    var bodyLines = wrapCanvasText(ctx, tip.body || '', bodyMaxWidth);
-    var bodyWidth = 0;
-    for (var i = 0; i < bodyLines.length; i++) {
-        bodyWidth = Math.max(bodyWidth, ctx.measureText(bodyLines[i]).width);
-    }
-    var width = Math.max(150, Math.min(bodyMaxWidth + padX * 2, Math.max(titleWidth, bodyWidth) + padX * 2));
-    var titleLineHeight = 16;
-    var bodyLineHeight = 15;
-    var height = padY * 2 + titleLineHeight + (bodyLines.length ? 6 + bodyLines.length * bodyLineHeight : 0);
-    var left = Math.round((Number(anchor.x) || 0) + Math.max(18, (Number(node.radius) || 0) * G.cam.zoom * 0.45));
-    var top = Math.round((Number(anchor.y) || 0) - Math.max(26, (Number(node.radius) || 0) * G.cam.zoom * 0.55));
-    var edgePad = 14;
-    if (left + width > canvas.width - edgePad) left = Math.max(edgePad, Math.round((Number(anchor.x) || 0) - width - 18));
-    if (top + height > canvas.height - edgePad) top = Math.max(edgePad, Math.round((Number(anchor.y) || 0) - height - 22));
-    if (top < edgePad) top = Math.min(canvas.height - height - edgePad, Math.round((Number(anchor.y) || 0) + 20));
-
-    ctx.fillStyle = 'rgba(8, 13, 24, 0.92)';
-    ctx.strokeStyle = 'rgba(118, 162, 255, 0.34)';
-    ctx.lineWidth = 1;
-    ctx.fillRect(left, top, width, height);
-    ctx.strokeRect(left, top, width, height);
-
-    ctx.fillStyle = '#eef4ff';
-    ctx.font = '700 12px Outfit, sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText(tip.title || '', left + padX, top + padY);
-
-    ctx.fillStyle = '#dbe8ff';
-    ctx.font = '12px Outfit, sans-serif';
-    var bodyY = top + padY + titleLineHeight + 6;
-    for (var li = 0; li < bodyLines.length; li++) {
-        ctx.fillText(bodyLines[li], left + padX, bodyY + li * bodyLineHeight);
-    }
-    ctx.restore();
-}
 function syncNodeHoverTip() {
-    if (!ensureNodeHoverTipElements()) return;
-    var node = hoveredNodeForTip();
-    if (!node) {
-        hideNodeHoverTip();
-        return;
-    }
-    var tip = buildNodeHoverTip({
-        kind: node.kind,
-        label: nodeTypeOf(node).label,
-    });
-    nodeHoverTipTitle.textContent = tip.title;
-    nodeHoverTipBody.textContent = tip.body;
-    nodeHoverTip.classList.remove('hidden');
-    nodeHoverTip.setAttribute('aria-hidden', 'false');
-    var anchor = screenNodePos(node) || inp.ms;
-    positionNodeHoverTip(canvasToViewportPoint(anchor, cv.getBoundingClientRect(), { width: cv.width, height: cv.height }));
+    /* Ipucu metni yalnizca #hudMeta icinde (selectionMetaText); imlecin yanindaki kart cift kutuya yol aciyordu. */
+    hideNodeHoverTip();
 }
 function bindHudActionHelp() {
     if (hudActionHelpBound) return;
@@ -3827,8 +3716,14 @@ function selectionMetaText() {
     if (inp.commandMode === 'flow') return 'FLOW modu aktif: hedef gezegene dokun ya da tıkla.';
     var ids = Array.from(inp.sel).filter(function (id) { return !!G.nodes[id]; });
     if (!ids.length) {
-        var hoverTip = currentHoveredNodeTip();
-        if (hoverTip) return hoverTip.title + ' | ' + hoverTip.body;
+        var hoverIdle = hoveredNodeForTip();
+        if (hoverIdle) {
+            var idleTip = buildNodeHoverTip({
+                kind: hoverIdle.kind,
+                label: nodeTypeOf(hoverIdle).label,
+            });
+            return idleTip.title + ' · ' + idleTip.body;
+        }
         var idleParts = [];
         if (G.mapFeature && G.mapFeature.type === 'barrier') idleParts.push(barrierGateStatusText());
         if (G.mapMutator && G.mapMutator.type !== 'none') idleParts.push('Mutator: ' + mapMutatorName(G.mapMutator));
@@ -3924,17 +3819,18 @@ function syncHudAssistiveText() {
         });
     }
     var hintsOn = hintsEnabled();
-    var hoverTip = hintsOn && !nodeCount && !fleetCount ? currentHoveredNodeTip() : null;
+    var hoverDescActive = !nodeCount && !fleetCount && !!currentHoveredNodeTip();
     if (hudHintLine) {
-        hudHintLine.classList.toggle('hidden', !hintsOn);
-        hudHintLine.textContent = hoverTip
-            ? (hoverTip.title + ': ' + hoverTip.body)
-            : buildHudHintText({
+        /* Hover kartı açıkken aynı metni burada tekrarlama. */
+        hudHintLine.classList.toggle('hidden', !hintsOn || hoverDescActive);
+        if (hintsOn && !hoverDescActive) {
+            hudHintLine.textContent = buildHudHintText({
                 commandMode: commandMode,
                 nodeCount: nodeCount,
                 fleetCount: fleetCount,
                 ownedCount: ownedCount,
             });
+        }
     }
     if (hudCoachRow) {
         hudCoachRow.classList.toggle('hidden', !hintsOn);
@@ -5310,7 +5206,10 @@ function refreshCampaignUI() {
     G.campaign.completed = completed;
     applyCampaignLevelSelection(campaignSelectedLevel);
 
-    if (scenarioProgressEl) scenarioProgressEl.textContent = 'Geçilen: ' + completed + ' / ' + CAMPAIGN_LEVELS.length + '  |  Açılan: ' + unlocked + ' / ' + CAMPAIGN_LEVELS.length;
+    if (scenarioProgressEl) {
+        scenarioProgressEl.textContent = 'Geçilen: ' + completed + ' / ' + CAMPAIGN_LEVELS.length + '  |  Açılan: ' + unlocked + ' / ' + CAMPAIGN_LEVELS.length +
+            (CAMPAIGN_LEVELS.length > 28 ? '  |  Tüm numaralar: grid veya paneli kaydır' : '');
+    }
     if (scenarioBubbleListEl) {
         scenarioBubbleListEl.replaceChildren();
         for (var i = 0; i < CAMPAIGN_LEVELS.length; i++) {
@@ -5818,7 +5717,11 @@ attachGameInputController({
             hideNodeHoverTip();
             return;
         }
-        showNodeHoverTipForNode(payload.node || null, payload.screenPos || null);
+        if (!payload.node) {
+            hideNodeHoverTip();
+            return;
+        }
+        /* Görünür DOM kartı ve canvas etiketi: syncNodeHoverTip (dwell) ile güncellenir. */
     },
     screenToWorld: s2w,
     touchScreenPos: touchScreenPos,
@@ -5940,6 +5843,8 @@ function loop(ts) {
             acc += rawDt * G.speed;
             while (acc >= TICK_DT) { gameTick(); acc -= TICK_DT; }
         }
+    }
+    if (G.state === 'playing' || G.state === 'paused') {
         var pulseNode = G.strategicPulse ? G.nodes[G.strategicPulse.nodeId] : null;
         hudTick.textContent = buildHudTickText({
             tick: G.tick,

@@ -912,8 +912,14 @@ function cleanupPlayer(socketId) {
     emitLobbyState();
 }
 
-function sendPublicFile(res, relativePath) {
+/** cachePolicy: 'no-store' = tarayici/CDN eski HTML tutmasin (build sonrasi yeni game-*.js yuklensin). */
+function sendPublicFile(res, relativePath, cachePolicy) {
     const absPath = path.join(STATIC_ROOT, relativePath);
+    if (cachePolicy === 'no-store') {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+    }
     res.sendFile(absPath, (err) => {
         if (err && !res.headersSent) {
             res.status(err.statusCode || 404).end();
@@ -978,12 +984,18 @@ function resumeStartedRoomPlayer(socket, room, reconnectToken) {
     return true;
 }
 
-app.use('/assets', express.static(path.join(STATIC_ROOT, 'assets')));
-app.get('/', (_req, res) => sendPublicFile(res, 'stellar_conquest.html'));
-app.get('/stellar_conquest.html', (_req, res) => sendPublicFile(res, 'stellar_conquest.html'));
+app.use('/assets', express.static(path.join(STATIC_ROOT, 'assets'), {
+    maxAge: HAS_DIST_BUILD ? 31536000000 : 0,
+    immutable: HAS_DIST_BUILD,
+}));
+app.get('/', (_req, res) => sendPublicFile(res, 'stellar_conquest.html', 'no-store'));
+app.get('/stellar_conquest.html', (_req, res) => sendPublicFile(res, 'stellar_conquest.html', 'no-store'));
 app.get('/index.html', (_req, res) => {
     const indexPath = path.join(STATIC_ROOT, 'index.html');
     if (fs.existsSync(indexPath)) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
         res.sendFile(indexPath);
         return;
     }
@@ -1366,6 +1378,22 @@ if (isMainModule) {
     server.listen(PORT, () => {
         const rootMode = HAS_DIST_BUILD ? 'dist' : 'source';
         console.log(`Stellar server listening on http://localhost:${PORT} (${rootMode} mode)`);
+        console.log(`  Dosya kok dizini (STATIC_ROOT): ${STATIC_ROOT}`);
+        console.log(`  Calisma dizini (cwd): ${process.cwd()}  |  server.js: ${__dirname}`);
+        try {
+            const mainHtml = path.join(STATIC_ROOT, 'stellar_conquest.html');
+            if (fs.existsSync(mainHtml)) {
+                const st = fs.statSync(mainHtml);
+                console.log(`  stellar_conquest.html son degisiklik: ${st.mtime.toISOString()} (boyut ${st.size} bayt)`);
+            } else {
+                console.warn('  UYARI: stellar_conquest.html bu kok altinda yok; yanlis klasorden mi calistiniz?');
+            }
+        } catch (e) {
+            console.warn('  stellar_conquest.html okunamadi:', e && e.message);
+        }
+        if (rootMode === 'source') {
+            console.warn('  UYARI: dist eksik -> source mode. Once bu dizinde "npm run build" calistirin.');
+        }
     });
 }
 

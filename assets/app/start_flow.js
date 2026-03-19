@@ -73,6 +73,9 @@ export function buildCustomMapStartConfig(customMap) {
 
 export function buildCampaignLevelStartConfig(level, levelIndex) {
     level = level && typeof level === 'object' ? level : {};
+    // Senaryo bölümlerinde zafer yalnızca rakip eliminasyonu ile (tüm düğüm ve aktif filoları yok).
+    // Görevler ilerleme, faz ve koç ipuçları içindir; hedef tamamlanınca maç otomatik bitmez.
+    var campaignEndOnObjectives = false;
     var customMap = level.customMap && typeof level.customMap === 'object'
         ? normalizeCustomMapConfig({
             name: level.customMap.name || ('Campaign ' + (level.id || (Number(levelIndex) + 1))),
@@ -92,7 +95,7 @@ export function buildCampaignLevelStartConfig(level, levelIndex) {
             playerCapital: level.customMap.playerCapital,
             tuneOverrides: level.tune || level.customMap.tuneOverrides || level.customMap.tune || null,
             missionScript: level.missionScript || level.customMap.missionScript || null,
-            endOnObjectives: level.endOnObjectives === true,
+            endOnObjectives: campaignEndOnObjectives,
         })
         : null;
     if (customMap) {
@@ -115,7 +118,7 @@ export function buildCampaignLevelStartConfig(level, levelIndex) {
                 encounters: customMap.encounters || level.encounters || [],
                 objectives: level.objectives || [],
                 missionScript: level.missionScript || customMap.missionScript || null,
-                endOnObjectives: level.endOnObjectives === true,
+                endOnObjectives: campaignEndOnObjectives,
             },
         };
     }
@@ -139,7 +142,7 @@ export function buildCampaignLevelStartConfig(level, levelIndex) {
             encounters: level.encounters || [],
             objectives: level.objectives || [],
             missionScript: level.missionScript || null,
-            endOnObjectives: level.endOnObjectives === true,
+            endOnObjectives: campaignEndOnObjectives,
         },
     };
 }

@@ -81,6 +81,17 @@ export function attachGameInputController(opts) {
         syncHoverTooltip(null);
     }
 
+    /** Pan / sürükleme / kutu seçimi sırasında imleç hâlâ canvas üzerindeyken pointerInsideCanvas sıfırlanmamalı. */
+    function resetHoverTrackingOnly() {
+        inputState.hoverNodeId = -1;
+        inputState.hoverSince = 0;
+        syncHoverTooltip({
+            node: null,
+            screenPos: { x: inputState.ms.x, y: inputState.ms.y },
+            pointerInsideCanvas: inputState.pointerInsideCanvas === true,
+        });
+    }
+
     function updateHoverState(worldPos) {
         if (gameState.state !== 'playing') {
             clearHoverState();
@@ -116,7 +127,7 @@ export function attachGameInputController(opts) {
         }
 
         if (e.button === 1) {
-            clearHoverState();
+            resetHoverTrackingOnly();
             inputState.panActive = true;
             inputState.panLast = { x: e.offsetX, y: e.offsetY };
             e.preventDefault();
@@ -257,7 +268,7 @@ export function attachGameInputController(opts) {
         var w = inputState.mw;
 
         if (inputState.panActive) {
-            clearHoverState();
+            resetHoverTrackingOnly();
             var dx = (e.offsetX - inputState.panLast.x) / gameState.cam.zoom;
             var dy = (e.offsetY - inputState.panLast.y) / gameState.cam.zoom;
             gameState.cam.x -= dx;
@@ -297,12 +308,12 @@ export function attachGameInputController(opts) {
         }
 
         if (inputState.dragActive) {
-            clearHoverState();
+            resetHoverTrackingOnly();
             inputState.dragEnd = w;
             return;
         }
         if (inputState.marqActive) {
-            clearHoverState();
+            resetHoverTrackingOnly();
             inputState.marqEnd = { x: e.offsetX, y: e.offsetY };
             return;
         }
