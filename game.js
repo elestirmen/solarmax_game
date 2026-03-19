@@ -67,7 +67,6 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     TRAIL_LEN = 12, MAX_ORBIT_SQUADS = 14, MAX_ORBIT_SHIPS_PER_SQUAD = 6, ORBIT_UNITS_PER_VISIBLE_SHIP = 2, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 14, ORBIT_MAX_RINGS = 4,
     NODE_LEVEL_MAX = 3,
     DDA_MAX_BOOST = 0.2,
-    WORMHOLE_SPEED_MULT = 2.0,
     GRAVITY_RADIUS = 170,
     GRAVITY_SPEED_MULT = 1.35,
     SUPPLY_DIST = 220,
@@ -1151,13 +1150,13 @@ function createDispatchedFleetLocal(owner, params) {
     var sourceKey = sourceNode ? 'n:' + sourceNode.id : 'f:' + (sourceFleet ? sourceFleet.id : Math.round(sourcePos.x) + ':' + Math.round(sourcePos.y));
     var targetKey = targetNode ? 'n:' + targetNode.id : 'p:' + makeRoutePointKey(targetPos);
     var routeQueue = countQueuedRouteFleets(owner, sourceKey, targetKey);
-    var launchDelay = Math.min(0.28, routeQueue * 0.03);
+    var launchDelay = hasWormholeLink ? 0 : Math.min(0.28, routeQueue * 0.03);
 
     G.fleetSerial = Math.max(0, Math.floor(Number(G.fleetSerial) || 0)) + 1;
     var routeSpeedMult = 1;
-    if (sourceNode) {
+    if (sourceNode && !hasWormholeLink) {
         var srcType = nodeTypeOf(sourceNode);
-        routeSpeedMult = srcType.speed * (hasWormholeLink ? WORMHOLE_SPEED_MULT : 1);
+        routeSpeedMult = srcType.speed;
         if (isNodeAssimilated(sourceNode) && strategicPulseAppliesToNode(sourceNode.id)) {
             routeSpeedMult *= STRATEGIC_PULSE_SPEED;
         }
@@ -1171,13 +1170,20 @@ function createDispatchedFleetLocal(owner, params) {
         count: count,
         routeSpeedMult: routeSpeedMult,
     });
-    var arcLen = bezLen(sourcePos, cp, targetPos);
+    var arcLen = hasWormholeLink ? 1 : bezLen(sourcePos, cp, targetPos);
     var sourceRadius = sourceNode && Number.isFinite(Number(sourceNode.radius))
         ? Number(sourceNode.radius)
         : Math.max(6, Math.min(18, Math.sqrt(count) * 1.6));
-    var launchT = clamp((sourceRadius + 2) / Math.max(arcLen, 1), 0, sourceNode ? 0.12 : 0.08);
-    var launchPt = bezPt(sourcePos, cp, targetPos, launchT);
-    var launchDirPt = bezPt(sourcePos, cp, targetPos, Math.min(1, launchT + Math.max(0.012, spawnProfile.lookAhead)));
+    var launchT = hasWormholeLink ? 0 : clamp((sourceRadius + 2) / Math.max(arcLen, 1), 0, sourceNode ? 0.12 : 0.08);
+    var launchPt = hasWormholeLink
+        ? { x: targetPos.x, y: targetPos.y }
+        : bezPt(sourcePos, cp, targetPos, launchT);
+    var launchDirPt = hasWormholeLink
+        ? {
+            x: targetPos.x + (targetPos.x - sourcePos.x),
+            y: targetPos.y + (targetPos.y - sourcePos.y),
+        }
+        : bezPt(sourcePos, cp, targetPos, Math.min(1, launchT + Math.max(0.012, spawnProfile.lookAhead)));
     var launchDx = launchDirPt.x - launchPt.x, launchDy = launchDirPt.y - launchPt.y;
     var launchLen = Math.sqrt(launchDx * launchDx + launchDy * launchDy) || 1;
     var f = acquireFleet();
@@ -1195,7 +1201,8 @@ function createDispatchedFleetLocal(owner, params) {
     f.holdUnsuppliedTicks = 0;
     f.routeSrcKey = sourceKey;
     f.routeTgtKey = targetKey;
-    f.t = -launchDelay;
+    f.t = hasWormholeLink ? 1 : -launchDelay;
+    f.wormholeInstant = !!hasWormholeLink;
     f.speed = FLEET_SPEED;
     f.routeSpeedMult = routeSpeedMult;
     f.offsetL = spawnProfile.offsetL;
@@ -1230,6 +1237,7 @@ function dispatch(owner, srcIds, tgtId, pct) {
     var targetPoint = tgt ? tgt.pos : order.targetPoint;
     if (!tgt && !targetPoint) return;
     var didSend = false;
+    var anyWormholeSend = false;
     var blockedByBarrier = false;
     var barrierCfg = G.mapFeature && G.mapFeature.type === 'barrier' ? G.mapFeature : null;
     var friendlyRoom = null;
@@ -1270,6 +1278,7 @@ function dispatch(owner, srcIds, tgtId, pct) {
             sourcePos: src.pos,
             targetPos: targetPoint,
         });
+        if (usedWormhole) anyWormholeSend = true;
         if (owner === G.human && usedWormhole) G.stats.wormholeDispatches++;
     }
     for (var fi = 0; fi < order.fleetIds.length; fi++) {
@@ -1311,7 +1320,10 @@ function dispatch(owner, srcIds, tgtId, pct) {
     }
     if (didSend && owner === G.human) {
         G.stats.fleetsSent++;
-        if (typeof AudioFX !== 'undefined') AudioFX.send();
+        if (typeof AudioFX !== 'undefined') {
+            if (anyWormholeSend && typeof AudioFX.wormholeTeleport === 'function') AudioFX.wormholeTeleport();
+            else AudioFX.send();
+        }
     }
     if (blockedByBarrier && owner === G.human) {
         showGameToast('Geçit kilitli: ' + barrierGateObjectiveText() + ', sonra asimilasyon tamamlanana kadar bekle.');
@@ -2730,12 +2742,21 @@ function drawMapFeature(ctx, tick) {
         for (var i = 0; i < G.wormholes.length; i++) {
             var w = G.wormholes[i], a = G.nodes[w.a], b = G.nodes[w.b];
             if (!a || !b) continue;
+            var whPulse = 0.55 + 0.45 * Math.sin(tick * 0.085 + i * 1.7);
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
             ctx.beginPath(); ctx.moveTo(a.pos.x, a.pos.y); ctx.lineTo(b.pos.x, b.pos.y);
-            ctx.strokeStyle = 'rgba(125,227,255,0.2)'; ctx.lineWidth = 1; ctx.stroke();
-            ctx.beginPath(); ctx.arc(a.pos.x, a.pos.y, a.radius + 5, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(125,227,255,0.25)'; ctx.lineWidth = 1; ctx.stroke();
-            ctx.beginPath(); ctx.arc(b.pos.x, b.pos.y, b.radius + 5, 0, Math.PI * 2);
-            ctx.stroke();
+            ctx.strokeStyle = 'rgba(40, 15, 65,' + (0.35 + whPulse * 0.15) + ')'; ctx.lineWidth = 9; ctx.lineCap = 'round'; ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(a.pos.x, a.pos.y); ctx.lineTo(b.pos.x, b.pos.y);
+            ctx.strokeStyle = 'rgba(200, 80, 40,' + (0.1 + whPulse * 0.12) + ')'; ctx.lineWidth = 5; ctx.stroke();
+            ctx.setLineDash([5, 9]);
+            ctx.lineDashOffset = -tick * 0.42;
+            ctx.beginPath(); ctx.moveTo(a.pos.x, a.pos.y); ctx.lineTo(b.pos.x, b.pos.y);
+            ctx.strokeStyle = 'rgba(255, 200, 130,' + (0.14 + whPulse * 0.16) + ')'; ctx.lineWidth = 1.5; ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.beginPath(); ctx.moveTo(a.pos.x, a.pos.y); ctx.lineTo(b.pos.x, b.pos.y);
+            ctx.strokeStyle = 'rgba(190, 140, 255,' + (0.08 + whPulse * 0.09) + ')'; ctx.lineWidth = 2.8; ctx.stroke();
+            ctx.restore();
         }
     } else if (G.mapFeature.type === 'gravity') {
         var g = G.mapFeature;
@@ -3445,10 +3466,6 @@ function positionNodeHoverTip(screenPos) {
 function syncNodeHoverTip() {
     if (!ensureNodeHoverTipElements()) return;
     if (G.state !== 'playing' && G.state !== 'paused') {
-        hideNodeHoverTip();
-        return;
-    }
-    if (inp && inp.sel && inp.sel.size > 0) {
         hideNodeHoverTip();
         return;
     }
@@ -4240,6 +4257,7 @@ function captureSyncSnapshot() {
                 hitDirY: Number.isFinite(fleet.hitDirY) ? fleet.hitDirY : 0,
                 dmgAcc: fleet.dmgAcc || 0,
                 launchT: fleet.launchT || 0,
+                wormholeInstant: !!fleet.wormholeInstant,
             };
         }),
         flows: G.flows.map(function (flow) {
@@ -5159,7 +5177,7 @@ function campaignSystemsSummary(level) {
 function campaignFeatureHint(level) {
     var feature = level ? level.mapFeature : null;
     var featureType = typeof feature === 'string' ? feature : ((feature && feature.type) || 'none');
-    if (featureType === 'wormhole') return 'Wormhole: bağlı iki uç arasında filolar 2.0x hızla gider. Uzun rota yerine wormhole eksenini tut.';
+    if (featureType === 'wormhole') return 'Wormhole: bağlı iki uç birbirine anında ışınlanır; köprü uçlarını koru ve trafiği oradan geçir.';
     if (featureType === 'gravity') return 'Gravity: merkez alanı filoları 1.35x hızlandırır. Merkezden geçen rota hem baskın hem savunmada avantaja döner.';
     if (featureType === 'barrier') return 'Barrier: karşı tarafa geçmek için GATE gezegenini al ve asimilasyon tamamlanana kadar tut.';
     if (featureType === 'auto') return 'Anomali: harita tek bir özel mekanikle açılır. İlk dakikada ne olduğunu gözleyip plana hızla dön.';

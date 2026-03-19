@@ -1,3 +1,13 @@
+function nodeIsWormholeEndpoint(game, nodeId) {
+    var links = game && Array.isArray(game.wormholes) ? game.wormholes : [];
+    for (var wi = 0; wi < links.length; wi++) {
+        var w = links[wi];
+        if (!w) continue;
+        if (w.a === nodeId || w.b === nodeId) return true;
+    }
+    return false;
+}
+
 function drawGridLayer(ctx, game, hw, hh) {
     var spacing = 100;
     var startX = Math.floor((game.cam.x - hw) / spacing) * spacing;
@@ -151,6 +161,49 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             ctx.textAlign = 'center';
             ctx.fillText('\u26E8', n.pos.x, n.pos.y - n.radius - 4);
         }
+        var whEnd = nodeIsWormholeEndpoint(game, n.id);
+        if ((vis || n.owner === game.human) && whEnd) {
+            var bhPhase = tick * 0.098 + n.id * 0.71;
+            var cx = n.pos.x;
+            var cy = n.pos.y;
+            var r = n.radius;
+            var diskOut = r + 21 + Math.sin(bhPhase * 1.05) * 1.8;
+            ctx.save();
+            var gravHalo = ctx.createRadialGradient(cx, cy, r * 0.35, cx, cy, diskOut);
+            gravHalo.addColorStop(0, 'rgba(0, 0, 0, 0)');
+            gravHalo.addColorStop(0.55, 'rgba(55, 20, 95, 0.14)');
+            gravHalo.addColorStop(0.78, 'rgba(180, 70, 30, 0.11)');
+            gravHalo.addColorStop(0.9, 'rgba(255, 190, 110, 0.1)');
+            gravHalo.addColorStop(1, 'rgba(15, 8, 35, 0)');
+            ctx.fillStyle = gravHalo;
+            ctx.beginPath();
+            ctx.arc(cx, cy, diskOut, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.globalCompositeOperation = 'screen';
+            for (var wi = 0; wi < 6; wi++) {
+                var bandR = r + 3.2 + wi * 2.4 + Math.sin(bhPhase + wi * 0.95) * 1.1;
+                var a0 = bhPhase * 0.74 + wi * 0.88;
+                var a1 = a0 + Math.PI * (1.15 + (wi % 3) * 0.08);
+                var br = 220 - wi * 22;
+                var bg = 70 + wi * 28;
+                var bb = 40 + wi * 14;
+                ctx.beginPath();
+                ctx.arc(cx, cy, bandR, a0, a1);
+                ctx.strokeStyle = 'rgba(' + br + ',' + bg + ',' + bb + ',' + (0.18 + wi * 0.045) + ')';
+                ctx.lineWidth = 2.4 - wi * 0.28;
+                ctx.lineCap = 'round';
+                ctx.stroke();
+            }
+            ctx.globalCompositeOperation = 'lighter';
+            ctx.beginPath();
+            ctx.arc(cx, cy, r + 5.5 + Math.sin(bhPhase * 1.2) * 0.6, bhPhase * 0.3, bhPhase * 0.3 + Math.PI * 1.6);
+            ctx.strokeStyle = 'rgba(255, 230, 200, 0.14)';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.restore();
+        }
+
         if ((vis || n.owner === game.human) && n.strategic) {
             ctx.beginPath();
             ctx.arc(n.pos.x, n.pos.y, n.radius + 4, 0, Math.PI * 2);
@@ -281,6 +334,38 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             }
             ctx.drawImage(planetCanvas, n.pos.x - n.radius, n.pos.y - n.radius, n.radius * 2, n.radius * 2);
             ctx.restore();
+            if (whEnd && (vis || n.owner === game.human)) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.arc(n.pos.x, n.pos.y, n.radius, 0, Math.PI * 2);
+                ctx.clip();
+                ctx.globalCompositeOperation = 'multiply';
+                var voidGrad = ctx.createRadialGradient(
+                    n.pos.x, n.pos.y, 0,
+                    n.pos.x, n.pos.y, n.radius * 1.05
+                );
+                voidGrad.addColorStop(0, 'rgba(20, 8, 32, 0.96)');
+                voidGrad.addColorStop(0.42, 'rgba(38, 18, 58, 0.62)');
+                voidGrad.addColorStop(0.72, 'rgba(70, 40, 88, 0.28)');
+                voidGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+                ctx.fillStyle = voidGrad;
+                ctx.fillRect(n.pos.x - n.radius, n.pos.y - n.radius, n.radius * 2, n.radius * 2);
+                ctx.restore();
+
+                ctx.save();
+                ctx.globalCompositeOperation = 'screen';
+                ctx.beginPath();
+                ctx.arc(n.pos.x, n.pos.y, n.radius + 1.3, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(255, 195, 120, 0.52)';
+                ctx.lineWidth = 1.65;
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(n.pos.x, n.pos.y, n.radius - 1.1, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(140, 90, 220, 0.32)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+                ctx.restore();
+            }
             if ((vis || n.owner === game.human) && n.owner >= 0 && col && col.indexOf('#') === 0) {
                 ctx.save();
                 ctx.beginPath();

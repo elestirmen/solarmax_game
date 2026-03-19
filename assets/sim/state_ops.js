@@ -121,18 +121,20 @@ function createDispatchedFleet(state, params) {
     var sourceKey = sourceNode ? 'n:' + sourceNode.id : 'f:' + (sourceFleet ? sourceFleet.id : Math.round(sourcePos.x) + ':' + Math.round(sourcePos.y));
     var targetKey = targetNode ? 'n:' + targetNode.id : 'p:' + makeRoutePointKey(targetPos);
     var routeQueue = countQueuedRouteFleets(state, owner, sourceKey, targetKey);
-    var launchDelay = Math.min(0.28, routeQueue * 0.03);
-    var arcLen = bezLen(sourcePos, cp, targetPos);
+    var launchDelay = hasWormholeLink ? 0 : Math.min(0.28, routeQueue * 0.03);
+    var arcLen = hasWormholeLink ? 1 : bezLen(sourcePos, cp, targetPos);
     var sourceRadius = sourceNode && Number.isFinite(Number(sourceNode.radius))
         ? Number(sourceNode.radius)
         : Math.max(6, Math.min(18, Math.sqrt(count) * 1.6));
-    var launchT = clamp((sourceRadius + 2) / Math.max(arcLen, 1), 0, sourceNode ? 0.12 : 0.08);
-    var launchPoint = bezPt(sourcePos, cp, targetPos, launchT);
+    var launchT = hasWormholeLink ? 0 : clamp((sourceRadius + 2) / Math.max(arcLen, 1), 0, sourceNode ? 0.12 : 0.08);
+    var launchPoint = hasWormholeLink
+        ? { x: targetPos.x, y: targetPos.y }
+        : bezPt(sourcePos, cp, targetPos, launchT);
 
     var routeSpeedMult = 1;
-    if (sourceNode) {
+    if (sourceNode && !hasWormholeLink) {
         var srcType = nodeTypeOf(sourceNode);
-        routeSpeedMult = srcType.speed * (hasWormholeLink ? SIM_CONSTANTS.WORMHOLE_SPEED_MULT : 1);
+        routeSpeedMult = srcType.speed;
         if (isNodeAssimilated(sourceNode) && isStrategicPulseActiveForNode(sourceNode.id, state.strategicPulse)) {
             routeSpeedMult *= SIM_CONSTANTS.STRATEGIC_PULSE_SPEED;
         }
@@ -148,7 +150,12 @@ function createDispatchedFleet(state, params) {
         count: count,
         routeSpeedMult: routeSpeedMult,
     });
-    var launchDir = tangentDir(sourcePos, cp, targetPos, launchT, Math.max(0.012, spawnProfile.lookAhead));
+    var whDx = targetPos.x - sourcePos.x;
+    var whDy = targetPos.y - sourcePos.y;
+    var whLen = Math.sqrt(whDx * whDx + whDy * whDy) || 1;
+    var launchDir = hasWormholeLink
+        ? { x: whDx / whLen, y: whDy / whLen }
+        : tangentDir(sourcePos, cp, targetPos, launchT, Math.max(0.012, spawnProfile.lookAhead));
 
     state.fleets.push({
         id: state.fleetSerial,
@@ -165,7 +172,7 @@ function createDispatchedFleet(state, params) {
         holdUnsuppliedTicks: 0,
         routeSrcKey: sourceKey,
         routeTgtKey: targetKey,
-        t: -launchDelay,
+        t: hasWormholeLink ? 1 : -launchDelay,
         speed: SIM_CONSTANTS.FLEET_SPEED,
         arcLen: arcLen,
         cpx: cp.x,
@@ -190,6 +197,7 @@ function createDispatchedFleet(state, params) {
         hitDirY: 0,
         dmgAcc: 0,
         launchT: launchT,
+        wormholeInstant: !!hasWormholeLink,
     });
 
     return hasWormholeLink;

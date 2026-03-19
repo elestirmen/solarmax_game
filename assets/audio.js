@@ -11,6 +11,7 @@
     var unlockBound = false;
     var lastCombatAt = 0;
     var combatAccentFlip = false;
+    var lastWormholeTeleportAt = 0;
 
     var music = {
         started: false,
@@ -295,6 +296,110 @@
             release: 0.07,
             delay: 0.03,
             reverbSend: 0.18,
+        });
+    }
+
+    function wormholeTeleportSound() {
+        var c = getCtx();
+        if (!c) return;
+        var now = c.currentTime;
+        if (now - lastWormholeTeleportAt < 0.11) return;
+        lastWormholeTeleportAt = now;
+
+        var pan = rand(-0.35, 0.35);
+
+        playNoise({
+            filterType: 'bandpass',
+            filterFreq: 4200,
+            filterFreqEnd: 180,
+            filterSweep: 0.42,
+            filterQ: 0.9,
+            gain: 0.11,
+            attack: 0.001,
+            decay: 0.02,
+            sustain: 0.06,
+            release: 0.35,
+            pan: pan,
+            reverbSend: 0.38,
+        });
+        playNoise({
+            filterType: 'lowpass',
+            filterFreq: 2400,
+            filterFreqEnd: 90,
+            filterSweep: 0.5,
+            filterQ: 0.6,
+            gain: 0.085,
+            attack: 0.001,
+            decay: 0.04,
+            sustain: 0.05,
+            release: 0.45,
+            pan: -pan * 0.6,
+            reverbSend: 0.42,
+        });
+
+        playOsc({
+            type: 'sine',
+            freq: 220,
+            freqEnd: 38,
+            sweep: 0.38,
+            gain: 0.1,
+            attack: 0.003,
+            decay: 0.05,
+            sustain: 0.08,
+            release: 0.4,
+            pan: pan * 0.4,
+            filterType: 'lowpass',
+            filterFreq: 1400,
+            filterFreqEnd: 90,
+            filterSweep: 0.36,
+            filterQ: 1.2,
+            reverbSend: 0.35,
+        });
+
+        playOsc({
+            type: 'triangle',
+            freq: 990,
+            freqEnd: 120,
+            sweep: 0.22,
+            gain: 0.055,
+            attack: 0.001,
+            decay: 0.02,
+            sustain: 0.02,
+            release: 0.28,
+            delay: 0.02,
+            pan: -pan * 0.3,
+            filterType: 'bandpass',
+            filterFreq: 2800,
+            filterFreqEnd: 400,
+            filterSweep: 0.24,
+            filterQ: 4,
+            reverbSend: 0.45,
+        });
+
+        playOsc({
+            type: 'sine',
+            freq: 1320,
+            gain: 0.028,
+            attack: 0.001,
+            decay: 0.012,
+            sustain: 0.006,
+            release: 0.08,
+            delay: 0.001,
+            pan: rand(-0.2, 0.2),
+            reverbSend: 0.5,
+        });
+        playOsc({
+            type: 'sine',
+            freq: 1660,
+            detune: rand(4, 14),
+            gain: 0.02,
+            attack: 0.001,
+            decay: 0.01,
+            sustain: 0.004,
+            release: 0.07,
+            delay: 0.008,
+            pan: rand(-0.2, 0.2),
+            reverbSend: 0.48,
         });
     }
 
@@ -712,6 +817,7 @@
         click: uiClick,
         select: selectSound,
         send: sendSound,
+        wormholeTeleport: wormholeTeleportSound,
         combat: combatSound,
         capture: captureSound,
         upgrade: upgradeSound,

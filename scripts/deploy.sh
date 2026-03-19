@@ -5,6 +5,60 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 MODE="${1:-docker}"
+LIVE_URL="${LIVE_URL:-https://solarmax.urgup.keenetic.link/}"
+
+bundle_from_html() {
+    local html="${1:-}"
+    printf '%s' "$html" | rg -o 'assets/game-[^"]+' -m 1 || true
+}
+
+bundle_from_file() {
+    local path="${1:-}"
+    if [ ! -f "$path" ]; then
+        return 0
+    fi
+    rg -o 'assets/game-[^"]+' -m 1 "$path" || true
+}
+
+bundle_from_container() {
+    docker exec solarmax-app sh -lc "grep -o 'assets/game-[^\"]*' /app/dist/stellar_conquest.html | head -n 1" 2>/dev/null || true
+}
+
+verify_deploy() {
+    local local_bundle=""
+    local container_bundle=""
+    local live_bundle=""
+
+    local_bundle="$(bundle_from_file "$ROOT_DIR/dist/stellar_conquest.html")"
+
+    for _ in $(seq 1 15); do
+        container_bundle="$(bundle_from_container)"
+        if [ -n "$container_bundle" ]; then
+            break
+        fi
+        sleep 1
+    done
+
+    if [ -n "$LIVE_URL" ]; then
+        live_bundle="$(bundle_from_html "$(curl -fsS "$LIVE_URL" 2>/dev/null || true)")"
+    fi
+
+    echo "Yerel dist bundle:     ${local_bundle:-bulunamadi}"
+    echo "Konteyner bundle:      ${container_bundle:-bulunamadi}"
+    if [ -n "$LIVE_URL" ]; then
+        echo "Canli URL bundle:      ${live_bundle:-bulunamadi}"
+    fi
+
+    if [ -n "$container_bundle" ] && [ -n "$local_bundle" ] && [ "$container_bundle" != "$local_bundle" ]; then
+        echo "Hata: konteyner eski bundle servis ediyor." >&2
+        return 1
+    fi
+
+    if [ -n "$LIVE_URL" ] && [ -n "$container_bundle" ] && [ -n "$live_bundle" ] && [ "$live_bundle" != "$container_bundle" ]; then
+        echo "Hata: canli URL eski bundle servis ediyor." >&2
+        return 1
+    fi
+}
 
 deploy_local() {
     echo "=== Solarmax yerel deploy: build + node sunucu (dist mode) ==="
@@ -18,6 +72,11 @@ deploy_local() {
 
 if [ "$MODE" = "local" ]; then
     deploy_local
+fi
+
+if [ "$MODE" = "check" ]; then
+    verify_deploy
+    exit 0
 fi
 
 if docker compose version >/dev/null 2>&1; then
@@ -47,18 +106,5 @@ echo "Canli konteyner durumu:"
 "${COMPOSE_CMD[@]}" ps
 
 echo
-echo "Servis edilen bundle:"
-LIVE_BUNDLE=""
-for _ in $(seq 1 15); do
-    LIVE_BUNDLE="$(docker exec solarmax-app sh -lc "grep -o 'assets/game-[^\"]*' /app/dist/stellar_conquest.html | head -n 1" 2>/dev/null || true)"
-    if [ -n "$LIVE_BUNDLE" ]; then
-        break
-    fi
-    sleep 1
-done
-
-if [ -n "$LIVE_BUNDLE" ]; then
-    echo "$LIVE_BUNDLE"
-else
-    echo "Uyari: konteyner ayaga kalkti ama bundle dogrulamasi zamaninda alinmadi." >&2
-fi
+echo "Deploy dogrulamasi:"
+verify_deploy

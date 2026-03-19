@@ -224,6 +224,14 @@ Tek komut kısayolu:
 npm run deploy
 ```
 
+Komut ayrımı:
+
+- `npm run deploy` → canlı Docker deploy
+- `npm run deploy:local` → yerelde `node server.js` ile aç
+- `npm run deploy:check` → yerel `dist`, konteyner ve canlı URL bundle'ını karşılaştır
+
+`deploy` komutu canlıyı hedefler. Sadece yerel deneme istiyorsanız `deploy:local` kullanın.
+
 Oyun sunucusu `solarmax-app` konteynerinde port `3000` üzerinde başlar.
 
 | Detay | Değer |

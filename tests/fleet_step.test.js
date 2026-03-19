@@ -502,3 +502,76 @@ test('resolveFleetArrivals leaves holding fleets untouched', function () {
     assert.equal(result.fleets[0].holding, true);
     assert.equal(result.fleets[0].count, 11);
 });
+
+test('wormholeInstant friendly fleet applies full count in one arrival pass', function () {
+    var fleets = [
+        { active: true, wormholeInstant: true, owner: 0, count: 10, srcId: 0, tgtId: 1, t: 1, trail: [] },
+    ];
+    var nodes = [
+        { id: 0, owner: 0, units: 40, maxUnits: 40, level: 1, pos: { x: 0, y: 0 } },
+        { id: 1, owner: 0, units: 5, maxUnits: 30, level: 1, pos: { x: 100, y: 0 } },
+    ];
+
+    var result = resolveFleetArrivals({
+        fleets: fleets,
+        nodes: nodes,
+        flows: [],
+        players: [{ color: '#4a8eff' }],
+        tune: { def: 1 },
+        humanIndex: 0,
+        callbacks: {
+            nodeTypeOf: function () { return { def: 1 }; },
+            nodeLevelDefMult: function () { return 1; },
+            nodeCapacity: function (node) { return node.maxUnits; },
+        },
+        constants: {
+            turretCaptureResist: 1.35,
+            defenseBonus: 1.25,
+            assimLockTicks: 180,
+        },
+    });
+
+    assert.equal(fleets.length, 0);
+    assert.equal(nodes[1].units, 15);
+    assert.equal(result.toasts.length, 0);
+});
+
+test('stepFleetMovement snaps wormholeInstant fleets to target position', function () {
+    var fleets = [{
+        active: true,
+        wormholeInstant: true,
+        srcId: 0,
+        tgtId: 1,
+        t: 1,
+        count: 5,
+        speed: 80,
+        spdVar: 1,
+        arcLen: 100,
+        routeSpeedMult: 1,
+        cpx: 50,
+        cpy: 0,
+        x: 0,
+        y: 0,
+        trail: [],
+        offsetL: 0,
+        launchT: 0,
+        holding: false,
+    }];
+    var nodes = [
+        { pos: { x: 0, y: 0 } },
+        { pos: { x: 100, y: 0 } },
+    ];
+
+    stepFleetMovement({
+        fleets: fleets,
+        nodes: nodes,
+        dt: 1 / 30,
+        tune: { fspeed: 80 },
+        mapFeature: { type: 'none' },
+        callbacks: { clamp: clamp, bezPt: bezPt },
+        constants: { baseFleetSpeed: 80, gravitySpeedMult: 0.75, territorySpeedMult: 1, trailLen: 12 },
+    });
+
+    assert.equal(fleets[0].x, 100);
+    assert.equal(fleets[0].y, 0);
+});

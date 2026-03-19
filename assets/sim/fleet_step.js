@@ -167,6 +167,7 @@ function countArrivedFleetUnits(fleet) {
     var fleetCount = Math.max(0, Math.floor(Number(fleet && fleet.count) || 0));
     var fleetT = Number(fleet && fleet.t);
     if (fleetCount <= 0 || !Number.isFinite(fleetT) || fleetT < 1) return 0;
+    if (fleet && fleet.wormholeInstant) return fleetCount;
 
     var spacingT = Math.max(0.0001, getFleetUnitSpacingT(fleet));
     return Math.min(fleetCount, 1 + Math.floor((fleetT - 1 + 0.000001) / spacingT));
@@ -278,6 +279,11 @@ export function stepFleetMovement(params) {
         if (!routeStart || !routeTarget) continue;
 
         if (fleet.t >= 1) {
+            if (fleet.wormholeInstant && routeTarget && (Number(fleet.tgtId) || 0) >= 0) {
+                fleet.x = routeTarget.x;
+                fleet.y = routeTarget.y;
+                continue;
+            }
             if ((Number(fleet.tgtId) || 0) < 0) {
                 if (parkFleetAtTarget(fleets, fleet, i, routeTarget)) continue;
                 continue;

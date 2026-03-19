@@ -184,6 +184,7 @@ export function computeSyncHash(state) {
         hash = mixHash(hash, scaledInt(fleet.toY, 10));
         hash = mixHash(hash, scaledInt(fleet.cpx, 10));
         hash = mixHash(hash, scaledInt(fleet.cpy, 10));
+        hash = mixHash(hash, fleet.wormholeInstant ? 1 : 0);
     }
 
     for (var pi = 0; pi < players.length; pi++) {
