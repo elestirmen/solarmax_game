@@ -218,6 +218,12 @@ npm run build
 docker compose up -d --build
 ```
 
+Tek komut kısayolu:
+
+```bash
+npm run deploy
+```
+
 Oyun sunucusu `solarmax-app` konteynerinde port `3000` üzerinde başlar.
 
 | Detay | Değer |
