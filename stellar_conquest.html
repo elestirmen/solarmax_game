@@ -2173,6 +2173,36 @@
             line-height: 1.4;
         }
 
+        .node-hover-tip {
+            position: fixed;
+            z-index: 82;
+            max-width: min(280px, calc(100vw - 28px));
+            padding: 10px 12px;
+            border: 1px solid rgba(118, 162, 255, 0.16);
+            border-radius: 12px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018)),
+                rgba(8, 13, 24, 0.82);
+            box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28);
+            backdrop-filter: blur(12px);
+            pointer-events: none;
+        }
+
+        .node-hover-tip-title {
+            color: #eef4ff;
+            font-family: 'Orbitron', var(--font);
+            font-size: .67rem;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
+        .node-hover-tip-body {
+            margin-top: 5px;
+            color: #dbe8ff;
+            font-size: .72rem;
+            line-height: 1.38;
+        }
+
         .hud-advisor-card {
             display: flex;
             flex-direction: column;
@@ -3878,6 +3908,7 @@
                 <a href="#tut-gezegenler">Gezegenler</a>
                 <a href="#tut-harita">Harita</a>
                 <a href="#tut-hud">HUD</a>
+                <a href="#tut-ipuclari">İpuçları</a>
             </nav>
             <div class="tutorial-quickstart">
                 <h3>İlk 60 saniye planı</h3>
@@ -3922,7 +3953,7 @@
                         <li><b>Sağ tık (düşman veya tarafsız):</b> Seçili kaynaklardan hedefe <b>Flow</b> bağlantısı aç/kapat. Bu, tek saldırı değil, sürekli baskı emridir.</li>
                         <li><b>HUD orta bilgi satırı:</b> Seçili node için upgrade maliyeti, defense tradeoff'u, supply indirimi, savunma alanı, gate, mutatör ve aktif pulse bonusları gösterilir.</li>
                         <li><b>Orta tuş + sürükle:</b> Kamerayı kaydır. <b>Mouse tekeri:</b> Zoom in/out.</li>
-                        <li><b>Mobil:</b> Tek parmakla seç ve sürükle. İki parmakla haritayı pan/zoom yap. Yükseltme, savunma ve flow için HUD'daki <b>YUK</b>, <b>SAV</b> ve <b>FLOW</b> düğmelerini kullan.</li>
+                        <li><b>Mobil:</b> Tek parmakla seç ve sürükle. İki parmakla haritayı pan/zoom yap. Yükseltme, savunma ve flow için HUD'daki <b>YÜK</b>, <b>SAV</b> ve <b>FLOW</b> düğmelerini kullan.</li>
                     </ul>
                 </div>
 
@@ -3938,7 +3969,7 @@
                     </div>
                     <ul>
                         <li><b>1-9, 0:</b> Gönderim yüzdesini sırasıyla %10, %20, ... %100 yapar.</li>
-                        <li><b>U:</b> Seçili gezegenleri upgrade eder (yeterli birlik ve seviye koşulu varsa). Mobilde aynı işlev <b>YUK</b> düğmesindedir.</li>
+                        <li><b>U:</b> Seçili gezegenleri upgrade eder (yeterli birlik ve seviye koşulu varsa). Mobilde aynı işlev <b>YÜK</b> düğmesindedir.</li>
                         <li><b>A:</b> Tüm kendi gezegenlerini tek seferde seçer.</li>
                         <li><b>Q:</b> İnsan oyuncunun doktrin aktif becerisini tetikler. Aynı işlev HUD'daki <b>DOC</b> düğmesindedir.</li>
                         <li><b>Esc / P:</b> Tek oyunculuda oyunu duraklatır veya devam ettirir.</li>
@@ -4063,10 +4094,24 @@
                         <li><b>Cap satırı:</b> Toplam birlik/cap oranını ve strain başlangıcını gösterir. Yüzde yükseliyorsa ekonomi daralıyor demektir.</li>
                         <li><b>Görev paneli:</b> Campaign ve challenge modlarında zorunlu ve bonus objective'leri gösterir. Maçı neyin bitireceğini buradan okursun.</li>
                         <li><b>Orta bilgi satırı:</b> Seçili node'un upgrade maliyeti, field menzili, gate durumu, asimilasyon yüzdesi, mutatör etkisi ve pulse bonuslarını tek satırda okursun.</li>
+                        <li><b>Bağlam rozeti ve ipucu satırı:</b> Seçimine göre kısa durum özeti (tek node, çoklu seçim, park filo, FLOW hedef modu) ve ne yapman gerektiğini hatırlatan bir satır görünür. FLOW modundayken hedef gezegene tıklayınca flow açılır; boş uzaya tıklayınca mod kapanır.</li>
                         <li><b>DOC düğmesi:</b> Doktrinin aktif becerisini açar. Hazır değilse cooldown durumunu yazar.</li>
                         <li><b>Minimap:</b> Genel durumu hızlı okumak için. CHAT ile sohbet paneli açılır.</li>
                         <li><b>THEME:</b> Açık/koyu tema değiştirir.</li>
                     </ul>
+                </div>
+
+                <div class="tutorial-section" id="tut-ipuclari">
+                    <h3>11) Canlı ipuçları, hover ve kampanya koçu</h3>
+                    <p>Oyun sadece bu pencereyi okumayı gerektirmez; masaüstünde seçim ve hedefin üzerine gelince kısa açıklamalar ve komut hatırlatmaları gösterilir.</p>
+                    <ul>
+                        <li><b>Gezegen üzerinde gezinme:</b> İmleci bir düğümün üzerinde tut; tip (Core, Forge, Relay, …) ve o tipe özet strateji metni tooltip olarak çıkar.</li>
+                        <li><b>HUD üst komut çubuğu:</b> Yükseltme, savunma, flow ve doktrin düğmelerinin üzerine gel; ne işe yaradıkları ve varsa ilgili kısayol burada yazılır.</li>
+                        <li><b>Duraklat menüsü:</b> <b>İpucu: Açık/Kapalı</b> ile maç içi koç mesajlarını ve hatırlatmaları kapatıp açabilirsin; ilk saatlerde açık bırakmak genelde faydalıdır.</li>
+                        <li><b>Kampanya ve challenge:</b> Görev satırlarında hedef ilerlemesi yanında kısa <b>coach</b> ipuçları belirir; özellikle ilk bölümlerde bir sonraki hamleyi öğretmek içindir. Bonus (opsiyonel) hedefler ana zaferi değiştirmez, skor ve alışkanlık için denenir.</li>
+                        <li><b>Mission script:</b> Bazı senaryolarda görev ilerlemesi veya anlatı olayları otomatik tetiklenir; paneldeki ana hedefi ve üstteki görev bölümünü takip etmek yeterlidir.</li>
+                    </ul>
+                    <div class="tutorial-tip"><strong>İpucu:</strong> Kısayol veya flow modunda kaldığını sanıyorsan önce boş haritaya tek tıkla; bağlam rozeti “Hazır” veya normal seçime dönmeli.</div>
                 </div>
 
                 <div class="tutorial-footer-btn">
@@ -4119,6 +4164,10 @@
                 <button class="emote-btn" data-emote="gg">GG</button><button class="emote-btn" data-emote="gl">GL</button><button class="emote-btn" data-emote="wp">WP</button><button class="emote-btn" data-emote="nice">Nice</button>
             </div>
         </div>
+    </div>
+    <div id="nodeHoverTip" class="node-hover-tip hidden" aria-hidden="true">
+        <div id="nodeHoverTipTitle" class="node-hover-tip-title">Core</div>
+        <div id="nodeHoverTipBody" class="node-hover-tip-body">Dengeli temel gezegen. Güvenli açılışlar ve genel amaçlı cepheler için uygundur.</div>
     </div>
     <div id="hud" class="hidden">
         <div id="hudLeft">

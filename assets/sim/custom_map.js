@@ -1,6 +1,7 @@
 import { normalizeMapMutator, resolveMapMutator } from './mutator.js';
 import { normalizeDoctrineId } from './doctrine.js';
 import { buildEncounterState, normalizeEncounterList } from './encounters.js';
+import { normalizeMissionScript } from './mission_script.js';
 import { normalizePlaylistId, resolvePlaylistConfig } from './playlists.js';
 
 var MAP_W = 1600;
@@ -217,6 +218,7 @@ export function normalizeCustomMapConfig(rawMap) {
         playlist: playlistResolved.playlist || 'standard',
         doctrineId: playlistResolved.doctrineId && playlistResolved.doctrineId !== 'auto' ? normalizeDoctrineId(playlistResolved.doctrineId) : '',
         encounters: normalizeEncounterList(playlistResolved.encounters, nodes, rawMap.seed || 'custom-map'),
+        missionScript: normalizeMissionScript(rawMap.missionScript, rawMap.objectives || []),
         endOnObjectives: rawMap.endOnObjectives === true,
     };
 }
@@ -270,6 +272,7 @@ export function buildCustomMapSnapshot(rawMap, players) {
         playlist: customMap.playlist || 'standard',
         doctrineId: customMap.doctrineId || '',
         encounters: encounters,
+        missionScript: cloneValue(customMap.missionScript || null),
         playerCapital: playerCapital,
         strategicNodes: cloneValue(customMap.strategicNodes || []),
         players: snapshotPlayers,
@@ -318,6 +321,7 @@ export function buildCustomMapExport(state, meta) {
         playlist: meta.playlist || state.playlist || 'standard',
         doctrineId: meta.doctrineId || ((Array.isArray(state.doctrines) && state.doctrines[0]) ? state.doctrines[0] : ''),
         encounters: Array.isArray(state.encounters) ? state.encounters : [],
+        missionScript: meta.missionScript || state.missionScript || null,
         endOnObjectives: meta.endOnObjectives === true || state.endOnObjectives === true,
         strategicNodes: Array.isArray(state.strategicNodes) ? state.strategicNodes : [],
         playerCapital: state.playerCapital || {},

@@ -19,6 +19,9 @@ export function createInputState() {
         panLast: { x: 0, y: 0 },
         mw: { x: 0, y: 0 },
         ms: { x: 0, y: 0 },
+        pointerInsideCanvas: false,
+        hoverNodeId: -1,
+        hoverSince: 0,
         sendPct: 50,
         shift: false,
         pinchActive: false,
@@ -44,6 +47,57 @@ export function attachGameInputController(opts) {
     var gameState = opts.gameState;
     var inputState = opts.inputState;
 
+    function syncHoverTooltip(node) {
+        if (typeof opts.syncHoverTooltip !== 'function') return;
+        opts.syncHoverTooltip({
+            node: node || null,
+            screenPos: { x: inputState.ms.x, y: inputState.ms.y },
+            worldPos: { x: inputState.mw.x, y: inputState.mw.y },
+            pointerInsideCanvas: inputState.pointerInsideCanvas === true,
+        });
+    }
+
+    function updatePointerFromClient(clientX, clientY) {
+        if (!canvas || typeof canvas.getBoundingClientRect !== 'function') return false;
+        var rect = canvas.getBoundingClientRect();
+        if (!rect || rect.width <= 0 || rect.height <= 0) {
+            inputState.pointerInsideCanvas = false;
+            return false;
+        }
+        var inside = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
+        inputState.pointerInsideCanvas = inside;
+        if (!inside) return false;
+        var sx = (clientX - rect.left) * (canvas.width / rect.width);
+        var sy = (clientY - rect.top) * (canvas.height / rect.height);
+        inputState.ms = { x: sx, y: sy };
+        inputState.mw = opts.screenToWorld(sx, sy);
+        return true;
+    }
+
+    function clearHoverState() {
+        inputState.pointerInsideCanvas = false;
+        inputState.hoverNodeId = -1;
+        inputState.hoverSince = 0;
+        syncHoverTooltip(null);
+    }
+
+    function updateHoverState(worldPos) {
+        if (gameState.state !== 'playing') {
+            clearHoverState();
+            return;
+        }
+        inputState.pointerInsideCanvas = true;
+        var hoveredNode = typeof opts.hitNodeAtScreen === 'function'
+            ? opts.hitNodeAtScreen(inputState.ms, worldPos)
+            : opts.hitNode(worldPos);
+        var hoverId = hoveredNode ? hoveredNode.id : -1;
+        if (hoverId !== inputState.hoverNodeId) {
+            inputState.hoverNodeId = hoverId;
+            inputState.hoverSince = hoverId >= 0 ? Date.now() : 0;
+        }
+        syncHoverTooltip(hoveredNode);
+    }
+
     function handleMouseDown(e) {
         if (gameState.state !== 'playing') return;
         var w = opts.screenToWorld(e.offsetX, e.offsetY);
@@ -62,6 +116,7 @@ export function attachGameInputController(opts) {
         }
 
         if (e.button === 1) {
+            clearHoverState();
             inputState.panActive = true;
             inputState.panLast = { x: e.offsetX, y: e.offsetY };
             e.preventDefault();
@@ -198,11 +253,11 @@ export function attachGameInputController(opts) {
     }
 
     function handleMouseMove(e) {
-        var w = opts.screenToWorld(e.offsetX, e.offsetY);
-        inputState.mw = w;
-        inputState.ms = { x: e.offsetX, y: e.offsetY };
+        updatePointerFromClient(e.clientX, e.clientY);
+        var w = inputState.mw;
 
         if (inputState.panActive) {
+            clearHoverState();
             var dx = (e.offsetX - inputState.panLast.x) / gameState.cam.zoom;
             var dy = (e.offsetY - inputState.panLast.y) / gameState.cam.zoom;
             gameState.cam.x -= dx;
@@ -242,10 +297,17 @@ export function attachGameInputController(opts) {
         }
 
         if (inputState.dragActive) {
+            clearHoverState();
             inputState.dragEnd = w;
             return;
         }
-        if (inputState.marqActive) inputState.marqEnd = { x: e.offsetX, y: e.offsetY };
+        if (inputState.marqActive) {
+            clearHoverState();
+            inputState.marqEnd = { x: e.offsetX, y: e.offsetY };
+            return;
+        }
+
+        updateHoverState(w);
     }
 
     function handleMouseUp(e) {
@@ -288,6 +350,7 @@ export function attachGameInputController(opts) {
     }
 
     function handleTouchStart(e) {
+        clearHoverState();
         if (gameState.state === 'playing' && e.touches.length === 2) {
             opts.beginTouchPinch(opts.touchScreenPos(e.touches[0]), opts.touchScreenPos(e.touches[1]));
             e.preventDefault();
@@ -375,6 +438,7 @@ export function attachGameInputController(opts) {
 
     function handleTouchMove(e) {
         if (gameState.state === 'playing' && e.touches.length === 2) {
+            clearHoverState();
             var posA = opts.touchScreenPos(e.touches[0]);
             var posB = opts.touchScreenPos(e.touches[1]);
             if (!inputState.pinchActive) opts.beginTouchPinch(posA, posB);
@@ -386,6 +450,7 @@ export function attachGameInputController(opts) {
 
         var pos = opts.touchScreenPos(e.touches[0]);
         var w = opts.screenToWorld(pos.x, pos.y);
+        clearHoverState();
         if (inputState.dragPending && !inputState.dragActive) {
             var mdx = pos.x - inputState.dragDownScreen.x;
             var mdy = pos.y - inputState.dragDownScreen.y;
@@ -437,6 +502,21 @@ export function attachGameInputController(opts) {
         }
     }
 
+    function handleMouseLeave() {
+        clearHoverState();
+    }
+
+    function handleWindowMouseMove(e) {
+        if (!e) return;
+        if (!updatePointerFromClient(e.clientX, e.clientY)) {
+            clearHoverState();
+            return;
+        }
+        if (!inputState.panActive && !inputState.dragActive && !inputState.marqActive) {
+            updateHoverState(inputState.mw);
+        }
+    }
+
     function handleKeyDown(e) {
         var pauseKey = e.key === 'Escape' || e.key === 'p' || e.key === 'P';
         if (e.key === 'Escape' && opts.isHowToPlayVisible()) {
@@ -469,11 +549,13 @@ export function attachGameInputController(opts) {
 
     canvas.addEventListener('mousedown', handleMouseDown);
     canvas.addEventListener('mousemove', handleMouseMove);
+    canvas.addEventListener('mouseleave', handleMouseLeave);
     canvas.addEventListener('mouseup', handleMouseUp);
     canvas.addEventListener('wheel', handleWheel, { passive: false });
     canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
     canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
     canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
     canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+    windowTarget.addEventListener('mousemove', handleWindowMouseMove, true);
     windowTarget.addEventListener('keydown', handleKeyDown);
 }

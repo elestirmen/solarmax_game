@@ -137,7 +137,7 @@ export function resolvePlaylistConfig(config) {
     if (def.mapMutator !== undefined && (forceOverrides || !resolved.mapMutator || resolved.mapMutator === 'none' || resolved.mapMutator === 'auto' || resolved.mapMutator.type === 'none')) resolved.mapMutator = cloneValue(def.mapMutator);
     if (def.tuneOverrides && typeof def.tuneOverrides === 'object') {
         if (forceOverrides) resolved.tuneOverrides = mergeTuneOverrides(resolved.tuneOverrides, def.tuneOverrides);
-        else if (!hasTuneOverrides(resolved.tuneOverrides)) resolved.tuneOverrides = cloneValue(def.tuneOverrides);
+        else resolved.tuneOverrides = mergeTuneOverrides(def.tuneOverrides, resolved.tuneOverrides);
     }
     if (!resolved.doctrineId || resolved.doctrineId === 'auto') resolved.doctrineId = def.doctrineId || resolved.doctrineId;
     if (!Array.isArray(resolved.encounters) || !resolved.encounters.length) resolved.encounters = cloneValue(def.encounters || []);

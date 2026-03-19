@@ -1,3 +1,5 @@
+import { normalizeCustomMapConfig } from '../sim/custom_map.js';
+
 export function buildSkirmishStartConfig(skirmish) {
     skirmish = skirmish && typeof skirmish === 'object' ? skirmish : {};
     return {
@@ -36,6 +38,7 @@ export function buildDailyChallengeStartConfig(challenge) {
             doctrineId: challenge.doctrineId || 'auto',
             encounters: challenge.encounters || [],
             objectives: challenge.objectives || [],
+            missionScript: challenge.missionScript || null,
             endOnObjectives: challenge.endOnObjectives === true,
         },
     };
@@ -62,6 +65,7 @@ export function buildCustomMapStartConfig(customMap) {
             doctrineId: customMap.doctrineId || 'auto',
             encounters: customMap.encounters || [],
             objectives: customMap.objectives || [],
+            missionScript: customMap.missionScript || null,
             endOnObjectives: customMap.endOnObjectives === true,
         },
     };
@@ -69,6 +73,52 @@ export function buildCustomMapStartConfig(customMap) {
 
 export function buildCampaignLevelStartConfig(level, levelIndex) {
     level = level && typeof level === 'object' ? level : {};
+    var customMap = level.customMap && typeof level.customMap === 'object'
+        ? normalizeCustomMapConfig({
+            name: level.customMap.name || ('Campaign ' + (level.id || (Number(levelIndex) + 1))),
+            seed: level.customMap.seed || level.seed || ('campaign-' + (level.id || (Number(levelIndex) + 1))),
+            difficulty: level.diff || level.customMap.difficulty || 'normal',
+            fogEnabled: level.fog !== undefined ? !!level.fog : level.customMap.fogEnabled === true,
+            rulesMode: level.rulesMode || level.customMap.rulesMode || 'advanced',
+            playerCount: level.customMap.playerCount,
+            nodes: level.customMap.nodes,
+            wormholes: level.customMap.wormholes,
+            mapFeature: level.customMap.mapFeature !== undefined ? level.customMap.mapFeature : (level.mapFeature || 'none'),
+            mapMutator: level.customMap.mapMutator !== undefined ? level.customMap.mapMutator : (level.mapMutator || 'none'),
+            playlist: level.playlist || level.customMap.playlist || 'standard',
+            doctrineId: level.doctrineId || level.customMap.doctrineId || 'auto',
+            encounters: Array.isArray(level.encounters) && level.encounters.length ? level.encounters : (level.customMap.encounters || []),
+            strategicNodes: level.customMap.strategicNodes,
+            playerCapital: level.customMap.playerCapital,
+            tuneOverrides: level.tune || level.customMap.tuneOverrides || level.customMap.tune || null,
+            missionScript: level.missionScript || level.customMap.missionScript || null,
+            endOnObjectives: level.endOnObjectives === true,
+        })
+        : null;
+    if (customMap) {
+        return {
+            seed: customMap.seed || level.seed,
+            nodeCount: customMap.nodes.length,
+            difficulty: customMap.difficulty || level.diff,
+            fogEnabled: !!customMap.fogEnabled,
+            customMapConfig: customMap,
+            campaignLevelIndex: Number.isFinite(levelIndex) ? levelIndex : -1,
+            hintText: level.hint ? 'Bölüm ipucu: ' + level.hint : '',
+            initOptions: {
+                fogEnabled: !!customMap.fogEnabled,
+                aiCount: Math.max(0, (customMap.playerCount || 1) - 1),
+                rulesMode: customMap.rulesMode || level.rulesMode || 'advanced',
+                tuneOverrides: customMap.tuneOverrides || null,
+                customMap: customMap,
+                playlist: customMap.playlist || level.playlist || 'standard',
+                doctrineId: customMap.doctrineId || level.doctrineId || 'auto',
+                encounters: customMap.encounters || level.encounters || [],
+                objectives: level.objectives || [],
+                missionScript: level.missionScript || customMap.missionScript || null,
+                endOnObjectives: level.endOnObjectives === true,
+            },
+        };
+    }
     return {
         seed: level.seed,
         nodeCount: level.nc,
@@ -88,6 +138,7 @@ export function buildCampaignLevelStartConfig(level, levelIndex) {
             doctrineId: level.doctrineId || 'auto',
             encounters: level.encounters || [],
             objectives: level.objectives || [],
+            missionScript: level.missionScript || null,
             endOnObjectives: level.endOnObjectives === true,
         },
     };

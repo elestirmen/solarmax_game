@@ -740,6 +740,7 @@ function buildMatchStartedPayload(room, socketId) {
         doctrineId: room.matchManifest.doctrineId || '',
         encounters: Array.isArray(room.matchManifest.encounters) ? room.matchManifest.encounters : [],
         objectives: Array.isArray(room.matchManifest.objectives) ? room.matchManifest.objectives : [],
+        missionScript: room.matchManifest.missionScript || null,
         endOnObjectives: room.matchManifest.endOnObjectives === true,
         humanCount: humanSlots,
         aiCount: room.matchManifest.aiCount,

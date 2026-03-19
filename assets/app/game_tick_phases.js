@@ -299,10 +299,10 @@ export function runAiAndWrapTickPhase(opts) {
         callbacks.updateVis(game.fog, fogPlayer, game.nodes, game.tick);
     }
     if (net.online && !runtimeOpts.skipNetworkSync) callbacks.sendOnlineStateHash();
+    callbacks.maybeResolveMissionObjectiveVictory();
     callbacks.maybeShowCampaignObjectiveReminder();
     callbacks.refreshCampaignMissionPanels();
     callbacks.advanceTransientVisuals(constants.tickDt);
-    callbacks.maybeResolveMissionObjectiveVictory();
     callbacks.checkEnd();
     game.tick++;
 }

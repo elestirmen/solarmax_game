@@ -56,12 +56,22 @@ test('captureAuthoritativeSnapshot preserves objective metadata for sync clients
             rulesMode: 'advanced',
             fogEnabled: false,
             objectives: [{ type: 'owned_nodes', target: 3 }],
+            missionScript: {
+                phases: [
+                    {
+                        id: 'alpha',
+                        objectives: [{ type: 'owned_nodes', target: 3 }],
+                    },
+                ],
+            },
             endOnObjectives: true,
         },
     });
     var snapshot = captureAuthoritativeSnapshot(state);
 
     assert.deepEqual(snapshot.objectives, [{ type: 'owned_nodes', target: 3 }]);
+    assert.equal(snapshot.missionScript.phases[0].id, 'alpha');
+    assert.equal(snapshot.missionState.phaseIndex, 0);
     assert.equal(snapshot.endOnObjectives, true);
 });
 
@@ -281,4 +291,52 @@ test('simulateAuthoritativeTick ends encounter missions when required objectives
 
     assert.equal(state.state, 'gameOver');
     assert.equal(state.winner, 0);
+});
+
+test('simulateAuthoritativeTick keeps scripted mission failures from being overwritten by elimination logic', function () {
+    var snapshot = {
+        tick: 0,
+        winner: -1,
+        state: 'playing',
+        players: [
+            { idx: 0, alive: true, isAI: false, color: '#4a8eff' },
+        ],
+        nodes: [
+            { id: 0, pos: { x: 0, y: 0 }, radius: 24, owner: 0, units: 18, level: 1, kind: 'core', prodAcc: 0, defense: false, assimilationProgress: 1, assimilationLock: 0 },
+        ],
+        fleets: [],
+        flows: [],
+        wormholes: [],
+        mapFeature: { type: 'none' },
+        playerCapital: {},
+        strategicNodes: [],
+        aiTicks: [0],
+        aiProfiles: [],
+        flowId: 0,
+        fleetSerial: 0,
+    };
+    var state = buildAuthoritativeState(snapshot, {
+        manifest: {
+            seed: 'sim-seed',
+            difficulty: 'normal',
+            rulesMode: 'advanced',
+            fogEnabled: false,
+            missionScript: {
+                phases: [
+                    {
+                        id: 'fail-fast',
+                        objectives: [{ id: 'hold-two', type: 'owned_nodes', target: 2 }],
+                        lossConditions: [{ type: 'tick_limit', target: 0, message: 'Misyon zamaninda kirildi.' }],
+                    },
+                ],
+            },
+            endOnObjectives: true,
+        },
+    });
+
+    simulateAuthoritativeTick(state);
+
+    assert.equal(state.state, 'gameOver');
+    assert.equal(state.winner, -1);
+    assert.equal(state.missionFailureText, 'Misyon zamaninda kirildi.');
 });

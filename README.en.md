@@ -17,9 +17,12 @@
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> •
+  <a href="#learning-the-game">Learning</a> •
   <a href="#features">Features</a> •
+  <a href="#architecture">Architecture</a> •
   <a href="#how-to-play">How to Play</a> •
   <a href="#setup">Setup</a> •
+  <a href="#tests">Tests</a> •
   <a href="#roadmap">Roadmap</a> •
   <a href="#live-demo">Live Demo</a>
 </p>
@@ -28,7 +31,9 @@
 
 ## Summary
 
-**Stellar Conquest** is a browser-based strategy game about capturing planets, routing fleets, controlling space, and beating opponents through timing and positioning. The design emphasizes macro decision-making over unit spam or high-APM micro. It supports both singleplayer and real-time multiplayer rooms.
+**Stellar Conquest** is a browser-based real-time space strategy game built around planet capture, **flow** logistics, **parked fleet** staging, and tempo gained through **assimilation and territory**. It deliberately favors **timing, routing, and map reading** over sheer click volume.
+
+**Single codebase, two runtimes:** Simulation logic lives under `assets/sim/`; the Canvas 2D client (`game.js`) and the multiplayer host (`server.js`) share the same rules, advancing a **deterministic tick** and checking **state hashes** for sync. Campaign, daily challenge, playlist presets, mutators, and PvE encounters (e.g. **Mega Turret**, **Relay Core**) are layers on top of that core.
 
 ---
 
@@ -52,6 +57,15 @@ npm run server
 ```bash
 docker compose up -d --build
 ```
+
+---
+
+## Learning the game
+
+1. **Menu → Help / How to play** (tutorial modal in `stellar_conquest.html` and the multiplayer shell): controls, flow, assimilation, doctrines, mutators, and HUD in one place.
+2. **First match:** **Quick Start** on the main screen, or playlist **Zen** + doctrine **Logistics** for a slower, readable opening.
+3. **Campaign:** mission panel plus coach hints; optional bonus goals are not required to finish a stage.
+4. **As a developer:** `npm test` for rules coverage; `npm run e2e` for menu / multiplayer smoke tests.
 
 ---
 
@@ -80,7 +94,50 @@ docker compose up -d --build
 
 - Fast heuristic AI designed to run in the browser
 - Multiple difficulty levels with dynamic tuning
-- Aware of territory, turrets, supply, and local threat geometry
+- Aware of territory, turrets, supply, **contested** areas, and local threat geometry
+
+### In-game guidance
+
+- Context badge and hint strip (what to do next from current selection)
+- Short **hover** tooltips on planet types and HUD action buttons
+- Pause menu **Hints** toggle for coach messages
+
+---
+
+## Architecture
+
+```text
+stellar_conquest.html     Singleplayer entry + menu / tutorial UI
+index.html                Vite dev shell
+game.js                   Main client (~6k lines): rendering, menu, singleplayer loop
+server.js                 Express + Socket.IO; authoritative tick, rooms, snapshots
+
+assets/
+  sim/                    Shared simulation (client preview + server authority)
+    shared_config.js      Tick constants, difficulty, planet types
+    server_sim.js         Server tick pipeline
+    command_apply.js      Deterministic command application
+    territory.js, flow_step.js, fleet_step.js, node_economy.js, …
+    playlists.js          Standard / Zen / Chaos / … presets
+    mutator.js            Ion storm, blackout, etc.
+    encounters.js         Relay Core, Mega Turret, etc.
+    mission_script.js     Campaign script hooks
+    match_manifest.js     Match metadata (snapshot-safe)
+    custom_map.js         JSON map import/export
+    doctrine.js           Doctrine passive/active rules
+  app/                    Client helpers (input, tick phases, hover target, start flow)
+  net/                    online_session, network_tick
+  campaign/
+    levels.js             Campaign definitions + objectives
+    handcrafted_maps.js   Hand-authored layouts
+    objectives.js         Objective evaluation
+    daily_challenge.js    Daily seeded scenario
+  ui/                     HUD, lobby, mission panel, coach / advisor
+tests/                    node:test unit tests
+e2e/                      Playwright smoke tests
+```
+
+**Rule of thumb:** gameplay changes belong in `assets/sim/` whenever possible so local preview and server stay aligned.
 
 ---
 
@@ -108,48 +165,15 @@ docker compose up -d --build
 | `0` | Send percentage 100 |
 | `U` | Upgrade selected planets |
 | `A` | Select all owned planets |
+| `Q` | Doctrine active ability |
 | `Esc` / `P` | Pause / resume |
+
+**Note:** For the full control list and mobile HUD action buttons (upgrade, defense, flow, doctrine), use the in-game **How to play** modal.
 
 ### Mobile
 
 - Use one finger to select and drag
 - Use two fingers to pan and zoom the map
-
----
-
-## Project Structure
-
-```text
-stellar_conquest.html   Main game page
-game.js                 Single canonical client implementation
-server.js               Multiplayer server (Express + Socket.IO)
-index.html              Vite development entry
-
-assets/
-  sim/                  Deterministic simulation modules shared by client and server
-    ai.js               AI heuristics and target scoring
-    barrier.js          Barrier gate dispatch rules
-    cap.js              Unit cap calculations
-    command_apply.js    Authoritative command application
-    defense_field.js    Defense field damage and stats
-    dispatch_math.js    Fleet send amount calculations
-    fleet_step.js       Fleet movement and arrival resolution
-    flow_step.js        Flow link dispatch logic
-    holding_decay.js    Parked fleet decay logic
-    map_gen.js          Procedural map generation
-    territory.js        Territory radius and border geometry
-    turret.js           Turret targeting and damage
-    ...
-  campaign/
-    levels.js           Campaign mission definitions
-    daily_challenge.js  Daily challenge generation
-    objectives.js       Objective evaluation logic
-  ui/
-    renderers.js        Leaderboard, mission, and room list rendering
-  audio.js              Audio engine
-
-tests/                  Node.js built-in test coverage for simulation modules
-```
 
 ---
 
@@ -209,13 +233,21 @@ If you run behind a reverse proxy, enable WebSocket forwarding for Socket.IO. Th
 
 ## Tests
 
-The project uses the built-in Node.js test runner.
+The project uses the built-in Node.js test runner (no extra test framework).
 
 ```bash
 npm test
 ```
 
-Modules under `assets/sim/` have matching tests under `tests/`. Coverage includes fleet movement, dispatch math, territory logic, turret damage, flow propagation, map generation, sync hashing, and more.
+`tests/` covers shared simulation modules plus selected UI helpers (campaign levels, playlists, mission scripts, online session, etc.).
+
+**E2E (Playwright):**
+
+```bash
+npm run e2e
+```
+
+Smoke flows live in `e2e/`. For a CI-like container run, use `npm run e2e:docker`.
 
 ---
 
@@ -238,14 +270,15 @@ Modules under `assets/sim/` have matching tests under `tests/`. Coverage include
 
 | Layer | Technology |
 |------|------------|
-| Client | Plain JavaScript (ES modules), Canvas 2D |
+| Client | Plain JavaScript (ES modules), Canvas 2D; main module `game.js` (~6k lines) |
 | Dev server | Vite 5 |
 | Multiplayer | Express 4 + Socket.IO 4 |
 | Build | Vite |
-| Tests | Node.js built-in `node:test` |
+| Unit tests | Node.js built-in `node:test` |
+| E2E | Playwright (`@playwright/test`) |
 | Containerization | Docker + Docker Compose |
 
-No framework and no heavy runtime. The core game logic still lives in a directly readable `game.js` file.
+No framework and no heavy game engine. **Rules-heavy code** is meant to live in shared `assets/sim/`; the client focuses on rendering, input, and flow.
 
 ---
 

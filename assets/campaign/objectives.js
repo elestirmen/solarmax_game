@@ -8,6 +8,23 @@ function secondsFromTicks(ticks, tickRate) {
     return Math.max(0, Math.round((ticks / tickRate) * 10) / 10);
 }
 
+function objectiveTarget(objective) {
+    objective = objective || {};
+    var target = Number(objective.target);
+    if (Number.isFinite(target) && target > 0) return target;
+    if (objective.type === 'control_node_ids') {
+        var nodeIds = Array.isArray(objective.nodeIds) ? objective.nodeIds : [];
+        return Math.max(1, nodeIds.length || 1);
+    }
+    return 0;
+}
+
+function isNodeControlledByHuman(node, humanIndex) {
+    if (!node || node.owner !== humanIndex) return false;
+    if ((Number(node.assimilationLock) || 0) > 0) return false;
+    return node.assimilationProgress === undefined || Number(node.assimilationProgress) >= 1;
+}
+
 function matchingEncounters(snapshot, objective) {
     var encounters = Array.isArray(snapshot && snapshot.encounters) ? snapshot.encounters : [];
     var encounterType = String(objective && objective.encounterType || '').toLowerCase();
@@ -40,9 +57,10 @@ export function formatObjectiveLabel(objective, tickRate) {
     tickRate = tickRate || 30;
     if (objective.label) return objective.label;
 
-    var target = Number(objective.target) || 0;
+    var target = objectiveTarget(objective);
     switch (objective.type) {
         case 'owned_nodes': return 'En az ' + target + ' node tut';
+        case 'control_node_ids': return 'Belirlenen ' + target + ' kritik node\'u ele gecir';
         case 'upgrades': return target + ' upgrade yap';
         case 'defense_activations': return 'Savunmayi ' + target + ' kez ac';
         case 'flow_links_created': return target + ' flow hatti kur';
@@ -63,6 +81,17 @@ function metricValue(type, snapshot) {
     var stats = snapshot && snapshot.stats ? snapshot.stats : {};
     switch (type) {
         case 'owned_nodes': return Number(snapshot.ownedNodes) || 0;
+        case 'control_node_ids': {
+            var objective = snapshot && snapshot.objectiveContext ? snapshot.objectiveContext : {};
+            var nodeIds = Array.isArray(objective.nodeIds) ? objective.nodeIds : [];
+            var nodes = Array.isArray(snapshot && snapshot.nodes) ? snapshot.nodes : [];
+            var humanIndex = Number(snapshot && snapshot.humanIndex);
+            var controlled = 0;
+            for (var i = 0; i < nodeIds.length; i++) {
+                if (isNodeControlledByHuman(nodes[Number(nodeIds[i])], humanIndex)) controlled++;
+            }
+            return controlled;
+        }
         case 'upgrades': return Number(stats.upgrades) || 0;
         case 'defense_activations': return Number(stats.defenseActivations) || 0;
         case 'flow_links_created': return Number(stats.flowLinksCreated) || 0;
@@ -106,7 +135,7 @@ export function evaluateCampaignObjectives(level, snapshot, opts) {
     return objectives.map(function (objective) {
         objective = objective || {};
         var type = objective.type || '';
-        var target = Number(objective.target) || 0;
+        var target = objectiveTarget(objective);
         var objectiveSnapshot = Object.assign({}, snapshot || {}, { objectiveContext: objective });
         var currentValue = metricValue(type, objectiveSnapshot);
         var complete = false;

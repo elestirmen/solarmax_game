@@ -17,9 +17,12 @@
 
 <p align="center">
   <a href="#-hızlı-başlangıç">Hızlı Başlangıç</a> •
+  <a href="#-oyunu-öğrenmek">Öğrenme</a> •
   <a href="#-özellikler">Özellikler</a> •
+  <a href="#-mimari-özeti">Mimari</a> •
   <a href="#-nasıl-oynanır">Nasıl Oynanır</a> •
   <a href="#-kurulum">Kurulum</a> •
+  <a href="#-testler">Testler</a> •
   <a href="#-yol-haritası">Yol Haritası</a> •
   <a href="#-canlı-demo">Canlı Demo</a>
 </p>
@@ -28,7 +31,9 @@
 
 ## 📖 Özet
 
-**Stellar Conquest**, gezegenleri ele geçirdiğiniz, filoları yönlendirdiğiniz, bölge kontrolü kurduğunuz ve zamanlama ile konumlandırma üzerinden rakiplerinizi alt ettiğiniz tarayıcı tabanlı bir strateji oyunudur. Birim spam’i yerine zamanlama ve pozisyonlama öne çıkar. Tek oyunculu veya çok oyunculu odalarda canlı rakiplerle oynanabilir.
+**Stellar Conquest**, gezegenleri ele geçirme, filo ve **flow** hatlarıyla lojistik, **park filoları** ile cephe hazırlığı ve **asimilasyon + bölge** üzerinden kazanılan tempoyla oynanan tarayıcı tabanlı gerçek zamanlı bir uzay strateji oyunudur. Tasarım bilinçli olarak “daha çok tıklama” yerine **doğru zamanlama, rota ve harita okuma** üzerine kuruludur.
+
+**Tek kod tabanı, çift çalışma şekli:** Simülasyon mantığı `assets/sim/` altında toplanır; istemci (Canvas 2D + `game.js`) ve çok oyunculu sunucu (`server.js`) aynı kuralları kullanarak **deterministik tick** ve **durum hash** ile senkron kalır. Kampanya, günlük meydan okuma, playlist önayarları, mutatörler ve PvE karşılaşmaları (ör. **Mega Turret**, **Relay Core**) bu çekirdeğin üzerinde modül olarak çalışır.
 
 ---
 
@@ -52,6 +57,15 @@ npm run server
 ```bash
 docker compose up -d --build
 ```
+
+---
+
+## 🎓 Oyunu öğrenmek
+
+1. **Menü → Yardım / Nasıl Oynanır** (`stellar_conquest.html` ve çok oyunculu arayüzde aynı modal): Kontroller, flow, asimilasyon, doktrin, mutatörler ve HUD tek yerde toplanmıştır; güncel davranış buradaki metinle tutulur.
+2. **İlk maç:** Ana ekranda **Hemen Başla** veya playlist olarak **Zen** + doktrin **Lojistik** — tempo düşük, okunabilirlik yüksek açılış.
+3. **Kampanya:** Her bölümde görev paneli + koç ipuçları; bonus hedefler zorunlu değildir.
+4. **Geliştirici olarak:** `npm test` ile çekirdek kurallar; `npm run e2e` ile menü/çok oyunculu duman testleri.
 
 ---
 
@@ -80,7 +94,50 @@ docker compose up -d --build
 
 - Tarayıcıda hızlı çalışan sezgisel rakip
 - Dinamik zorluk ayarlamalı birden fazla zorluk seviyesi
-- Bölge, taretler, tedarik ve tehdit geometrisinden haberdar
+- Bölge, taretler, tedarik, **contested** alanlar ve tehdit geometrisinden haberdar
+
+### Oyun içi rehber
+
+- Bağlam rozeti ve ipucu satırı (seçim türüne göre ne yapılacağı)
+- Gezegen tipleri ve HUD düğmeleri üzerinde **hover** ile kısa açıklamalar
+- Duraklat menüsünde **İpucu** anahtarı (koç mesajları)
+
+---
+
+## 🏗 Mimari özeti
+
+```text
+stellar_conquest.html     Tek oyunculu giriş sayfası + menü / tutorial UI
+index.html                Vite geliştirme kabuğu
+game.js                   Ana istemci (~6k satır): render, menü, tek oyunculu döngü
+server.js                 Express + Socket.IO; authoritative tick, odalar, snapshot
+
+assets/
+  sim/                    Paylaşımlı simülasyon (istemci önizleme + sunucu otoritesi)
+    shared_config.js      Tick sabitleri, zorluk, gezegen tipleri
+    server_sim.js         Sunucu tarafı tick boru hattı
+    command_apply.js      Komutların deterministik uygulanması
+    territory.js, flow_step.js, fleet_step.js, node_economy.js, …
+    playlists.js          Standart / Zen / Chaos / … önayarları
+    mutator.js            İyon fırtınası, karartma vb.
+    encounters.js         Relay Core, Mega Turret vb. PvE yapı taşları
+    mission_script.js     Kampanya olay / ilerleme kancaları
+    match_manifest.js     Maç meta verisi (snapshot ile uyumlu)
+    custom_map.js         JSON harita içe/dışa aktarma
+    doctrine.js           Doktrin pasif/aktif kuralları
+  app/                    İstemci yardımcıları (input, tick fazları, hover hedefi, başlatma akışı)
+  net/                    online_session, network_tick
+  campaign/
+    levels.js             Kampanya tanımları + hedefler
+    handcrafted_maps.js   El yapımı düzenler
+    objectives.js         Hedef değerlendirme
+    daily_challenge.js    Günlük tohumlu senaryo
+  ui/                     HUD, lobby, misyon paneli, koç / danışman
+tests/                    node:test birim testleri (sim ve UI yardımcıları)
+e2e/                      Playwright duman testleri
+```
+
+**Önemli ilke:** Oynanış kuralı eklerken mümkün olduğunca `assets/sim/` içinde tutulur; böylece hem yerel önizleme hem sunucu aynı sonucu üretir.
 
 ---
 
@@ -108,48 +165,15 @@ docker compose up -d --build
 | `0` | Send % 100 |
 | `U` | Seçili gezegenleri yükselt |
 | `A` | Tüm gezegenleri seç |
+| `Q` | Doktrin aktif becerisi |
 | `Esc` / `P` | Duraklat / Devam |
+
+**Not:** Tam seçenek listesi ve mobil **YUK / SAV / FLOW / DOC** düğmeleri için oyundaki **Nasıl Oynanır** modalına bakın.
 
 ### Mobil
 
 - Tek parmakla seç ve sürükle
 - İki parmakla haritayı pan/zoom yap
-
----
-
-## 📁 Proje Yapısı
-
-```
-stellar_conquest.html   Ana oyun sayfası (tek oyunculu giriş)
-game.js                 Tek kanonik oyun istemcisi (~6.100 satır, düz JS)
-server.js               Çok oyunculu sunucu (Express + Socket.IO)
-index.html              Vite geliştirme girişi
-
-assets/
-  sim/                  Deterministik simülasyon modülleri (istemci ↔ sunucu paylaşımlı)
-    ai.js               AI sezgileri ve hedefleme
-    barrier.js          Bariyer kapısı gönderim kuralları
-    cap.js              Birim kap hesaplaması
-    command_apply.js    Yetkili komut uygulaması
-    defense_field.js    Savunma alanı hasarı ve istatistikleri
-    dispatch_math.js    Filo gönderim sayısı hesaplaması
-    fleet_step.js       Filo hareketi ve varış çözümlemesi
-    flow_step.js        Flow bağlantı yayılımı
-    holding_decay.js    Park filo tedarik azalması
-    map_gen.js          Prosedürel harita üretimi
-    territory.js        Bölge yarıçapı ve sınır geometrisi
-    turret.js           Taret hedefleme ve hasar
-    ...
-  campaign/
-    levels.js           Kampanya misyon tanımları
-    daily_challenge.js  Günlük tohum üretimi
-    objectives.js       Hedef değerlendirme mantığı
-  ui/
-    renderers.js        Lider tablosu, misyon paneli, oda listesi render’ları
-  audio.js              Ses motoru
-
-tests/                  Node.js yerleşik test çalıştırıcı — sim modülü başına bir dosya
-```
 
 ---
 
@@ -209,13 +233,21 @@ Ters proxy arkasında çalıştırıyorsanız Socket.IO için **WebSocket yönle
 
 ## 🧪 Testler
 
-Node.js yerleşik test çalıştırıcısı kullanılır — ek bağımlılık gerekmez.
+Node.js yerleşik test çalıştırıcısı kullanılır — ek test framework’ü gerekmez.
 
 ```bash
 npm test
 ```
 
-Her simülasyon modülünün `tests/` altında karşılık gelen bir test dosyası vardır. Filo hareketi, gönderim matematiği, bölge, taret hasarı, flow yayılımı, harita üretimi, durum hash’leme ve daha fazlası kapsanır.
+`tests/` altında çekirdek simülasyon (filo, bölge, komutlar, hash, kampanya seviyeleri, playlist, misyon script, çok oyunculu oturum vb.) ve seçili UI yardımcıları kapsanır.
+
+**E2E (Playwright):**
+
+```bash
+npm run e2e
+```
+
+Menü duman akışı ve çok oyunculu kabuk için `e2e/` dizininde senaryolar vardır. CI benzeri ortam için `npm run e2e:docker` kullanılabilir.
 
 ---
 
@@ -238,14 +270,15 @@ Her simülasyon modülünün `tests/` altında karşılık gelen bir test dosyas
 
 | Katman | Teknoloji |
 |--------|-----------|
-| Oyun istemcisi | Düz JavaScript (ES modülleri), Canvas 2D |
+| Oyun istemcisi | Düz JavaScript (ES modülleri), Canvas 2D, tek ana modül `game.js` |
 | Geliştirme sunucusu | Vite 5 |
 | Çok oyunculu | Express 4 + Socket.IO 4 |
 | Derleme | Vite (ESM paketi) |
-| Testler | Node.js yerleşik `node:test` |
+| Birim testler | Node.js yerleşik `node:test` |
+| E2E | Playwright (`@playwright/test`) |
 | Konteyner | Docker + Docker Compose |
 
-Framework yok, ağır runtime yok — tüm oyun mantığı tarayıcıda doğrudan açılabilen tek bir `game.js` dosyasında çalışır.
+Framework yok, ağır oyun motoru yok — **kural ağırlığı** paylaşımlı `assets/sim/` içindedir; istemci görüntüleme, girdi ve akışa odaklanır.
 
 ---
 
@@ -290,7 +323,7 @@ Bu sıra; mevcut mekanikleri yeniden kullanan, oyunun kimliğini belirginleştir
 
 ### Güncel Durum Notu
 
-Bu bölümdeki durum satırları `10 Mart 2026` itibarıyla repo içindeki gerçek uygulama seviyesini özetler.
+Bu bölümdeki durum satırları `19 Mart 2026` itibarıyla repo içindeki gerçek uygulama seviyesini özetler.
 
 ### Kısa Vadeli Odak
 

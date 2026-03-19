@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { CAMPAIGN_LEVELS } from '../assets/campaign/levels.js';
 import {
     applyCampaignRunState,
     applyDailyChallengeRunState,
@@ -74,6 +75,30 @@ test('daily, custom, and campaign start configs derive mode-specific init data',
 
 test('buildCustomMapStartConfig rejects invalid maps', function () {
     assert.equal(buildCustomMapStartConfig({ nodes: [{ x: 0, y: 0 }] }), null);
+});
+
+test('buildCampaignLevelStartConfig preserves handcrafted campaign layouts as fixed custom maps', function () {
+    var coreLock = buildCampaignLevelStartConfig(CAMPAIGN_LEVELS[20], 20);
+    var gunline = buildCampaignLevelStartConfig(CAMPAIGN_LEVELS[21], 21);
+
+    assert.equal(coreLock.customMapConfig.nodes.length, 16);
+    assert.equal(coreLock.initOptions.aiCount, 3);
+    assert.equal(coreLock.initOptions.customMap.mapFeature.type, 'barrier');
+    assert.equal(coreLock.initOptions.customMap.encounters.length, 1);
+
+    assert.equal(gunline.customMapConfig.nodes.length, 17);
+    assert.equal(gunline.initOptions.customMap.mapMutator.type, 'ion_storm');
+    assert.equal(gunline.initOptions.customMap.playerCount, 4);
+});
+
+test('buildCampaignLevelStartConfig carries scripted mission phases into init options', function () {
+    var coreLock = buildCampaignLevelStartConfig(CAMPAIGN_LEVELS[20], 20);
+    var darklane = buildCampaignLevelStartConfig(CAMPAIGN_LEVELS[23], 23);
+
+    assert.equal(coreLock.initOptions.missionScript.phases.length, 3);
+    assert.equal(coreLock.initOptions.missionScript.phases[0].id, 'breach-lower-lane');
+    assert.equal(darklane.initOptions.missionScript.phases.length, 2);
+    assert.equal(darklane.initOptions.missionScript.phases[1].lossConditions[0].type, 'tick_limit');
 });
 
 test('run state helpers switch campaign and daily flags predictably', function () {

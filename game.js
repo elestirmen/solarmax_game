@@ -22,6 +22,7 @@ import { getStrategicPulseState, isStrategicPulseActiveForNode } from './assets/
 import { computeSyncHash } from './assets/sim/state_hash.js';
 import { applyPlayerCommandWithOps } from './assets/sim/command_apply.js';
 import { sanitizeCommandData } from './assets/sim/command_schema.js';
+import { advanceMissionState, applyMissionScript, getActiveMissionPhase } from './assets/sim/mission_script.js';
 import { resolveFleetArrivals, stepFleetMovement } from './assets/sim/fleet_step.js';
 import { stepHoldingFleetDecay } from './assets/sim/holding_decay.js';
 import { getTerritoryOwnersAtPoint, territoryRadiusForNode } from './assets/sim/territory.js';
@@ -40,7 +41,8 @@ import { runAiAndWrapTickPhase, runCombatTickPhase, runEconomyTickPhase, runOnli
 import { renderMarqueeLayer, renderMinimapLayer, renderWorldLayers } from './assets/app/render_layers.js';
 import { applyCampaignRunState, applyDailyChallengeRunState, applySkirmishRunState, buildCampaignLevelStartConfig, buildCustomMapStartConfig, buildDailyChallengeStartConfig, buildSkirmishStartConfig } from './assets/app/start_flow.js';
 import { applyRoomStateNetState, beginOnlineMatch, buildCreateRoomRequest, buildJoinRoomRequest, buildOnlineMatchInitOptions, buildOnlineMatchStatusText, buildRoomStateMenuPatches, computeOnlineCommandTick, getSocketEndpoint, resetOnlineRoomState } from './assets/net/online_session.js';
-import { HUD_ACTION_HELP_DEFAULT, buildHudContextBadge, buildHudHintText } from './assets/ui/hud_assistive.js';
+import { canvasToViewportPoint, findHoveredNodeAtScreen } from './assets/app/hover_target.js';
+import { HUD_ACTION_HELP_DEFAULT, buildHudContextBadge, buildHudHintText, buildNodeHoverTip } from './assets/ui/hud_assistive.js';
 import { buildHudAdvisorCard } from './assets/ui/hud_advisor.js';
 import { buildHudCoachItems, renderHudCoach } from './assets/ui/hud_coach.js';
 import { applyLobbyControlState, buildLobbyListStatus, buildRoomStatusSummary, getLobbyControlState, renderRoomPlayers, setRoomStatusState } from './assets/ui/lobby_ui.js';
@@ -107,6 +109,7 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     SUPPLIED_UPGRADE_DISCOUNT = 0.94,
     DAILY_CHALLENGE_TIMEZONE = 'Europe/Istanbul';
 var SYNC_HASH_INTERVAL_TICKS = 90, TICK_RATE = Math.round(1 / TICK_DT);
+var NODE_HOVER_DWELL_MS = 0;
 
 var NODE_TYPE_DEFS = {
     core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#8db3ff' },
@@ -379,6 +382,7 @@ var G = {
     aiTicks: [], flowId: 0, fleetSerial: 0,
     aiProfiles: [], mapFeature: { type: 'none' }, mapMutator: { type: 'none' }, wormholes: [],
     playlist: 'standard', doctrineId: '', doctrines: [], doctrineStates: [], encounters: [], encounterContext: {}, objectives: [], endOnObjectives: false,
+    missionScript: null, missionState: null, missionFailureText: '',
     stats: { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0, doctrineActivations: 0 },
     particles: [], turretBeams: [], fieldBeams: [], shockwaves: [], mapMode: 'random',
     playerCapital: {}, strategicNodes: [],
@@ -957,6 +961,9 @@ function initGame(seedStr, nc, diff, opts) {
     G.doctrineId = playlistConfig.doctrineId && playlistConfig.doctrineId !== 'auto' ? playlistConfig.doctrineId : '';
     G.objectives = JSON.parse(JSON.stringify(Array.isArray(opts.objectives) ? opts.objectives : []));
     G.endOnObjectives = opts.endOnObjectives === true;
+    G.missionScript = null;
+    G.missionState = null;
+    G.missionFailureText = '';
     G.stats = {
         nodesCaptured: 0,
         fleetsSent: 0,
@@ -1012,6 +1019,7 @@ function initGame(seedStr, nc, diff, opts) {
     G.doctrineStates = ensureDoctrineStates(G.doctrines, opts.doctrineStates || []);
     G.encounters = buildEncounterState(customMapCfg ? customMapCfg.encounters : playlistConfig.encounters, G.nodes, G.seed);
     G.encounterContext = {};
+    applyMissionScript(G, opts.missionScript || null);
     stepEncounterState(G);
     G.fog = initFog(G.players.length, G.nodes.length);
     for (var p = 0; p < G.players.length; p++) updateVis(G.fog, p, G.nodes, 0);
@@ -1608,9 +1616,10 @@ function checkEnd() {
         players: G.players,
     });
     for (var i = 0; i < G.players.length; i++) G.players[i].alive = resolved.playersAlive[i] !== false;
+    if (G.state !== 'playing') return;
     if (resolved.gameOver) {
         G.winner = resolved.winnerIndex;
-        if (G.state === 'playing') G.state = 'gameOver';
+        G.state = 'gameOver';
     }
 }
 
@@ -2709,6 +2718,7 @@ function render(ctx, cv, tick) {
         ctx: ctx,
         inputState: inp,
     });
+    drawNodeHoverTipCanvas(ctx, cv);
 }
 function drawArrow(ctx, f, t, col, sz) {
     var dx = t.x - f.x, dy = t.y - f.y, a = Math.atan2(dy, dx); ctx.save(); ctx.translate(t.x, t.y); ctx.rotate(a);
@@ -3157,6 +3167,7 @@ var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameO
 var hudTelemetryRow = $('hudTelemetryRow'), hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), hudCap = $('hudCap'), hudMeta = $('hudMeta'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
 var hudContextBadge = $('hudContextBadge'), hudHintLine = $('hudHintLine'), hudCoachRow = $('hudCoachRow'), hudActionTip = $('hudActionTip');
 var hudAdvisorCard = $('hudAdvisorCard'), hudAdvisorTitle = $('hudAdvisorTitle'), hudAdvisorBody = $('hudAdvisorBody');
+var nodeHoverTip = $('nodeHoverTip'), nodeHoverTipTitle = $('nodeHoverTipTitle'), nodeHoverTipBody = $('nodeHoverTipBody');
 var doctrineBtn = $('doctrineBtn'), upgradeHudBtn = $('upgradeHudBtn'), defenseHudBtn = $('defenseHudBtn'), flowHudBtn = $('flowHudBtn');
 var sendPctQuickBtns = Array.prototype.slice.call(document.querySelectorAll('.send-quick-btn'));
 var powerSidebar = $('powerSidebar'), powerListEl = $('powerList');
@@ -3332,6 +3343,198 @@ function syncHintToggleButton() {
 function setHudActionTip(text) {
     if (!hudActionTip) return;
     hudActionTip.textContent = text || HUD_ACTION_HELP_DEFAULT;
+}
+function screenNodePos(node) {
+    if (!node || !node.pos) return null;
+    return {
+        x: (node.pos.x - G.cam.x) * G.cam.zoom + cv.width * 0.5,
+        y: (node.pos.y - G.cam.y) * G.cam.zoom + cv.height * 0.5,
+    };
+}
+function hoveredNodeAtScreen(screenPos) {
+    if (!screenPos || G.state !== 'playing') return null;
+    return findHoveredNodeAtScreen({
+        nodes: G.nodes,
+        screenPos: screenPos,
+        camera: G.cam,
+        viewport: { width: cv.width, height: cv.height },
+        visibilityTest: isNodeVisibleToHuman,
+        extraRadius: 8,
+        minRadius: 16,
+    });
+}
+function isNodeVisibleToHuman(node) {
+    if (!node) return false;
+    if (!G.tune || !G.tune.fogEnabled) return true;
+    if (node.owner === G.human) return true;
+    return !!(G.fog && G.fog.vis && G.fog.vis[G.human] && G.fog.vis[G.human][node.id]);
+}
+function ensureNodeHoverTipElements() {
+    if (!nodeHoverTip) nodeHoverTip = $('nodeHoverTip');
+    if (!nodeHoverTipTitle) nodeHoverTipTitle = $('nodeHoverTipTitle');
+    if (!nodeHoverTipBody) nodeHoverTipBody = $('nodeHoverTipBody');
+    return !!(nodeHoverTip && nodeHoverTipTitle && nodeHoverTipBody);
+}
+function hideNodeHoverTip() {
+    if (!ensureNodeHoverTipElements()) return;
+    nodeHoverTip.classList.add('hidden');
+    nodeHoverTip.setAttribute('aria-hidden', 'true');
+}
+function showNodeHoverTipForNode(node, screenPos) {
+    if (!ensureNodeHoverTipElements() || !node || !screenPos) {
+        hideNodeHoverTip();
+        return;
+    }
+    if (G.state !== 'playing' || !isNodeVisibleToHuman(node)) {
+        hideNodeHoverTip();
+        return;
+    }
+    var tip = buildNodeHoverTip({
+        kind: node.kind,
+        label: nodeTypeOf(node).label,
+    });
+    nodeHoverTipTitle.textContent = tip.title;
+    nodeHoverTipBody.textContent = tip.body;
+    nodeHoverTip.classList.remove('hidden');
+    nodeHoverTip.setAttribute('aria-hidden', 'false');
+    positionNodeHoverTip(canvasToViewportPoint(screenPos, cv.getBoundingClientRect(), { width: cv.width, height: cv.height }));
+}
+function syncHoveredNodeStateFromPointer() {
+    if (!inp || G.state !== 'playing' || inp.pointerInsideCanvas !== true) return;
+    if (inp.panActive || inp.dragActive || inp.dragPending || inp.marqActive || inp.mousePointOrderPending || inp.touchPointOrderPending || inp.commandMode) return;
+    var liveNode = hoveredNodeAtScreen(inp.ms);
+    var liveId = liveNode ? liveNode.id : -1;
+    var currentId = Number.isFinite(Number(inp.hoverNodeId)) ? Math.floor(Number(inp.hoverNodeId)) : -1;
+    if (liveId !== currentId) {
+        inp.hoverNodeId = liveId;
+        inp.hoverSince = liveId >= 0 ? Date.now() : 0;
+    }
+}
+function hoveredNodeForTip() {
+    if (!inp || G.state !== 'playing' || inp.pointerInsideCanvas !== true) return null;
+    if (inp.panActive || inp.dragActive || inp.dragPending || inp.marqActive || inp.mousePointOrderPending || inp.touchPointOrderPending || inp.commandMode) return null;
+    syncHoveredNodeStateFromPointer();
+    var node = hoveredNodeAtScreen(inp.ms);
+    if (!node && Number.isFinite(Number(inp.hoverNodeId)) && Number(inp.hoverNodeId) >= 0) {
+        node = G.nodes[Math.floor(Number(inp.hoverNodeId))];
+    }
+    if (!node) return null;
+    if (NODE_HOVER_DWELL_MS > 0 && (!inp.hoverSince || Date.now() - inp.hoverSince < NODE_HOVER_DWELL_MS)) return null;
+    if (!isNodeVisibleToHuman(node)) return null;
+    return node;
+}
+function currentHoveredNodeTip() {
+    var node = hoveredNodeForTip();
+    if (!node) return null;
+    return buildNodeHoverTip({
+        kind: node.kind,
+        label: nodeTypeOf(node).label,
+    });
+}
+function positionNodeHoverTip(screenPos) {
+    if (!ensureNodeHoverTipElements() || !screenPos) return;
+    var pad = 14;
+    var offsetX = 18;
+    var offsetY = 20;
+    var viewportW = window.innerWidth || document.documentElement.clientWidth || cv.width;
+    var viewportH = window.innerHeight || document.documentElement.clientHeight || cv.height;
+    var width = nodeHoverTip.offsetWidth || 240;
+    var height = nodeHoverTip.offsetHeight || 72;
+    var left = Math.round((Number(screenPos.x) || 0) + offsetX);
+    var top = Math.round((Number(screenPos.y) || 0) + offsetY);
+    if (left + width > viewportW - pad) left = Math.max(pad, Math.round((Number(screenPos.x) || 0) - width - offsetX));
+    if (top + height > viewportH - pad) top = Math.max(pad, Math.round((Number(screenPos.y) || 0) - height - offsetY));
+    nodeHoverTip.style.left = left + 'px';
+    nodeHoverTip.style.top = top + 'px';
+}
+function wrapCanvasText(ctx, text, maxWidth) {
+    text = String(text || '').trim();
+    if (!text) return [];
+    var words = text.split(/\s+/);
+    var lines = [];
+    var line = '';
+    for (var i = 0; i < words.length; i++) {
+        var next = line ? (line + ' ' + words[i]) : words[i];
+        if (line && ctx.measureText(next).width > maxWidth) {
+            lines.push(line);
+            line = words[i];
+        } else {
+            line = next;
+        }
+    }
+    if (line) lines.push(line);
+    return lines;
+}
+function drawNodeHoverTipCanvas(ctx, canvas) {
+    if (!ctx || !canvas || !inp) return;
+    var node = hoveredNodeForTip();
+    if (!node) return;
+    var tip = buildNodeHoverTip({
+        kind: node.kind,
+        label: nodeTypeOf(node).label,
+    });
+    var anchor = screenNodePos(node) || inp.ms;
+
+    var padX = 12;
+    var padY = 10;
+    var bodyMaxWidth = Math.min(280, Math.max(180, canvas.width * 0.24));
+    ctx.save();
+    ctx.font = '700 12px Outfit, sans-serif';
+    var titleWidth = ctx.measureText(tip.title || '').width;
+    ctx.font = '12px Outfit, sans-serif';
+    var bodyLines = wrapCanvasText(ctx, tip.body || '', bodyMaxWidth);
+    var bodyWidth = 0;
+    for (var i = 0; i < bodyLines.length; i++) {
+        bodyWidth = Math.max(bodyWidth, ctx.measureText(bodyLines[i]).width);
+    }
+    var width = Math.max(150, Math.min(bodyMaxWidth + padX * 2, Math.max(titleWidth, bodyWidth) + padX * 2));
+    var titleLineHeight = 16;
+    var bodyLineHeight = 15;
+    var height = padY * 2 + titleLineHeight + (bodyLines.length ? 6 + bodyLines.length * bodyLineHeight : 0);
+    var left = Math.round((Number(anchor.x) || 0) + Math.max(18, (Number(node.radius) || 0) * G.cam.zoom * 0.45));
+    var top = Math.round((Number(anchor.y) || 0) - Math.max(26, (Number(node.radius) || 0) * G.cam.zoom * 0.55));
+    var edgePad = 14;
+    if (left + width > canvas.width - edgePad) left = Math.max(edgePad, Math.round((Number(anchor.x) || 0) - width - 18));
+    if (top + height > canvas.height - edgePad) top = Math.max(edgePad, Math.round((Number(anchor.y) || 0) - height - 22));
+    if (top < edgePad) top = Math.min(canvas.height - height - edgePad, Math.round((Number(anchor.y) || 0) + 20));
+
+    ctx.fillStyle = 'rgba(8, 13, 24, 0.92)';
+    ctx.strokeStyle = 'rgba(118, 162, 255, 0.34)';
+    ctx.lineWidth = 1;
+    ctx.fillRect(left, top, width, height);
+    ctx.strokeRect(left, top, width, height);
+
+    ctx.fillStyle = '#eef4ff';
+    ctx.font = '700 12px Outfit, sans-serif';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText(tip.title || '', left + padX, top + padY);
+
+    ctx.fillStyle = '#dbe8ff';
+    ctx.font = '12px Outfit, sans-serif';
+    var bodyY = top + padY + titleLineHeight + 6;
+    for (var li = 0; li < bodyLines.length; li++) {
+        ctx.fillText(bodyLines[li], left + padX, bodyY + li * bodyLineHeight);
+    }
+    ctx.restore();
+}
+function syncNodeHoverTip() {
+    if (!ensureNodeHoverTipElements()) return;
+    var node = hoveredNodeForTip();
+    if (!node) {
+        hideNodeHoverTip();
+        return;
+    }
+    var tip = buildNodeHoverTip({
+        kind: node.kind,
+        label: nodeTypeOf(node).label,
+    });
+    nodeHoverTipTitle.textContent = tip.title;
+    nodeHoverTipBody.textContent = tip.body;
+    nodeHoverTip.classList.remove('hidden');
+    nodeHoverTip.setAttribute('aria-hidden', 'false');
+    var anchor = screenNodePos(node) || inp.ms;
+    positionNodeHoverTip(canvasToViewportPoint(anchor, cv.getBoundingClientRect(), { width: cv.width, height: cv.height }));
 }
 function bindHudActionHelp() {
     if (hudActionHelpBound) return;
@@ -3624,6 +3827,8 @@ function selectionMetaText() {
     if (inp.commandMode === 'flow') return 'FLOW modu aktif: hedef gezegene dokun ya da tıkla.';
     var ids = Array.from(inp.sel).filter(function (id) { return !!G.nodes[id]; });
     if (!ids.length) {
+        var hoverTip = currentHoveredNodeTip();
+        if (hoverTip) return hoverTip.title + ' | ' + hoverTip.body;
         var idleParts = [];
         if (G.mapFeature && G.mapFeature.type === 'barrier') idleParts.push(barrierGateStatusText());
         if (G.mapMutator && G.mapMutator.type !== 'none') idleParts.push('Mutator: ' + mapMutatorName(G.mapMutator));
@@ -3719,14 +3924,17 @@ function syncHudAssistiveText() {
         });
     }
     var hintsOn = hintsEnabled();
+    var hoverTip = hintsOn && !nodeCount && !fleetCount ? currentHoveredNodeTip() : null;
     if (hudHintLine) {
         hudHintLine.classList.toggle('hidden', !hintsOn);
-        hudHintLine.textContent = buildHudHintText({
-            commandMode: commandMode,
-            nodeCount: nodeCount,
-            fleetCount: fleetCount,
-            ownedCount: ownedCount,
-        });
+        hudHintLine.textContent = hoverTip
+            ? (hoverTip.title + ': ' + hoverTip.body)
+            : buildHudHintText({
+                commandMode: commandMode,
+                nodeCount: nodeCount,
+                fleetCount: fleetCount,
+                ownedCount: ownedCount,
+            });
     }
     if (hudCoachRow) {
         hudCoachRow.classList.toggle('hidden', !hintsOn);
@@ -3839,7 +4047,7 @@ function currentCampaignLevel() {
 }
 
 function currentMissionDefinition() {
-    return resolveMissionDefinition({
+    var resolved = resolveMissionDefinition({
         dailyActive: G.daily.active,
         dailyChallenge: G.daily.challenge,
         campaignActive: G.campaign.active,
@@ -3851,6 +4059,17 @@ function currentMissionDefinition() {
         doctrineId: G.doctrineId || '',
         endOnObjectives: G.endOnObjectives === true,
     });
+    if (!resolved) return null;
+    if (Array.isArray(G.objectives) && G.objectives.length) resolved = Object.assign({}, resolved, { objectives: JSON.parse(JSON.stringify(G.objectives)) });
+    if (G.endOnObjectives === true) resolved.endOnObjectives = true;
+    var phase = getActiveMissionPhase(G.missionScript, G.missionState);
+    if (phase) {
+        resolved = Object.assign({}, resolved, {
+            phaseTitle: phase.title || '',
+            phaseBlurb: phase.blurb || '',
+        });
+    }
+    return resolved;
 }
 
 function currentMissionMode() {
@@ -3872,6 +4091,7 @@ function currentMissionSnapshot() {
         stats: G.stats || {},
         encounters: G.encounters || [],
         humanIndex: G.human,
+        nodes: G.nodes || [],
     };
 }
 
@@ -3882,16 +4102,24 @@ function currentCampaignObjectiveRows() {
 }
 
 function currentMissionPanelTitle(level) {
-    return buildMissionPanelTitle(level, currentMissionMode());
+    var title = buildMissionPanelTitle(level, currentMissionMode());
+    if (level && level.phaseTitle) {
+        var phaseIndex = G.missionState ? (Number(G.missionState.phaseIndex) || 0) + 1 : 1;
+        var phaseCount = G.missionScript && Array.isArray(G.missionScript.phases) ? G.missionScript.phases.length : phaseIndex;
+        title += ' | Faz ' + phaseIndex + '/' + phaseCount + ': ' + level.phaseTitle;
+    }
+    return title;
 }
 
 function currentMissionPanelSubtitle(level) {
-    return buildMissionPanelSubtitle({
+    var subtitle = buildMissionPanelSubtitle({
         level: level,
         mode: currentMissionMode(),
         dailyCompleted: G.daily.completed,
         dailyBestTick: G.daily.bestTick,
     });
+    if (level && level.phaseBlurb) return [level.phaseBlurb, subtitle].filter(Boolean).join(' | ');
+    return subtitle;
 }
 
 function refreshCampaignMissionPanels() {
@@ -3947,12 +4175,21 @@ function maybeShowCampaignObjectiveReminder() {
 }
 
 function maybeResolveMissionObjectiveVictory() {
-    var level = currentMissionDefinition();
-    if (!level || level.endOnObjectives !== true) return;
     if (G.state !== 'playing') return;
-    if (!currentMissionIsComplete()) return;
-    G.winner = G.human;
-    G.state = 'gameOver';
+    var result = advanceMissionState(G, { tickRate: TICK_RATE });
+    if (result && result.phaseAdvanced) {
+        if (currentMissionMode() === 'daily') G.daily.reminderShown = {};
+        else G.campaign.reminderShown = {};
+        if (result.phase && (result.phase.title || result.phase.hint || result.phase.blurb)) {
+            var phaseBits = ['Yeni faz'];
+            if (result.phase.title) phaseBits.push(result.phase.title);
+            if (result.phase.hint) phaseBits.push(result.phase.hint);
+            else if (result.phase.blurb) phaseBits.push(result.phase.blurb);
+            showHintToast(phaseBits.join(': '));
+        }
+    } else if (result && result.failed && result.failureText) {
+        showHintToast(result.failureText);
+    }
 }
 
 function humanGameOverStatRows() {
@@ -4102,6 +4339,9 @@ function captureSyncSnapshot() {
         doctrineStates: JSON.parse(JSON.stringify(G.doctrineStates || [])),
         encounters: JSON.parse(JSON.stringify(G.encounters || [])),
         objectives: JSON.parse(JSON.stringify(G.objectives || [])),
+        missionScript: JSON.parse(JSON.stringify(G.missionScript || null)),
+        missionState: JSON.parse(JSON.stringify(G.missionState || null)),
+        missionFailureText: G.missionFailureText || '',
         endOnObjectives: G.endOnObjectives === true,
         playerCapital: JSON.parse(JSON.stringify(G.playerCapital || {})),
         strategicNodes: Array.isArray(G.strategicNodes) ? G.strategicNodes.slice() : [],
@@ -4243,6 +4483,9 @@ function applySyncSnapshot(snapshot) {
     G.doctrineStates = ensureDoctrineStates(G.doctrines, Array.isArray(snapshot.doctrineStates) ? snapshot.doctrineStates : G.doctrineStates || []);
     G.encounters = JSON.parse(JSON.stringify(Array.isArray(snapshot.encounters) ? snapshot.encounters : G.encounters || []));
     G.objectives = JSON.parse(JSON.stringify(Array.isArray(snapshot.objectives) ? snapshot.objectives : G.objectives || []));
+    G.missionScript = JSON.parse(JSON.stringify(snapshot.missionScript || null));
+    G.missionState = JSON.parse(JSON.stringify(snapshot.missionState || null));
+    G.missionFailureText = String(snapshot.missionFailureText || '');
     G.endOnObjectives = snapshot.endOnObjectives === true;
     G.encounterContext = {};
     G.playerCapital = JSON.parse(JSON.stringify(snapshot.playerCapital || {}));
@@ -4329,11 +4572,21 @@ function sendOnlineStateHash() {
     net.syncHashSentTick = G.tick;
     var hash = computeSyncHash({
         tick: G.tick,
+        state: G.state,
+        winner: G.winner,
         nodes: G.nodes,
         fleets: G.fleets,
         players: G.players,
         mapFeature: G.mapFeature,
         mapMutator: G.mapMutator,
+        doctrines: G.doctrines,
+        doctrineStates: G.doctrineStates,
+        encounters: G.encounters,
+        objectives: G.objectives,
+        missionScript: G.missionScript,
+        missionState: G.missionState,
+        missionFailureText: G.missionFailureText,
+        endOnObjectives: G.endOnObjectives === true,
     });
     rememberSyncSnapshot(G.tick, hash);
     net.socket.emit('stateHash', {
@@ -4953,6 +5206,9 @@ function campaignFeatureName(feature) {
 function campaignMutatorName(mutator) {
     return mapMutatorName(mutator);
 }
+function campaignLayoutName(level) {
+    return level && level.customMap ? 'El Yapimi' : 'Prosedurel';
+}
 function campaignSystemsSummary(level) {
     var parts = [
         'Pulse hubları geçici tempo bonusu verir',
@@ -4962,6 +5218,7 @@ function campaignSystemsSummary(level) {
         'Turretler artık daha sert kuşatma hedefidir',
     ];
     var rulesMode = (level && level.rulesMode) || 'advanced';
+    if (level && level.customMap) parts.unshift('El yapimi sektor acilis rotalarini ve ilk cepheyi sabitler');
     if (rulesMode === 'advanced') parts.push('Supply altındaki node daha ucuza upgrade olur');
     if (level && level.encounters && level.encounters.length) parts.push('Encounterlar objective akışını değiştirir');
     if (level && level.doctrineId) parts.push('Doktrin açılışta oyunun temposunu belirler');
@@ -4980,6 +5237,7 @@ function campaignLevelSummary(level) {
     return 'Bölüm ' + level.id + ': ' + level.name + '\n' +
         level.blurb + '\n' +
         'Node: ' + level.nc + ' | AI: ' + level.aiCount + ' | Zorluk: ' + menuDifficultyLabel(level.diff) +
+        ' | Duzen: ' + campaignLayoutName(level) +
         ' | Özellik: ' + campaignFeatureName(level.mapFeature) +
         ' | Mutator: ' + campaignMutatorName(level.mapMutator || 'none') +
         ' | Oyun Listesi: ' + playlistName(level.playlist || 'standard') +
@@ -5084,7 +5342,7 @@ function refreshCampaignUI() {
     var selectedDone = campaignSelectedLevel < completed;
     var missionData = {
         title: 'Bölüm ' + selected.id + ': ' + selected.name,
-        subtitle: selected.blurb + ' | AI ' + selected.aiCount + ' | ' + menuDifficultyLabel(selected.diff) + ' | ' + campaignFeatureName(selected.mapFeature) + ' | Mutator: ' + campaignMutatorName(selected.mapMutator || 'none') + ' | Oyun Listesi: ' + playlistName(selected.playlist || 'standard') + (selected.doctrineId ? (' | Doktrin: ' + doctrineName(selected.doctrineId)) : '') + ' | ' + (selectedDone ? 'Durum: Geçildi' : 'Durum: Hazır'),
+        subtitle: selected.blurb + ' | AI ' + selected.aiCount + ' | ' + menuDifficultyLabel(selected.diff) + ' | ' + campaignLayoutName(selected) + ' | ' + campaignFeatureName(selected.mapFeature) + ' | Mutator: ' + campaignMutatorName(selected.mapMutator || 'none') + ' | Oyun Listesi: ' + playlistName(selected.playlist || 'standard') + (selected.doctrineId ? (' | Doktrin: ' + doctrineName(selected.doctrineId)) : '') + ' | ' + (selectedDone ? 'Durum: Geçildi' : 'Durum: Hazır'),
         items: evaluateCampaignObjectives(selected, {
             tick: 0,
             didWin: false,
@@ -5554,9 +5812,18 @@ attachGameInputController({
     windowTarget: window,
     gameState: G,
     inputState: inp,
+    syncHoverTooltip: function (payload) {
+        payload = payload && typeof payload === 'object' ? payload : {};
+        if (payload.pointerInsideCanvas !== true) {
+            hideNodeHoverTip();
+            return;
+        }
+        showNodeHoverTipForNode(payload.node || null, payload.screenPos || null);
+    },
     screenToWorld: s2w,
     touchScreenPos: touchScreenPos,
     hitNode: hitNode,
+    hitNodeAtScreen: hoveredNodeAtScreen,
     hitHoldingFleet: hitHoldingFleet,
     resolveRightClickAction: resolveRightClickAction,
     shouldStartDragSend: shouldStartDragSend,
@@ -5632,7 +5899,7 @@ function loop(ts) {
                     }
                 } else {
                     goTitle.textContent = 'Bölüm ' + level.id + ' Kaybedildi';
-                    goMsg.textContent = 'Aynı bölümü tekrar dene veya stratejini değiştir.';
+                    goMsg.textContent = G.missionFailureText || 'Aynı bölümü tekrar dene veya stratejini değiştir.';
                 }
             }
             if (G.daily.active && G.daily.challenge) {
@@ -5647,9 +5914,9 @@ function loop(ts) {
                         ('Challenge temizlendi. En iyi süre: ' + dailyProgress.bestTick + ' tick.');
                 } else {
                     goTitle.textContent = 'Günlük Challenge Kaçırıldı';
-                    goMsg.textContent = dailyProgress.bestTick > 0 ?
+                    goMsg.textContent = G.missionFailureText || (dailyProgress.bestTick > 0 ?
                         ('Bugünün en iyi sonucun: ' + dailyProgress.bestTick + ' tick. Bir tur daha dene.') :
-                        'Bugünün challengei henüz temizlenmedi. Açılışı daha agresif kur.';
+                        'Bugünün challengei henüz temizlenmedi. Açılışı daha agresif kur.');
                 }
             }
             if (goStatsEl) renderStatRows(goStatsEl, humanGameOverStatRows());
@@ -5718,6 +5985,7 @@ function loop(ts) {
             });
         }
     }
+    syncNodeHoverTip();
     if (G.state === 'playing' || G.state === 'paused') updatePowerSidebar();
     if (G.state !== 'mainMenu') render(ctx, cv, G.tick);
     requestAnimationFrame(loop);

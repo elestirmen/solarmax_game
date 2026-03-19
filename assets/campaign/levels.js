@@ -1,3 +1,5 @@
+import { buildCoreLockHandcraftedMap, buildGunlineHandcraftedMap } from './handcrafted_maps.js';
+
 export var CAMPAIGN_LEVELS = [
     {
         id: 1,
@@ -10,7 +12,7 @@ export var CAMPAIGN_LEVELS = [
         fog: false,
         mapFeature: 'none',
         rulesMode: 'advanced',
-        tune: { aiAgg: 0.76, aiBuf: 10, aiInt: 46, flowInt: 22 },
+        tune: { aiAgg: 0.88, aiBuf: 8, aiInt: 42, flowInt: 20 },
         hint: 'Ilk hedefin merkezdeki strategic hub olsun. Pulse oraya dondugunde yakin iki node daha alip ekonomi farki kur.',
         objectives: [
             { id: 'hold-four', type: 'owned_nodes', target: 4, label: '4 node kontrol et', remindAt: 150, coach: 'Ilk iki genislemeyi merkeze yakin ekonomik node\'lara yap.' },
@@ -28,7 +30,7 @@ export var CAMPAIGN_LEVELS = [
         fog: false,
         mapFeature: 'none',
         rulesMode: 'advanced',
-        tune: { aiAgg: 0.8, aiBuf: 9, aiInt: 44, flowInt: 21 },
+        tune: { aiAgg: 0.94, aiBuf: 7, aiInt: 40, flowInt: 19 },
         hint: 'Yeni aldigin node\'da defense ac ve garnizonu kacirma. Asimilasyon bitince savunma alani cepheyi kendi kendine yumusatir.',
         objectives: [
             { id: 'defense-once', type: 'defense_activations', target: 1, label: 'En az 1 kez savunma ac', remindAt: 180, coach: 'Yeni aldigin node\'da savunmayi acarsan asimilasyon daha rahat oturur.' },
@@ -46,7 +48,7 @@ export var CAMPAIGN_LEVELS = [
         fog: false,
         mapFeature: 'wormhole',
         rulesMode: 'advanced',
-        tune: { aiAgg: 0.84, aiBuf: 8, aiInt: 42, flowInt: 20 },
+        tune: { aiAgg: 0.98, aiBuf: 7, aiInt: 38, flowInt: 18 },
         hint: 'Wormhole ucunu erken al. Sonra pulse acildiginda wormhole uzerinden hizli baskin at; uzun yoldan gitme.',
         objectives: [
             { id: 'wormhole-two', type: 'wormhole_dispatches', target: 2, label: 'Wormhole ile 2 sevkiyat yap', remindAt: 210, coach: 'Wormhole cikisini alip o eksenden kisa dalgalar gonder.' },
@@ -59,12 +61,12 @@ export var CAMPAIGN_LEVELS = [
         blurb: 'Iki AI ayni anda sikistirir. Erken genisleme kritik.',
         seed: 'camp-04-dual',
         nc: 13,
-        diff: 'easy',
+        diff: 'normal',
         aiCount: 2,
         fog: false,
         mapFeature: 'none',
         rulesMode: 'advanced',
-        tune: { aiAgg: 0.9, aiBuf: 8, aiInt: 40, flowInt: 18 },
+        tune: { aiAgg: 1.02, aiBuf: 6, aiInt: 34, flowInt: 16 },
         hint: 'Iki cepheyi supply zinciriyle bagla. Kopuk node sadece zayif uretmez; upgrade de pahaliya kalir ve kolay dusurulur.',
         objectives: [
             { id: 'flow-one', type: 'flow_links_created', target: 1, label: 'En az 1 flow hatti kur', remindAt: 240, coach: 'Arka ekonomi ile on cephe arasinda tek bir flow bile tempoyu degistirir.' },
@@ -77,12 +79,12 @@ export var CAMPAIGN_LEVELS = [
         blurb: 'Merkezde gravity alani var. Rotalari hiz ile kir.',
         seed: 'camp-05-grav',
         nc: 14,
-        diff: 'easy',
+        diff: 'normal',
         aiCount: 2,
         fog: false,
         mapFeature: 'gravity',
         rulesMode: 'advanced',
-        tune: { aiAgg: 0.93, aiBuf: 7, aiInt: 38, flowInt: 17 },
+        tune: { aiAgg: 1.06, aiBuf: 6, aiInt: 32, flowInt: 15 },
         hint: 'Merkez gravity alanini kestirme olarak kullan. Pulse merkezdeyse savunmak yerine hizli dalga ile rakip ekonomisini del.',
         objectives: [
             { id: 'pulse-six', type: 'pulse_control_ticks', target: 180, label: 'Pulse kontrolunu 6s tut', remindAt: 270, coach: 'Merkez strategic node\'u aldiginda pulse donusunu savunma ile tut.' },
@@ -100,7 +102,7 @@ export var CAMPAIGN_LEVELS = [
         fog: false,
         mapFeature: 'none',
         rulesMode: 'advanced',
-        tune: { aiAgg: 0.98, aiBuf: 6, aiInt: 34, flowInt: 16 },
+        tune: { aiAgg: 1.08, aiBuf: 5, aiInt: 30, flowInt: 14 },
         hint: 'Cap strain gorunurse stok tutmayi kes. Fazla birimi ya upgrade\'e cevir ya da cepheye it; dolu bekleyen ekonomi yavaslar.',
         objectives: [
             { id: 'upgrade-two', type: 'upgrades', target: 2, label: '2 upgrade yap', remindAt: 300, coach: 'Supply altindaki ekonomik node\'lara erken upgrade yatirimi yap.' },
@@ -118,7 +120,7 @@ export var CAMPAIGN_LEVELS = [
         fog: false,
         mapFeature: 'wormhole',
         rulesMode: 'advanced',
-        tune: { aiAgg: 1.01, aiBuf: 6, aiInt: 32, flowInt: 15 },
+        tune: { aiAgg: 1.1, aiBuf: 5, aiInt: 29, flowInt: 14 },
         hint: 'Relay node\'larini supply altinda ucuz upgrade et. Sonra flow + wormhole ile tek cepheden degil, iki hizli hatta baski kur.',
         objectives: [
             { id: 'flow-two', type: 'flow_links_created', target: 2, label: '2 flow hatti kur', remindAt: 330, coach: 'Relay veya arka ekonomi node\'larini flow ile cepheye bagla.' },
@@ -136,7 +138,7 @@ export var CAMPAIGN_LEVELS = [
         fog: true,
         mapFeature: 'none',
         rulesMode: 'advanced',
-        tune: { aiAgg: 1.02, aiBuf: 6, aiInt: 33, flowInt: 16 },
+        tune: { aiAgg: 1.12, aiBuf: 5, aiInt: 29, flowInt: 14 },
         hint: 'Sis altinda uzak hedef kovalamak yerine pulse hub ve ara baglantilari tut. Gorus almadan buyuk filo cikarma.',
         objectives: [
             { id: 'pulse-eight', type: 'pulse_control_ticks', target: 240, label: 'Pulse kontrolunu 8s tut', remindAt: 360, coach: 'Sis altinda gereksiz kovalamaca yerine strategic hub\'lara odaklan.' },
@@ -154,7 +156,7 @@ export var CAMPAIGN_LEVELS = [
         fog: false,
         mapFeature: 'barrier',
         rulesMode: 'advanced',
-        tune: { aiAgg: 1.05, aiBuf: 5, aiInt: 31, flowInt: 15 },
+        tune: { aiAgg: 1.14, aiBuf: 4, aiInt: 28, flowInt: 13 },
         hint: 'Ilk buyuk amac GATE olsun. Fethettikten sonra hemen gecis bekleme; asimilasyon tamamlaninca karsi tarafa pulse destekli dalga gonder.',
         objectives: [
             { id: 'gate-one', type: 'gate_captures', target: 1, label: 'En az 1 GATE ele gecir', remindAt: 390, coach: 'Bariyer haritasinda ilk buyuk hedefin mutlaka GATE olsun.' },
@@ -172,7 +174,7 @@ export var CAMPAIGN_LEVELS = [
         fog: false,
         mapFeature: { type: 'auto', chance: 1 },
         rulesMode: 'advanced',
-        tune: { aiAgg: 1.08, aiBuf: 5, aiInt: 30, flowInt: 14 },
+        tune: { aiAgg: 1.16, aiBuf: 4, aiInt: 27, flowInt: 13 },
         hint: 'Ilk 30 saniyede anomaliyi oku ve plana hemen don. Hangi ozellik cikarsa ciksin pulse zamani senin hizli ikinci hamlen olsun.',
         objectives: [
             { id: 'produce-160', type: 'units_produced', target: 160, label: '160 birlik uret', remindAt: 360, coach: 'Anomali ne olursa olsun ekonomik omurgayi erkenden kur.' },
@@ -362,11 +364,11 @@ export var CAMPAIGN_LEVELS = [
     {
         id: 21,
         name: 'Core Kilidi',
-        blurb: 'Ilk objective tabanli bolum. Merkez Relay Core tutulursa mac biter.',
+        blurb: 'Asimetrik bariyer sektoru. Sol cepten cik, sag cekirdekteki Relay Core\'u kilitle.',
         seed: 'camp-21-corelock',
         nc: 16,
-        diff: 'normal',
-        aiCount: 2,
+        diff: 'hard',
+        aiCount: 3,
         fog: false,
         mapFeature: 'barrier',
         mapMutator: 'blackout',
@@ -374,22 +376,55 @@ export var CAMPAIGN_LEVELS = [
         doctrineId: 'assimilation',
         encounters: [{ type: 'relay_core', id: 'relay-heart' }],
         rulesMode: 'advanced',
-        tune: { aiAgg: 1.02, aiBuf: 6, aiInt: 30, flowInt: 15 },
+        tune: { aiAgg: 1.16, aiBuf: 4, aiInt: 25, flowInt: 12 },
         endOnObjectives: true,
-        hint: 'Bu kez tum haritayi temizlemek zorunda degilsin. Relay Core\'u alip asimilasyon bitene kadar tut; objective seni cikisa tasir.',
+        customMap: buildCoreLockHandcraftedMap(),
+        hint: 'Acilisin tek bir alt koridoru var; sag tarafa gecmeden once alt gate cizgisini sabitle. Relay Core\'u aldiginda savunmayi acip cikis koridorunu burada tut.',
+        missionScript: {
+            phases: [
+                {
+                    id: 'breach-lower-lane',
+                    title: 'Alt Koridoru Ac',
+                    blurb: 'Alt gate cizgisini ve sag kopru cekirdegini ele gecirerek gecit ac.',
+                    hint: 'Alt gate nodeunu aldiktan sonra staging hattini sag kopruye yasla; Relay Core\'a acele etme.',
+                    objectives: [
+                        { id: 'lower-lane-21', type: 'control_node_ids', nodeIds: [8, 11], target: 2, label: 'Alt koridoru ac: gate ve kopru cekirdegini ele gecir', remindAt: 150, coach: 'Tek acik alt hattan geliyor; once gecis, sonra cekirdek.' },
+                    ],
+                },
+                {
+                    id: 'relay-capture',
+                    title: 'Cekirdegi Al',
+                    blurb: 'Acilan koridordan Relay Core\'a kusatma kur ve asimilasyonu tamamla.',
+                    hint: 'Relay Core etrafinda staging yap; tek dalga yerine kontrollu birikim daha guvenli.',
+                    objectives: [
+                        { id: 'relay-core-capture', type: 'encounter_captured', encounterType: 'relay_core', target: 1, label: 'Relay Core\'u ele gecir ve asimilasyonu tamamla', remindAt: 210, coach: 'Bariyer ortasindaki acikligi kullan; once Core etrafinda staging yap.' },
+                    ],
+                },
+                {
+                    id: 'relay-lockdown',
+                    title: 'Cekirdegi Kilitle',
+                    blurb: 'Relay Core alindiktan sonra defense ac ve supply zincirini arkaya bagla.',
+                    hint: 'Savunmayi acip arka hatti Relay Core\'a bagla; burada amac saldiri degil tutmak.',
+                    objectives: [
+                        { id: 'relay-core-hold', type: 'encounter_control_ticks', encounterType: 'relay_core', target: 240, label: 'Relay Core kontrolunu 8s tut', remindAt: 330, coach: 'Relay Core alindiktan sonra savunma ac ve supply zincirini arkaya bagla.' },
+                    ],
+                },
+            ],
+        },
         objectives: [
+            { id: 'lower-lane-21', type: 'control_node_ids', nodeIds: [8, 11], target: 2, label: 'Alt koridoru ac: gate ve kopru cekirdegini ele gecir', remindAt: 150, coach: 'Tek acik alt hattan geliyor; once gecis, sonra cekirdek.' },
             { id: 'relay-core-capture', type: 'encounter_captured', encounterType: 'relay_core', target: 1, label: 'Relay Core\'u ele gecir ve asimilasyonu tamamla', remindAt: 210, coach: 'Bariyer ortasindaki acikligi kullan; once Core etrafinda staging yap.' },
-            { id: 'relay-core-hold', type: 'encounter_control_ticks', encounterType: 'relay_core', target: 210, label: 'Relay Core kontrolunu 7s tut', remindAt: 300, coach: 'Relay Core alindiktan sonra savunma ac ve supply zincirini arkaya bagla.' },
+            { id: 'relay-core-hold', type: 'encounter_control_ticks', encounterType: 'relay_core', target: 240, label: 'Relay Core kontrolunu 8s tut', remindAt: 330, coach: 'Relay Core alindiktan sonra savunma ac ve supply zincirini arkaya bagla.' },
         ],
     },
     {
         id: 22,
         name: 'Turret Hatti',
-        blurb: 'Mega Turret cepheyi kilitler. Once kusatma kur, sonra hat ac.',
+        blurb: 'El yapimi kusatma hatti. Mega Turret merkezi keser, flankler sadece zaman kazandirir.',
         seed: 'camp-22-gunline',
         nc: 17,
-        diff: 'normal',
-        aiCount: 2,
+        diff: 'hard',
+        aiCount: 3,
         fog: false,
         mapFeature: 'none',
         mapMutator: 'ion_storm',
@@ -397,12 +432,13 @@ export var CAMPAIGN_LEVELS = [
         doctrineId: 'siege',
         encounters: [{ type: 'mega_turret', id: 'bastion-gun' }],
         rulesMode: 'advanced',
-        tune: { aiAgg: 1.08, aiBuf: 5, aiInt: 28, flowInt: 14 },
+        tune: { aiAgg: 1.3, aiBuf: 4, aiInt: 24, flowInt: 12 },
         endOnObjectives: true,
-        hint: 'Mega Turret\'e tek akinda girme. Guvenli hatta bir staging noktasi kurup Yarma\'yi tam kusatma aninda ac.',
+        customMap: buildGunlineHandcraftedMap(),
+        hint: 'Merkezdeki iyon firtinasi dogrudan yarmayi yavaslatir. Solda staging kur, flanklerden sadece tempo topla ve Mega Turret\'e tek dalga halinde gir.',
         objectives: [
             { id: 'mega-turret-capture', type: 'encounter_captured', encounterType: 'mega_turret', target: 1, label: 'Mega Turret\'i ele gecir ve asimilasyonu tamamla', remindAt: 240, coach: 'Karartma yok ama iyon firtinasi var; staging hattini firtinanin disina kur.' },
-            { id: 'hold-six-22', type: 'owned_nodes', target: 6, label: '6 node tut', optional: true },
+            { id: 'hold-seven-22', type: 'owned_nodes', target: 7, label: '7 node tut', remindAt: 330, coach: 'Mega Turret dussa bile cikan koridoru ekonomik olarak tutmazsan objective erken solar.' },
         ],
     },
     {
@@ -423,11 +459,11 @@ export var CAMPAIGN_LEVELS = [
             { type: 'mega_turret', id: 'gun-keep-23' },
         ],
         rulesMode: 'advanced',
-        tune: { aiAgg: 1.12, aiBuf: 4, aiInt: 25, flowInt: 13 },
+        tune: { aiAgg: 1.24, aiBuf: 3, aiInt: 22, flowInt: 11 },
         endOnObjectives: true,
         hint: 'Ilk hedef her zaman ayni degil. Relay Core tempoyu, Mega Turret gecidi aciyor; gravity hattina gore sira sec.',
         objectives: [
-            { id: 'core-then-hold-23', type: 'encounter_control_ticks', encounterType: 'relay_core', target: 180, label: 'Relay Core kontrolunu 6s tut', remindAt: 240, coach: 'Merkez gravity alani staging ve takviye arasindaki gecis suresini kisaltir.' },
+            { id: 'core-then-hold-23', type: 'encounter_control_ticks', encounterType: 'relay_core', target: 210, label: 'Relay Core kontrolunu 7s tut', remindAt: 270, coach: 'Merkez gravity alani staging ve takviye arasindaki gecis suresini kisaltir.' },
             { id: 'gun-break-23', type: 'encounter_captured', encounterType: 'mega_turret', target: 1, label: 'Mega Turret\'i ele gecir ve asimilasyonu tamamla', remindAt: 330, coach: 'Core bonusunu aldiktan sonra kusatmaya don; iki objective zincirleme calisiyor.' },
         ],
     },
@@ -446,12 +482,40 @@ export var CAMPAIGN_LEVELS = [
         doctrineId: 'logistics',
         encounters: [{ type: 'relay_core', id: 'dark-relay-24' }],
         rulesMode: 'advanced',
-        tune: { aiAgg: 1.16, aiBuf: 4, aiInt: 24, flowInt: 12 },
+        tune: { aiAgg: 1.22, aiBuf: 3, aiInt: 22, flowInt: 11 },
         endOnObjectives: true,
         hint: 'Bu bolumde zafer temizlemek degil, ritmi korumak. Sis altinda Relay Core\'a uzan ve supply zincirini koparma.',
+        missionScript: {
+            phases: [
+                {
+                    id: 'weather-the-lane',
+                    title: 'Karanliga Tutun',
+                    blurb: 'Ilk baski dalgasini atlat; omurgan iki node altina dusmesin.',
+                    hint: 'Sis altinda gereksiz ileri cikma; once yasayan bir omurga kur.',
+                    objectives: [
+                        { id: 'survive-24', type: 'survive_until_tick', target: 720, label: '720 tick hayatta kal', remindAt: 300, coach: 'Kara bolge icinde gereksiz uzun rota kurma; lojistik doktrinini savunma degil hareket icin kullan.' },
+                    ],
+                    lossConditions: [
+                        { type: 'owned_nodes_below', target: 2, graceTick: 180, message: 'Ana omurga coktu; karanlik koridorda tutunamadin.' },
+                    ],
+                },
+                {
+                    id: 'relay-push',
+                    title: 'Koridoru Del',
+                    blurb: 'Baski yavaslayinca Relay Core\'a uzan ve kisa sure tut.',
+                    hint: 'Sadece saklanma; sis altinda bile Relay Core hattini supply ile besle.',
+                    objectives: [
+                        { id: 'core-six-24', type: 'encounter_control_ticks', encounterType: 'relay_core', target: 180, label: 'Relay Core kontrolunu 6s tut', remindAt: 360, coach: 'Sadece saklanma; Relay Core tempoyu ve takviye hattini sabitler.' },
+                    ],
+                    lossConditions: [
+                        { type: 'tick_limit', target: 1260, message: 'Karanlik koridor fazla uzadi; baski hatti coktu.' },
+                    ],
+                },
+            ],
+        },
         objectives: [
-            { id: 'survive-24', type: 'survive_until_tick', target: 990, label: '990 tick hayatta kal', remindAt: 420, coach: 'Kara bolge icinde gereksiz uzun rota kurma; lojistik doktrinini savunma degil hareket icin kullan.' },
-            { id: 'core-six-24', type: 'encounter_control_ticks', encounterType: 'relay_core', target: 180, label: 'Relay Core kontrolunu 6s tut', optional: true },
+            { id: 'survive-24', type: 'survive_until_tick', target: 720, label: '720 tick hayatta kal', remindAt: 300, coach: 'Kara bolge icinde gereksiz uzun rota kurma; lojistik doktrinini savunma degil hareket icin kullan.' },
+            { id: 'core-six-24', type: 'encounter_control_ticks', encounterType: 'relay_core', target: 180, label: 'Relay Core kontrolunu 6s tut', remindAt: 360, coach: 'Sadece saklanma; Relay Core tempoyu ve takviye hattini sabitler.' },
         ],
     },
     {
@@ -460,8 +524,8 @@ export var CAMPAIGN_LEVELS = [
         blurb: 'Daha sakin ama net objective akisi. Tek hata yerine yanlis plan cezalandirir.',
         seed: 'camp-25-zenith',
         nc: 15,
-        diff: 'easy',
-        aiCount: 1,
+        diff: 'normal',
+        aiCount: 2,
         fog: false,
         mapFeature: 'gravity',
         mapMutator: 'ion_storm',
@@ -469,12 +533,12 @@ export var CAMPAIGN_LEVELS = [
         doctrineId: 'logistics',
         encounters: [{ type: 'relay_core', id: 'zen-core-25' }],
         rulesMode: 'advanced',
-        tune: { aiAgg: 0.78, aiBuf: 8, aiInt: 34, flowInt: 18 },
+        tune: { aiAgg: 0.96, aiBuf: 6, aiInt: 30, flowInt: 16 },
         endOnObjectives: true,
         hint: 'Gravity alaniyla Relay Core arasinda bir servis omurgasi kur. Bu bolum hizli elden cok dogru rotayi odullendirir.',
         objectives: [
             { id: 'flow-two-25', type: 'flow_links_created', target: 2, label: '2 flow hatti kur', remindAt: 180, coach: 'Flow hatlari bu bolumde sadece ekonomi degil objective temposu kurar.' },
-            { id: 'core-five-25', type: 'encounter_control_ticks', encounterType: 'relay_core', target: 150, label: 'Relay Core kontrolunu 5s tut', remindAt: 300, coach: 'Core alindiktan sonra gravity merkezinden gelen kisa takviyeleri kullan.' },
+            { id: 'core-five-25', type: 'encounter_control_ticks', encounterType: 'relay_core', target: 180, label: 'Relay Core kontrolunu 6s tut', remindAt: 330, coach: 'Core alindiktan sonra gravity merkezinden gelen kisa takviyeleri kullan.' },
         ],
     },
     {
@@ -495,7 +559,7 @@ export var CAMPAIGN_LEVELS = [
             { type: 'mega_turret', id: 'mega-frontier-26' },
         ],
         rulesMode: 'advanced',
-        tune: { aiAgg: 1.2, aiBuf: 4, aiInt: 22, flowInt: 12 },
+        tune: { aiAgg: 1.28, aiBuf: 3, aiInt: 20, flowInt: 11 },
         endOnObjectives: true,
         hint: 'Burada galibiyet sirayla gelir: once Relay Core ile omurga kur, sonra Mega Turret\'i dusurup acilan koridordan bitir.',
         objectives: [

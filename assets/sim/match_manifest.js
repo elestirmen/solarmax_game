@@ -111,6 +111,7 @@ export function buildStandardMatchManifest(config, options) {
         encounters: Array.isArray(playlistResolved.encounters) ? playlistResolved.encounters : [],
         tuneOverrides: playlistResolved.tuneOverrides || null,
         objectives: [],
+        missionScript: null,
         hint: '',
         endOnObjectives: false,
     };
@@ -140,6 +141,7 @@ export function buildDailyMatchManifest(dateKey, options) {
         doctrineId: challenge.doctrineId ? normalizeDoctrineId(challenge.doctrineId) : '',
         encounters: Array.isArray(challenge.encounters) ? challenge.encounters : [],
         objectives: Array.isArray(challenge.objectives) ? challenge.objectives : [],
+        missionScript: challenge.missionScript || null,
         hint: challenge.hint || '',
         endOnObjectives: challenge.endOnObjectives === true,
         challenge: challenge,
@@ -173,6 +175,7 @@ export function buildCustomMatchManifest(config, options) {
         doctrineId: customMap.doctrineId ? normalizeDoctrineId(customMap.doctrineId) : '',
         encounters: Array.isArray(customMap.encounters) ? customMap.encounters : [],
         objectives: [],
+        missionScript: customMap.missionScript || null,
         hint: '',
         endOnObjectives: customMap.endOnObjectives === true,
         customMapName: customMap.name,

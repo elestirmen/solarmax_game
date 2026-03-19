@@ -162,6 +162,7 @@ export function buildOnlineMatchInitOptions(payload, ctx) {
         doctrineId: payload.doctrineId || 'auto',
         encounters: payload.encounters || [],
         objectives: payload.objectives || [],
+        missionScript: payload.missionScript || null,
         endOnObjectives: payload.endOnObjectives === true,
     };
 }

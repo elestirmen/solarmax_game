@@ -16,6 +16,7 @@ import { decideAiCommands } from './ai.js';
 import { initFog, updateVis } from './fog.js';
 import { isTerritoryBonusBlockedAtPoint, resolveMapMutator } from './mutator.js';
 import { evaluateCampaignObjectives } from '../campaign/objectives.js';
+import { advanceMissionState, applyMissionScript } from './mission_script.js';
 import {
     PLAYER_COLORS,
     SIM_CONSTANTS,
@@ -177,6 +178,7 @@ function missionObjectiveRows(state) {
         stats: state.stats || {},
         encounters: state.encounters || [],
         humanIndex: state.humanIndex,
+        nodes: state.nodes || [],
     }, {
         tickRate: 30,
     });
@@ -287,6 +289,9 @@ export function buildAuthoritativeState(snapshot, opts) {
         encounters: [],
         encounterContext: {},
         objectives: Array.isArray(snapshot.objectives) ? cloneValue(snapshot.objectives) : cloneValue(Array.isArray(manifest.objectives) ? manifest.objectives : []),
+        missionScript: cloneValue(snapshot.missionScript !== undefined ? snapshot.missionScript : (manifest.missionScript || null)),
+        missionState: cloneValue(snapshot.missionState || null),
+        missionFailureText: String(snapshot.missionFailureText || ''),
         endOnObjectives: snapshot.endOnObjectives === true || manifest.endOnObjectives === true,
         playerCapital: cloneValue(snapshot.playerCapital || {}),
         strategicNodes: Array.isArray(snapshot.strategicNodes) ? snapshot.strategicNodes.slice() : [],
@@ -311,6 +316,7 @@ export function buildAuthoritativeState(snapshot, opts) {
         state.nodes,
         seed
     );
+    applyMissionScript(state, state.missionScript);
     stepEncounterState(state);
 
     if (!state.strategicPulse || typeof state.strategicPulse !== 'object' || state.strategicPulse.nodeId === undefined) {
@@ -358,6 +364,9 @@ export function captureAuthoritativeSnapshot(state) {
         doctrineStates: cloneValue(state.doctrineStates),
         encounters: cloneValue(state.encounters),
         objectives: cloneValue(state.objectives || []),
+        missionScript: cloneValue(state.missionScript || null),
+        missionState: cloneValue(state.missionState || null),
+        missionFailureText: state.missionFailureText || '',
         endOnObjectives: state.endOnObjectives === true,
         playerCapital: cloneValue(state.playerCapital),
         strategicNodes: Array.isArray(state.strategicNodes) ? state.strategicNodes.slice() : [],
@@ -380,6 +389,8 @@ export function captureAuthoritativeSnapshot(state) {
 export function computeAuthoritativeSnapshotHash(state) {
     return computeSyncHash({
         tick: state.tick,
+        state: state.state,
+        winner: state.winner,
         nodes: state.nodes,
         fleets: state.fleets,
         players: state.players,
@@ -388,6 +399,11 @@ export function computeAuthoritativeSnapshotHash(state) {
         doctrines: state.doctrines,
         doctrineStates: state.doctrineStates,
         encounters: state.encounters,
+        objectives: state.objectives,
+        missionScript: state.missionScript,
+        missionState: state.missionState,
+        missionFailureText: state.missionFailureText,
+        endOnObjectives: state.endOnObjectives === true,
     });
 }
 
@@ -686,14 +702,14 @@ export function simulateAuthoritativeTick(state) {
 
     for (var vp = 0; vp < state.players.length; vp++) updateVis(state.fog, vp, state.nodes, state.tick);
 
-    maybeResolveObjectiveVictory(state);
+    advanceMissionState(state, { tickRate: 30 });
     var resolved = resolveMatchEndState({
         nodes: state.nodes,
         fleets: state.fleets,
         players: state.players,
     });
     for (var ri = 0; ri < state.players.length; ri++) state.players[ri].alive = resolved.playersAlive[ri] !== false;
-    if (resolved.gameOver) {
+    if (state.state === 'playing' && resolved.gameOver) {
         state.winner = resolved.winnerIndex;
         state.state = 'gameOver';
     }

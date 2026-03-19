@@ -119,3 +119,54 @@ test('computeSyncHash changes when doctrine or encounter control state changes',
 
     assert.notEqual(computeSyncHash(baseState), computeSyncHash(variant));
 });
+
+test('computeSyncHash changes when mission phase state changes', function () {
+    var baseState = {
+        tick: 30,
+        state: 'playing',
+        winner: -1,
+        endOnObjectives: true,
+        players: [{ alive: true, isAI: false }],
+        objectives: [{ id: 'hold-a', type: 'owned_nodes', target: 2 }],
+        missionScript: {
+            phases: [
+                {
+                    id: 'alpha',
+                    objectives: [{ id: 'hold-a', type: 'owned_nodes', target: 2 }],
+                },
+                {
+                    id: 'beta',
+                    objectives: [{ id: 'hold-b', type: 'owned_nodes', target: 3 }],
+                },
+            ],
+        },
+        missionState: { phaseIndex: 0, phaseStartedTick: 0, completedPhaseIds: [] },
+        nodes: [{ id: 0, owner: 0, units: 12, level: 1, defense: false, assimilationProgress: 1, assimilationLock: 0 }],
+        fleets: [],
+    };
+    var variant = {
+        tick: 30,
+        state: 'playing',
+        winner: -1,
+        endOnObjectives: true,
+        players: [{ alive: true, isAI: false }],
+        objectives: [{ id: 'hold-b', type: 'owned_nodes', target: 3 }],
+        missionScript: {
+            phases: [
+                {
+                    id: 'alpha',
+                    objectives: [{ id: 'hold-a', type: 'owned_nodes', target: 2 }],
+                },
+                {
+                    id: 'beta',
+                    objectives: [{ id: 'hold-b', type: 'owned_nodes', target: 3 }],
+                },
+            ],
+        },
+        missionState: { phaseIndex: 1, phaseStartedTick: 30, completedPhaseIds: ['alpha'] },
+        nodes: [{ id: 0, owner: 0, units: 12, level: 1, defense: false, assimilationProgress: 1, assimilationLock: 0 }],
+        fleets: [],
+    };
+
+    assert.notEqual(computeSyncHash(baseState), computeSyncHash(variant));
+});
