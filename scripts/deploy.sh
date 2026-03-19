@@ -4,6 +4,22 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+MODE="${1:-docker}"
+
+deploy_local() {
+    echo "=== Solarmax yerel deploy: build + node sunucu (dist mode) ==="
+    npm run build
+    PORT="${PORT:-3000}"
+    fuser -k "${PORT}/tcp" 2>/dev/null || true
+    sleep 1
+    echo "http://localhost:${PORT} — calisiyor (Ctrl+C ile durdur)"
+    exec node server.js
+}
+
+if [ "$MODE" = "local" ]; then
+    deploy_local
+fi
+
 if docker compose version >/dev/null 2>&1; then
     COMPOSE_CMD=(docker compose)
 elif command -v docker-compose >/dev/null 2>&1; then

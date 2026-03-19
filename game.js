@@ -41,7 +41,7 @@ import { runAiAndWrapTickPhase, runCombatTickPhase, runEconomyTickPhase, runOnli
 import { renderMarqueeLayer, renderMinimapLayer, renderWorldLayers } from './assets/app/render_layers.js';
 import { applyCampaignRunState, applyDailyChallengeRunState, applySkirmishRunState, buildCampaignLevelStartConfig, buildCustomMapStartConfig, buildDailyChallengeStartConfig, buildSkirmishStartConfig } from './assets/app/start_flow.js';
 import { applyRoomStateNetState, beginOnlineMatch, buildCreateRoomRequest, buildJoinRoomRequest, buildOnlineMatchInitOptions, buildOnlineMatchStatusText, buildRoomStateMenuPatches, computeOnlineCommandTick, getSocketEndpoint, resetOnlineRoomState } from './assets/net/online_session.js';
-import { findHoveredNodeAtScreen } from './assets/app/hover_target.js';
+import { canvasToViewportPoint, findHoveredNodeAtScreen } from './assets/app/hover_target.js';
 import { HUD_ACTION_HELP_DEFAULT, buildHudContextBadge, buildHudHintText, buildNodeHoverTip } from './assets/ui/hud_assistive.js';
 import { buildHudAdvisorCard } from './assets/ui/hud_advisor.js';
 import { buildHudCoachItems, renderHudCoach } from './assets/ui/hud_coach.js';
@@ -2581,15 +2581,15 @@ function drawContestedFronts(ctx, territorySets, tick) {
 
     ctx.save();
     ctx.globalCompositeOperation = 'screen';
-    ctx.setLineDash([6, 5]);
+    ctx.setLineDash([]);
     for (var fi = 0; fi < fronts.length; fi++) {
         var front = fronts[fi];
         var pulse = 0.52 + 0.48 * Math.sin(tick * 0.05 + fi * 0.9);
         ctx.beginPath();
         ctx.moveTo(front.ax, front.ay);
         ctx.lineTo(front.bx, front.by);
-        ctx.strokeStyle = 'rgba(255,228,168,' + (0.12 + pulse * 0.08) + ')';
-        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = 'rgba(255,228,168,' + (0.1 + pulse * 0.06) + ')';
+        ctx.lineWidth = 1;
         ctx.stroke();
 
         ctx.beginPath();
@@ -3421,9 +3421,51 @@ function currentHoveredNodeTip() {
         label: nodeTypeOf(node).label,
     });
 }
+function positionNodeHoverTip(screenPos) {
+    if (!ensureNodeHoverTipElements() || !cv || !screenPos) return;
+    screenPos = screenPos && typeof screenPos === 'object' ? screenPos : {};
+    var rect = cv.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    var vp = canvasToViewportPoint(screenPos, rect, { width: cv.width, height: cv.height });
+    var margin = 14;
+    nodeHoverTip.style.position = 'fixed';
+    nodeHoverTip.style.left = '0px';
+    nodeHoverTip.style.top = '0px';
+    var tipW = nodeHoverTip.offsetWidth || 220;
+    var tipH = nodeHoverTip.offsetHeight || 72;
+    var x = vp.x + margin;
+    var y = vp.y + margin;
+    if (x + tipW > window.innerWidth - 10) x = vp.x - tipW - margin;
+    if (y + tipH > window.innerHeight - 10) y = vp.y - tipH - margin;
+    x = Math.max(8, Math.min(x, window.innerWidth - tipW - 8));
+    y = Math.max(8, Math.min(y, window.innerHeight - tipH - 8));
+    nodeHoverTip.style.left = x + 'px';
+    nodeHoverTip.style.top = y + 'px';
+}
 function syncNodeHoverTip() {
-    /* Ipucu metni yalnizca #hudMeta icinde (selectionMetaText); imlecin yanindaki kart cift kutuya yol aciyordu. */
-    hideNodeHoverTip();
+    if (!ensureNodeHoverTipElements()) return;
+    if (G.state !== 'playing' && G.state !== 'paused') {
+        hideNodeHoverTip();
+        return;
+    }
+    if (inp && inp.sel && inp.sel.size > 0) {
+        hideNodeHoverTip();
+        return;
+    }
+    var node = hoveredNodeForTip();
+    if (!node) {
+        hideNodeHoverTip();
+        return;
+    }
+    var tip = buildNodeHoverTip({
+        kind: node.kind,
+        label: nodeTypeOf(node).label,
+    });
+    nodeHoverTipTitle.textContent = tip.title;
+    nodeHoverTipBody.textContent = tip.body;
+    nodeHoverTip.classList.remove('hidden');
+    nodeHoverTip.setAttribute('aria-hidden', 'false');
+    if (inp && inp.ms) positionNodeHoverTip(inp.ms);
 }
 function bindHudActionHelp() {
     if (hudActionHelpBound) return;
@@ -3712,18 +3754,12 @@ function triggerHumanDoctrine() {
 }
 
 function selectionMetaText() {
-    if (!hudMeta || !inp || !inp.sel) return '';
+    if (!hudMeta || !inp) return '';
     if (inp.commandMode === 'flow') return 'FLOW modu aktif: hedef gezegene dokun ya da tıkla.';
-    var ids = Array.from(inp.sel).filter(function (id) { return !!G.nodes[id]; });
+    var ids = Array.from(inp.sel || []).filter(function (id) { return !!G.nodes[id]; });
     if (!ids.length) {
-        var hoverIdle = hoveredNodeForTip();
-        if (hoverIdle) {
-            var idleTip = buildNodeHoverTip({
-                kind: hoverIdle.kind,
-                label: nodeTypeOf(hoverIdle).label,
-            });
-            return idleTip.title + ' · ' + idleTip.body;
-        }
+        /* Hover aciklamasi yuzuyen #nodeHoverTip ile; burada tekrar etme. */
+        if (hoveredNodeForTip()) return '';
         var idleParts = [];
         if (G.mapFeature && G.mapFeature.type === 'barrier') idleParts.push(barrierGateStatusText());
         if (G.mapMutator && G.mapMutator.type !== 'none') idleParts.push('Mutator: ' + mapMutatorName(G.mapMutator));

@@ -28,24 +28,6 @@ function drawDefenseRangeLayer(ctx, game, tick, constants, helpers) {
         ctx.setLineDash([]);
     }
 
-    for (var fr = 0; fr < game.nodes.length; fr++) {
-        var fieldNode = game.nodes[fr];
-        if (!fieldNode || fieldNode.kind === 'turret' || fieldNode.owner < 0) continue;
-        var fieldVisible = !game.tune.fogEnabled || fieldNode.owner === game.human || !!game.fog.vis[game.human][fieldNode.id];
-        if (!fieldVisible) continue;
-        var fieldStats = helpers.getDefenseFieldStats(fieldNode, helpers.defenseFieldCfg());
-        if (!fieldStats.active) continue;
-        var fieldCol = game.players[fieldNode.owner] ? game.players[fieldNode.owner].color : constants.colNeutral;
-        var fieldAlpha = fieldNode.owner === game.human ? 0.12 : 0.07;
-        if (fieldNode.selected) fieldAlpha += 0.05;
-        ctx.beginPath();
-        ctx.arc(fieldNode.pos.x, fieldNode.pos.y, fieldStats.range, 0, Math.PI * 2);
-        ctx.strokeStyle = helpers.hexToRgba(fieldCol, fieldAlpha);
-        ctx.setLineDash([4, 5]);
-        ctx.lineWidth = fieldNode.defense ? 1.4 : 1;
-        ctx.stroke();
-        ctx.setLineDash([]);
-    }
 }
 
 function drawFlowLinksLayer(ctx, game, constants, helpers) {
@@ -243,15 +225,18 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             ctx.lineWidth = 1.6;
             ctx.stroke();
 
-            ctx.save();
-            ctx.setLineDash([5, 4]);
-            ctx.lineDashOffset = -tick * 0.7;
-            ctx.beginPath();
-            ctx.arc(n.pos.x, n.pos.y, ringR, 0, Math.PI * 2, false);
-            ctx.strokeStyle = helpers.hexToRgba(col, 0.36);
-            ctx.lineWidth = 1.1;
-            ctx.stroke();
-            ctx.restore();
+            /* Kesikli iz halkasi yalniz turret (menzil halkasiyla tutarli); gezegenlerde ust uste binen dash kaldirildi. */
+            if (n.kind === 'turret') {
+                ctx.save();
+                ctx.setLineDash([5, 4]);
+                ctx.lineDashOffset = -tick * 0.7;
+                ctx.beginPath();
+                ctx.arc(n.pos.x, n.pos.y, ringR, 0, Math.PI * 2, false);
+                ctx.strokeStyle = helpers.hexToRgba(col, 0.36);
+                ctx.lineWidth = 1.1;
+                ctx.stroke();
+                ctx.restore();
+            }
 
             ctx.beginPath();
             ctx.arc(n.pos.x, n.pos.y, ringR, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * prog, false);
