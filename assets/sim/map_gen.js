@@ -2,7 +2,7 @@ import { selectBarrierGateIds } from './barrier_layout.js';
 import { buildEncounterState } from './encounters.js';
 import { resolveMapMutator } from './mutator.js';
 import { normalizeNodeKindForRuleset } from './ruleset.js';
-import { PLAYER_COLORS, SIM_CONSTANTS, difficultyConfig, nodeCapacity } from './shared_config.js';
+import { PLAYER_COLORS, SIM_CONSTANTS, difficultyConfig, nodeCapacity, pickNodeKindForRadius, tunedNodeRadiusForKind } from './shared_config.js';
 
 var MAP_W = 1600;
 var MAP_H = 1000;
@@ -59,12 +59,10 @@ export function spawnAnchors(playerCount) {
 }
 
 function initNodeKind(node, rng) {
-    var roll = rng.next();
-    if (roll < 0.18) node.kind = 'forge';
-    else if (roll < 0.36) node.kind = 'bulwark';
-    else if (roll < 0.52) node.kind = 'relay';
-    else if (roll < 0.65) node.kind = 'nexus';
-    else node.kind = 'core';
+    var radiusOpts = { minRadius: NODE_RMIN, maxRadius: NODE_RMAX };
+    node.kind = pickNodeKindForRadius(node.radius, rng, radiusOpts);
+    node.radius = tunedNodeRadiusForKind(node.radius, node.kind, rng, radiusOpts);
+    node.visionR = SIM_CONSTANTS.VISION_R + node.radius * 2;
     node.level = 1;
     node.maxUnits = nodeCapacity(node);
 }

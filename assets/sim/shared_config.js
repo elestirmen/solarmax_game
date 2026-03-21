@@ -63,13 +63,83 @@ export var SIM_CONSTANTS = {
 export var PLAYER_COLORS = ['#4a8eff', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'];
 
 export var NODE_TYPE_DEFS = {
-    core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#8db3ff' },
-    forge: { label: 'Forge', prod: 1.44, def: 0.84, cap: 0.87, flow: 1.08, speed: 1.0, color: '#ffad66' },
-    bulwark: { label: 'Bulwark', prod: 0.66, def: 1.58, cap: 1.3, flow: 0.86, speed: 0.93, color: '#b6c1d9' },
-    relay: { label: 'Relay', prod: 0.86, def: 0.92, cap: 0.8, flow: 1.45, speed: 1.42, color: '#7de3ff' },
-    nexus: { label: 'Nexus', prod: 1.17, def: 1.13, cap: 1.13, flow: 1.22, speed: 1.12, color: '#c9a0dc' },
-    turret: { label: 'Turret', prod: 0.0, def: 2.38, cap: 0.78, flow: 0.78, speed: 1.0, color: '#8ff0ff' },
+    core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#9ca9bd' },
+    forge: { label: 'Forge', prod: 1.44, def: 0.84, cap: 0.87, flow: 1.08, speed: 1.0, color: '#c6a18c' },
+    bulwark: { label: 'Bulwark', prod: 0.66, def: 1.58, cap: 1.3, flow: 0.86, speed: 0.93, color: '#afb7c3' },
+    relay: { label: 'Relay', prod: 0.86, def: 0.92, cap: 0.8, flow: 1.45, speed: 1.42, color: '#9bb6be' },
+    nexus: { label: 'Nexus', prod: 1.17, def: 1.13, cap: 1.13, flow: 1.22, speed: 1.12, color: '#b5acc1' },
+    turret: { label: 'Turret', prod: 0.0, def: 2.38, cap: 0.78, flow: 0.78, speed: 1.0, color: '#a4c0c4' },
 };
+
+export var NODE_KIND_SIZE_PROFILES = {
+    relay: { target: 0.14, spread: 0.16, weight: 0.98, radiusPull: 0.34 },
+    forge: { target: 0.32, spread: 0.18, weight: 1.04, radiusPull: 0.28 },
+    core: { target: 0.53, spread: 0.26, weight: 1.26, radiusPull: 0.16 },
+    nexus: { target: 0.72, spread: 0.12, weight: 0.16, radiusPull: 0.28 },
+    bulwark: { target: 0.87, spread: 0.17, weight: 0.94, radiusPull: 0.34 },
+};
+
+var DEFAULT_NODE_RADIUS_MIN = 18;
+var DEFAULT_NODE_RADIUS_MAX = 36;
+
+function sampleRng(rng) {
+    if (rng && typeof rng.next === 'function') return clamp(rng.next(), 0, 1);
+    if (typeof rng === 'function') return clamp(rng(), 0, 1);
+    return Math.random();
+}
+
+function resolveNodeRadiusBounds(opts) {
+    opts = opts || {};
+    var minRadius = Number(opts.minRadius);
+    var maxRadius = Number(opts.maxRadius);
+    if (!Number.isFinite(minRadius)) minRadius = DEFAULT_NODE_RADIUS_MIN;
+    if (!Number.isFinite(maxRadius) || maxRadius <= minRadius) maxRadius = DEFAULT_NODE_RADIUS_MAX;
+    return { minRadius: minRadius, maxRadius: maxRadius };
+}
+
+export function nodeKindRadiusNorm(radius, opts) {
+    var bounds = resolveNodeRadiusBounds(opts);
+    return clamp(((Number(radius) || bounds.minRadius) - bounds.minRadius) / Math.max(1, bounds.maxRadius - bounds.minRadius), 0, 1);
+}
+
+export function nodeKindProfile(kind) {
+    return NODE_KIND_SIZE_PROFILES[kind] || NODE_KIND_SIZE_PROFILES.core;
+}
+
+export function nodeKindWeightForRadius(kind, radius, opts) {
+    var profile = nodeKindProfile(kind);
+    var radiusNorm = nodeKindRadiusNorm(radius, opts);
+    var spread = Math.max(0.05, profile.spread || 0.2);
+    var delta = radiusNorm - profile.target;
+    return Math.max(0.0001, (profile.weight || 1) * Math.exp(-(delta * delta) / (2 * spread * spread)));
+}
+
+export function pickNodeKindForRadius(radius, rng, opts) {
+    var kinds = ['relay', 'forge', 'core', 'nexus', 'bulwark'];
+    var total = 0;
+    var weights = [];
+    for (var i = 0; i < kinds.length; i++) {
+        var jitter = 0.92 + sampleRng(rng) * 0.16;
+        var weight = nodeKindWeightForRadius(kinds[i], radius, opts) * jitter;
+        weights.push(weight);
+        total += weight;
+    }
+    var roll = sampleRng(rng) * total;
+    for (var wi = 0; wi < kinds.length; wi++) {
+        roll -= weights[wi];
+        if (roll <= 0) return kinds[wi];
+    }
+    return 'core';
+}
+
+export function tunedNodeRadiusForKind(radius, kind, rng, opts) {
+    var bounds = resolveNodeRadiusBounds(opts);
+    var profile = nodeKindProfile(kind);
+    var targetRadius = bounds.minRadius + (bounds.maxRadius - bounds.minRadius) * profile.target;
+    var pull = profile.radiusPull || 0;
+    var jitter = (sampleRng(rng) - 0.5) * 1.2;
+    return clamp(radius + (targetRadius - radius) * pull + jitter, bounds.minRadius, bounds.maxRadius);
+}
 
 export var AI_ARCHETYPES = [
     { name: 'Rusher', aggr: 1.2, flow: 0.9, reserve: 0.85, upg: 0.45 },

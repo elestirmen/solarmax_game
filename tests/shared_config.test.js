@@ -1,7 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { upgradeCost } from '../assets/sim/shared_config.js';
+import { pickNodeKindForRadius, upgradeCost } from '../assets/sim/shared_config.js';
+
+function TestRNG(seed) {
+    this.s = seed | 0;
+    if (!this.s) this.s = 1;
+}
+
+TestRNG.prototype.next = function () {
+    var t = this.s += 0x6d2b79f5;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+};
 
 function legacyUpgradeCost(node) {
     var radius = Number(node && node.radius) || 0;
@@ -29,4 +41,16 @@ test('supplied discount still reduces upgrade cost after the global increase', f
     var suppliedCost = upgradeCost({ radius: 24, level: 2, kind: 'core', supplied: true });
 
     assert.equal(suppliedCost < unsuppliedCost, true);
+});
+
+test('pickNodeKindForRadius keeps nexus comparatively rare even among large planets', function () {
+    var rng = new TestRNG(12376);
+    var counts = { core: 0, forge: 0, bulwark: 0, relay: 0, nexus: 0 };
+    for (var i = 0; i < 2000; i++) {
+        counts[pickNodeKindForRadius(31, rng, { minRadius: 18, maxRadius: 36 })] += 1;
+    }
+
+    assert.equal(counts.nexus < counts.bulwark, true);
+    assert.equal(counts.nexus < counts.core, true);
+    assert.equal(counts.nexus < 240, true);
 });

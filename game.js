@@ -17,7 +17,7 @@ import { activateDoctrine, buildDoctrineLoadout, canActivateDoctrine, doctrineAc
 import { buildEncounterState, encounterHint, encounterName, encounterSummary, stepEncounterState } from './assets/sim/encounters.js';
 import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } from './assets/sim/ruleset.js';
 import { computeFriendlyReinforcementRoom } from './assets/sim/reinforcement.js';
-import { buildFleetSpawnProfile, getFleetUnitSpacingT, hashMix } from './assets/sim/shared_config.js';
+import { buildFleetSpawnProfile, getFleetUnitSpacingT, hashMix, pickNodeKindForRadius, tunedNodeRadiusForKind } from './assets/sim/shared_config.js';
 import { beginNodeUpgrade, getNodeUpgradeProgress, getNodeUpgradeVisualLevel, isNodeUpgradePending, normalizeNodeUpgradeState, resolvePendingNodeUpgrades } from './assets/sim/node_upgrade.js';
 import { getStrategicPulseState, isStrategicPulseActiveForNode } from './assets/sim/strategic_pulse.js';
 import { applySolarFlareFleetWipe, getSolarFlareFrame, getSolarFlareTransitions } from './assets/sim/solar_flare.js';
@@ -121,19 +121,12 @@ var SYNC_HASH_INTERVAL_TICKS = 90, TICK_RATE = Math.round(1 / TICK_DT);
 var NODE_HOVER_DWELL_MS = 420;
 
 var NODE_TYPE_DEFS = {
-    core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#8db3ff' },
-    forge: { label: 'Forge', prod: 1.44, def: 0.84, cap: 0.87, flow: 1.08, speed: 1.0, color: '#ffad66' },
-    bulwark: { label: 'Bulwark', prod: 0.66, def: 1.58, cap: 1.3, flow: 0.86, speed: 0.93, color: '#b6c1d9' },
-    relay: { label: 'Relay', prod: 0.86, def: 0.92, cap: 0.8, flow: 1.45, speed: 1.42, color: '#7de3ff' },
-    nexus: { label: 'Nexus', prod: 1.17, def: 1.13, cap: 1.13, flow: 1.22, speed: 1.12, color: '#c9a0dc' },
-    turret: { label: 'Turret', prod: 0.0, def: 2.38, cap: 0.78, flow: 0.78, speed: 1.0, color: '#8ff0ff' },
-};
-var NODE_KIND_SIZE_PROFILES = {
-    relay: { target: 0.14, spread: 0.16, weight: 0.96, radiusPull: 0.34 },
-    forge: { target: 0.32, spread: 0.18, weight: 1.02, radiusPull: 0.28 },
-    core: { target: 0.52, spread: 0.26, weight: 1.2, radiusPull: 0.16 },
-    nexus: { target: 0.7, spread: 0.2, weight: 0.9, radiusPull: 0.24 },
-    bulwark: { target: 0.86, spread: 0.16, weight: 0.88, radiusPull: 0.34 },
+    core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#9ca9bd' },
+    forge: { label: 'Forge', prod: 1.44, def: 0.84, cap: 0.87, flow: 1.08, speed: 1.0, color: '#c6a18c' },
+    bulwark: { label: 'Bulwark', prod: 0.66, def: 1.58, cap: 1.3, flow: 0.86, speed: 0.93, color: '#afb7c3' },
+    relay: { label: 'Relay', prod: 0.86, def: 0.92, cap: 0.8, flow: 1.45, speed: 1.42, color: '#9bb6be' },
+    nexus: { label: 'Nexus', prod: 1.17, def: 1.13, cap: 1.13, flow: 1.22, speed: 1.12, color: '#b5acc1' },
+    turret: { label: 'Turret', prod: 0.0, def: 2.38, cap: 0.78, flow: 0.78, speed: 1.0, color: '#a4c0c4' },
 };
 var NODE_KIND_TEXTURE_SEEDS = {
     core: 11,
@@ -636,42 +629,6 @@ function nodeVisualScale(node, tick) {
     var visualLevel = getNodeUpgradeVisualLevel(node, tick === undefined ? G.tick : tick);
     return 1 + Math.max(0, visualLevel - 1) * UPGRADE_VISUAL_SCALE_PER_LEVEL;
 }
-function nodeKindRadiusNorm(radius) {
-    return clamp(((Number(radius) || NODE_RMIN) - NODE_RMIN) / Math.max(1, NODE_RMAX - NODE_RMIN), 0, 1);
-}
-function nodeKindProfile(kind) {
-    return NODE_KIND_SIZE_PROFILES[kind] || NODE_KIND_SIZE_PROFILES.core;
-}
-function nodeKindWeightForRadius(kind, radius) {
-    var profile = nodeKindProfile(kind);
-    var radiusNorm = nodeKindRadiusNorm(radius);
-    var spread = Math.max(0.05, profile.spread || 0.2);
-    var delta = radiusNorm - profile.target;
-    return Math.max(0.0001, (profile.weight || 1) * Math.exp(-(delta * delta) / (2 * spread * spread)));
-}
-function pickNodeKindForRadius(radius) {
-    var kinds = ['relay', 'forge', 'core', 'nexus', 'bulwark'];
-    var total = 0;
-    var weights = [];
-    for (var i = 0; i < kinds.length; i++) {
-        var weight = nodeKindWeightForRadius(kinds[i], radius) * (0.92 + G.rng.next() * 0.16);
-        weights.push(weight);
-        total += weight;
-    }
-    var roll = G.rng.next() * total;
-    for (var wi = 0; wi < kinds.length; wi++) {
-        roll -= weights[wi];
-        if (roll <= 0) return kinds[wi];
-    }
-    return 'core';
-}
-function tunedNodeRadiusForKind(radius, kind) {
-    var profile = nodeKindProfile(kind);
-    var targetRadius = NODE_RMIN + (NODE_RMAX - NODE_RMIN) * profile.target;
-    var pull = profile.radiusPull || 0;
-    var jitter = (G.rng.next() - 0.5) * 1.2;
-    return clamp(radius + (targetRadius - radius) * pull + jitter, NODE_RMIN, NODE_RMAX);
-}
 function nodeCapacity(node) {
     var td = nodeTypeOf(node);
     return Math.floor(MAX_UNITS * td.cap * nodeLevelCapMult(node));
@@ -717,8 +674,9 @@ function canUpgradeNodeForOwner(node, owner, tick) {
     return (Number(node.units) || 0) >= upgradeCost(node);
 }
 function initNodeKind(node) {
-    node.kind = pickNodeKindForRadius(node.radius);
-    node.radius = tunedNodeRadiusForKind(node.radius, node.kind);
+    var radiusOpts = { minRadius: NODE_RMIN, maxRadius: NODE_RMAX };
+    node.kind = pickNodeKindForRadius(node.radius, G.rng, radiusOpts);
+    node.radius = tunedNodeRadiusForKind(node.radius, node.kind, G.rng, radiusOpts);
     node.visionR = VISION_R + node.radius * 2;
     node.level = 1;
     node.maxUnits = nodeCapacity(node);
@@ -2193,195 +2151,287 @@ function drawTypeBadge(ctx, n, tdef) {
     ctx.restore();
 }
 
-// Override with clearer, lightweight class silhouettes.
-function drawPlanetTypeVisual(ctx, n, tdef, _col, tick) {
+function drawPlanetTypeVisual(ctx, n, tdef, col, tick) {
     var cx = n.pos.x, cy = n.pos.y, r = n.radius, k = n.kind;
-    var accent = tdef.color;
+    var accent = tdef.color || '#8db3ff';
+    var shell = col && col.indexOf('#') === 0 ? blendHex(col, accent, 0.3) : accent;
     var pulse = 0.5 + Math.sin(tick * 0.05 + n.id * 1.37) * 0.5;
-    var ring = r + 3.4;
-    ctx.save();
+    var orbitPhase = tick * 0.018 + n.id * 0.31;
+    var ring = r + 3.6;
+    var innerGlow = ctx.createRadialGradient(cx - r * 0.34, cy - r * 0.36, r * 0.12, cx, cy, r * 1.02);
 
-    // Shared modern frame: soft halo + clean ring.
-    var halo = ctx.createRadialGradient(cx, cy, r * 0.6, cx, cy, ring + 8);
+    function traceDiamond(rx, ry) {
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - ry);
+        ctx.lineTo(cx + rx, cy);
+        ctx.lineTo(cx, cy + ry);
+        ctx.lineTo(cx - rx, cy);
+        ctx.closePath();
+    }
+
+    function tracePolygon(sides, radius, rotation) {
+        ctx.beginPath();
+        for (var i = 0; i < sides; i++) {
+            var a = rotation + (Math.PI * 2 * i) / sides;
+            var px = cx + Math.cos(a) * radius;
+            var py = cy + Math.sin(a) * radius;
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+    }
+
+    innerGlow.addColorStop(0, hexToRgba('#ffffff', 0.16));
+    innerGlow.addColorStop(0.28, hexToRgba(shell, 0.13));
+    innerGlow.addColorStop(0.72, hexToRgba(accent, 0.09));
+    innerGlow.addColorStop(1, hexToRgba('#000000', 0));
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    var halo = ctx.createRadialGradient(cx, cy, r * 0.48, cx, cy, ring + 12);
     halo.addColorStop(0, hexToRgba(accent, 0));
-    halo.addColorStop(0.72, hexToRgba(accent, 0.08 + pulse * 0.03));
+    halo.addColorStop(0.64, hexToRgba(accent, 0.08 + pulse * 0.06));
     halo.addColorStop(1, hexToRgba(accent, 0));
     ctx.beginPath();
-    ctx.arc(cx, cy, ring + 8, 0, Math.PI * 2);
+    ctx.arc(cx, cy, ring + 12, 0, Math.PI * 2);
     ctx.fillStyle = halo;
     ctx.fill();
+    ctx.restore();
 
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(cx, cy, ring, 0, Math.PI * 2);
-    ctx.strokeStyle = hexToRgba(accent, 0.34 + pulse * 0.12);
-    ctx.lineWidth = 1;
-    ctx.stroke();
+    ctx.arc(cx, cy, r - 0.35, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = innerGlow;
+    ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
 
     if (k === 'core') {
-        // Balanced, symmetric, neutral tech signature.
+        var eqRot = orbitPhase * 0.35;
         ctx.beginPath();
-        ctx.arc(cx, cy, r * 0.48, 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(255,255,255,0.26)';
+        ctx.ellipse(cx, cy + r * 0.03, r * 0.84, r * 0.28, eqRot, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba('#ffffff', 0.22);
+        ctx.lineWidth = 1.3;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.ellipse(cx, cy - r * 0.1, r * 0.52, r * 0.2, -eqRot * 1.4, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba(accent, 0.38);
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        ctx.beginPath();
-        ctx.arc(cx, cy, Math.max(2.2, r * 0.17), 0, Math.PI * 2);
-        ctx.fillStyle = hexToRgba(accent, 0.62);
-        ctx.fill();
-
         for (var c = 0; c < 4; c++) {
-            var ca = c * Math.PI * 0.5;
-            var x1 = cx + Math.cos(ca) * (r * 0.54);
-            var y1 = cy + Math.sin(ca) * (r * 0.54);
-            var x2 = cx + Math.cos(ca) * (r * 0.74);
-            var y2 = cy + Math.sin(ca) * (r * 0.74);
-            ctx.beginPath();
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-            ctx.strokeStyle = hexToRgba(accent, 0.5);
-            ctx.lineWidth = 1;
-            ctx.stroke();
-        }
-    } else if (k === 'forge') {
-        // Production motif: hot radial fins + glowing cores.
-        ctx.beginPath();
-        ctx.arc(cx, cy, ring + 1.9, 0, Math.PI * 2);
-        ctx.strokeStyle = hexToRgba(accent, 0.72);
-        ctx.lineWidth = 1.4;
-        ctx.stroke();
-
-        for (var fi = 0; fi < 6; fi++) {
-            var fa = tick * 0.016 + fi * Math.PI / 3;
-            var ix = cx + Math.cos(fa) * (r * 0.43);
-            var iy = cy + Math.sin(fa) * (r * 0.43);
-            var ox = cx + Math.cos(fa) * (r + 6.3);
-            var oy = cy + Math.sin(fa) * (r + 6.3);
+            var ca = c * Math.PI * 0.5 + orbitPhase * 0.18;
+            var ix = cx + Math.cos(ca) * (r * 0.28);
+            var iy = cy + Math.sin(ca) * (r * 0.28);
+            var ox = cx + Math.cos(ca) * (r * 0.78);
+            var oy = cy + Math.sin(ca) * (r * 0.78);
             ctx.beginPath();
             ctx.moveTo(ix, iy);
             ctx.lineTo(ox, oy);
-            ctx.strokeStyle = hexToRgba(accent, 0.6 + Math.sin(tick * 0.03 + fi) * 0.06);
-            ctx.lineWidth = 1.15;
+            ctx.strokeStyle = hexToRgba(accent, 0.44);
+            ctx.lineWidth = 1.2;
             ctx.stroke();
         }
 
-        for (var v = -1; v <= 1; v++) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(2.6, r * 0.18), 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba('#ffffff', 0.3);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.arc(cx, cy, Math.max(1.9, r * 0.11), 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba(accent, 0.84);
+        ctx.fill();
+    } else if (k === 'forge') {
+        var heatBand = ctx.createLinearGradient(cx, cy - r * 0.9, cx, cy + r * 0.95);
+        heatBand.addColorStop(0, hexToRgba('#ffedbd', 0.04));
+        heatBand.addColorStop(0.38, hexToRgba(accent, 0.12));
+        heatBand.addColorStop(0.62, hexToRgba('#ff8a3d', 0.32));
+        heatBand.addColorStop(1, hexToRgba('#4d1200', 0.08));
+        ctx.fillStyle = heatBand;
+        ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+
+        for (var fi = 0; fi < 6; fi++) {
+            var fa = orbitPhase * 0.9 + fi * Math.PI / 3;
+            var ix2 = cx + Math.cos(fa) * (r * 0.2);
+            var iy2 = cy + Math.sin(fa) * (r * 0.2);
+            var mx = cx + Math.cos(fa) * (r * 0.56);
+            var my = cy + Math.sin(fa) * (r * 0.56);
+            var ox2 = cx + Math.cos(fa) * (r * 0.98);
+            var oy2 = cy + Math.sin(fa) * (r * 0.98);
             ctx.beginPath();
-            ctx.arc(cx + v * r * 0.22, cy + r * 0.08, Math.max(1.25, r * 0.085), 0, Math.PI * 2);
-            ctx.fillStyle = hexToRgba(accent, 0.76);
+            ctx.moveTo(ix2, iy2);
+            ctx.lineTo(mx, my);
+            ctx.lineTo(ox2, oy2);
+            ctx.strokeStyle = hexToRgba(accent, 0.66 + Math.sin(tick * 0.03 + fi) * 0.05);
+            ctx.lineWidth = fi % 2 === 0 ? 1.8 : 1.15;
+            ctx.stroke();
+        }
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, r * 0.33, 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba('#ffcf84', 0.14);
+        ctx.fill();
+        for (var vent = -1; vent <= 1; vent++) {
+            ctx.beginPath();
+            ctx.arc(cx + vent * r * 0.24, cy + r * 0.1, Math.max(1.5, r * 0.095), 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba('#ffe6c4', 0.34);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(cx + vent * r * 0.24, cy + r * 0.1, Math.max(1.1, r * 0.062), 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba(accent, 0.8);
             ctx.fill();
         }
     } else if (k === 'bulwark') {
-        // Defensive motif: shield-like shell + reinforced inner shell.
-        ctx.beginPath();
-        for (var bi = 0; bi < 8; bi++) {
-            var ba = Math.PI / 8 + bi * (Math.PI / 4);
-            var bx = cx + Math.cos(ba) * (ring + 1.7);
-            var by = cy + Math.sin(ba) * (ring + 1.7);
-            if (bi === 0) ctx.moveTo(bx, by);
-            else ctx.lineTo(bx, by);
-        }
-        ctx.closePath();
+        tracePolygon(8, r * 0.9, Math.PI / 8 + orbitPhase * 0.05);
+        ctx.fillStyle = hexToRgba(accent, 0.1);
+        ctx.fill();
         ctx.strokeStyle = hexToRgba(accent, 0.8);
-        ctx.lineWidth = 1.9;
+        ctx.lineWidth = 2.1;
         ctx.stroke();
 
+        tracePolygon(8, r * 0.62, Math.PI / 8 - orbitPhase * 0.04);
+        ctx.strokeStyle = hexToRgba('#ffffff', 0.2);
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+
+        var barX = cx - r * 0.52;
+        var barY = cy - r * 0.12;
+        var barW = r * 1.04;
+        var barH = r * 0.24;
+        var barR = r * 0.08;
         ctx.beginPath();
-        for (var bi2 = 0; bi2 < 8; bi2++) {
-            var ba2 = Math.PI / 8 + bi2 * (Math.PI / 4);
-            var bx3 = cx + Math.cos(ba2) * (r + 0.9);
-            var by3 = cy + Math.sin(ba2) * (r + 0.9);
-            if (bi2 === 0) ctx.moveTo(bx3, by3);
-            else ctx.lineTo(bx3, by3);
-        }
+        ctx.moveTo(barX + barR, barY);
+        ctx.arcTo(barX + barW, barY, barX + barW, barY + barH, barR);
+        ctx.arcTo(barX + barW, barY + barH, barX, barY + barH, barR);
+        ctx.arcTo(barX, barY + barH, barX, barY, barR);
+        ctx.arcTo(barX, barY, barX + barW, barY, barR);
         ctx.closePath();
+        ctx.fillStyle = hexToRgba(accent, 0.18);
+        ctx.fill();
         ctx.strokeStyle = hexToRgba(accent, 0.42);
-        ctx.lineWidth = 1;
+        ctx.lineWidth = 1.15;
         ctx.stroke();
 
-        ctx.beginPath();
-        ctx.moveTo(cx - r * 0.42, cy);
-        ctx.lineTo(cx + r * 0.42, cy);
-        ctx.strokeStyle = hexToRgba(accent, 0.35);
-        ctx.lineWidth = 1;
-        ctx.stroke();
-    } else if (k === 'relay') {
-        // Transfer motif: counter-rotating rings + directional chevrons.
-        ctx.beginPath();
-        ctx.arc(cx, cy, ring + 2.6, 0, Math.PI * 2);
-        ctx.setLineDash([4, 3]);
-        ctx.lineDashOffset = -tick * 0.22;
-        ctx.strokeStyle = hexToRgba(accent, 0.78);
-        ctx.lineWidth = 1.4;
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        ctx.beginPath();
-        ctx.arc(cx, cy, r + 1.05, 0, Math.PI * 2);
-        ctx.setLineDash([2.5, 3.5]);
-        ctx.lineDashOffset = tick * 0.18;
-        ctx.strokeStyle = hexToRgba(accent, 0.45);
-        ctx.lineWidth = 1;
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        for (var ri = 0; ri < 2; ri++) {
-            var ra = tick * 0.03 + ri * Math.PI;
-            var rx = cx + Math.cos(ra) * (ring + 1.8);
-            var ry = cy + Math.sin(ra) * (ring + 1.8);
-            ctx.save();
-            ctx.translate(rx, ry);
-            ctx.rotate(ra);
-            var sz = Math.max(3.6, r * 0.22);
+        for (var brace = 0; brace < 4; brace++) {
+            var ba = Math.PI / 4 + brace * Math.PI * 0.5;
+            var bx = cx + Math.cos(ba) * (r * 0.74);
+            var by = cy + Math.sin(ba) * (r * 0.74);
             ctx.beginPath();
-            ctx.moveTo(-sz, -sz * 0.58);
-            ctx.lineTo(0, 0);
-            ctx.lineTo(-sz, sz * 0.58);
-            ctx.strokeStyle = hexToRgba(accent, 0.92);
-            ctx.lineWidth = 1.2;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
-            ctx.stroke();
-            ctx.restore();
+            ctx.arc(bx, by, Math.max(1.4, r * 0.082), 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba('#ffffff', 0.2);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(bx, by, Math.max(1.05, r * 0.052), 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba(accent, 0.78);
+            ctx.fill();
         }
-    } else if (k === 'nexus') {
-        // Hybrid motif: diamond core + network links.
+    } else if (k === 'relay') {
         ctx.beginPath();
-        ctx.moveTo(cx, cy - r * 0.6);
-        ctx.lineTo(cx + r * 0.6, cy);
-        ctx.lineTo(cx, cy + r * 0.6);
-        ctx.lineTo(cx - r * 0.6, cy);
-        ctx.closePath();
-        ctx.strokeStyle = hexToRgba(accent, 0.8);
+        ctx.ellipse(cx, cy, r * 0.86, r * 0.34, orbitPhase, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba(accent, 0.5);
         ctx.lineWidth = 1.5;
         ctx.stroke();
 
         ctx.beginPath();
-        ctx.arc(cx, cy, ring + 1.4, 0, Math.PI * 2);
-        ctx.strokeStyle = hexToRgba(accent, 0.48);
-        ctx.lineWidth = 1.1;
+        ctx.ellipse(cx, cy, r * 0.66, r * 0.26, -orbitPhase * 1.4, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba('#ffffff', 0.24);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        for (var ri = 0; ri < 3; ri++) {
+            var ra = orbitPhase * (ri % 2 === 0 ? 1.6 : -1.3) + ri * (Math.PI * 2 / 3);
+            var rx = cx + Math.cos(ra) * (r * 0.84);
+            var ry = cy + Math.sin(ra) * (r * 0.34);
+            ctx.beginPath();
+            ctx.arc(rx, ry, Math.max(1.55, r * 0.078), 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba(accent, 0.88);
+            ctx.fill();
+            ctx.beginPath();
+            ctx.arc(rx, ry, Math.max(2.9, r * 0.14), 0, Math.PI * 2);
+            ctx.strokeStyle = hexToRgba(accent, 0.24);
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(cx - r * 0.42, cy);
+        ctx.lineTo(cx + r * 0.42, cy);
+        ctx.strokeStyle = hexToRgba('#ffffff', 0.3);
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+    } else if (k === 'nexus') {
+        traceDiamond(r * 0.72, r * 0.78);
+        ctx.fillStyle = hexToRgba(accent, 0.12);
+        ctx.fill();
+        ctx.strokeStyle = hexToRgba(accent, 0.84);
+        ctx.lineWidth = 1.8;
+        ctx.stroke();
+
+        traceDiamond(r * 0.42, r * 0.48);
+        ctx.fillStyle = hexToRgba('#ffffff', 0.1);
+        ctx.fill();
+        ctx.strokeStyle = hexToRgba('#ffffff', 0.28);
+        ctx.lineWidth = 1;
         ctx.stroke();
 
         for (var ni = 0; ni < 4; ni++) {
-            var na = ni * Math.PI * 0.5 + tick * 0.01;
-            var px = cx + Math.cos(na) * (r * 0.68);
-            var py = cy + Math.sin(na) * (r * 0.68);
+            var na = ni * Math.PI * 0.5 + orbitPhase * 0.56;
+            var px = cx + Math.cos(na) * (r * 0.74);
+            var py = cy + Math.sin(na) * (r * 0.74);
             ctx.beginPath();
             ctx.moveTo(cx, cy);
             ctx.lineTo(px, py);
-            ctx.strokeStyle = hexToRgba(accent, 0.32);
-            ctx.lineWidth = 1;
+            ctx.strokeStyle = hexToRgba(accent, 0.34);
+            ctx.lineWidth = 1.15;
             ctx.stroke();
             ctx.beginPath();
-            ctx.arc(px, py, 1.2, 0, Math.PI * 2);
-            ctx.fillStyle = hexToRgba(accent, 0.7);
+            ctx.arc(px, py, Math.max(1.35, r * 0.072), 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba(accent, 0.82);
             ctx.fill();
         }
 
         ctx.beginPath();
-        ctx.arc(cx, cy, Math.max(1.9, r * 0.13), 0, Math.PI * 2);
-        ctx.fillStyle = hexToRgba(accent, 0.82);
+        ctx.arc(cx, cy, Math.max(2.2, r * 0.14), 0, Math.PI * 2);
+        ctx.fillStyle = hexToRgba('#ffffff', 0.22);
         ctx.fill();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    ctx.beginPath();
+    ctx.arc(cx, cy, ring, 0, Math.PI * 2);
+    ctx.strokeStyle = hexToRgba(accent, 0.34 + pulse * 0.14);
+    ctx.lineWidth = k === 'bulwark' ? 1.45 : 1.15;
+    ctx.stroke();
+
+    if (k === 'forge') {
+        ctx.beginPath();
+        ctx.arc(cx, cy, ring + 2, -Math.PI * 0.78 + orbitPhase * 0.2, Math.PI * 0.2 + orbitPhase * 0.2);
+        ctx.strokeStyle = hexToRgba('#ffcf84', 0.58);
+        ctx.lineWidth = 1.7;
+        ctx.stroke();
+    } else if (k === 'relay') {
+        ctx.setLineDash([4, 3.2]);
+        ctx.lineDashOffset = -tick * 0.24;
+        ctx.beginPath();
+        ctx.arc(cx, cy, ring + 2.4, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba(accent, 0.72);
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+        ctx.setLineDash([]);
+    } else if (k === 'nexus') {
+        ctx.beginPath();
+        ctx.arc(cx, cy, ring + 1.8, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba(accent, 0.46);
+        ctx.lineWidth = 1.3;
+        ctx.stroke();
+    } else if (k === 'core') {
+        ctx.beginPath();
+        ctx.arc(cx, cy, ring - 1.2, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba('#ffffff', 0.18);
+        ctx.lineWidth = 1;
+        ctx.stroke();
     }
     ctx.restore();
 }
