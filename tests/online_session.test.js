@@ -5,12 +5,14 @@ import {
     applyRoomStateNetState,
     beginOnlineMatch,
     buildCreateRoomRequest,
+    computeAuthoritativeFrameIntervalMs,
     buildJoinRoomRequest,
     buildOnlineMatchInitOptions,
     buildOnlineMatchStatusText,
     buildRoomStateMenuPatches,
     computeOnlineCommandTick,
     getSocketEndpoint,
+    isRoomChatAvailable,
     resetOnlineRoomState,
 } from '../assets/net/online_session.js';
 
@@ -68,6 +70,9 @@ test('online room state helpers reset and apply lobby state', function () {
         resyncRequestId: 'req-1',
         lastSummaryTick: 100,
         lastPingWallMs: 25,
+        lastAuthoritativeTick: 44,
+        authoritativeFrameAt: 200,
+        authoritativeFrameIntervalMs: 90,
         resumePending: false,
         pendingJoin: true,
     };
@@ -77,6 +82,8 @@ test('online room state helpers reset and apply lobby state', function () {
     assert.equal(net.roomCode, '');
     assert.equal(net.resumePending, true);
     assert.deepEqual(net.players, []);
+    assert.equal(net.lastAuthoritativeTick, -1);
+    assert.equal(net.authoritativeFrameIntervalMs > 0, true);
 
     applyRoomStateNetState(net, {
         code: 'ZXCVB',
@@ -118,6 +125,18 @@ test('computeOnlineCommandTick clamps latency-derived dispatch delay', function 
     assert.equal(computeOnlineCommandTick(300, 10000), 318);
 });
 
+test('room chat availability follows connected room membership', function () {
+    assert.equal(isRoomChatAvailable({ connected: true, roomCode: 'ab12c' }), true);
+    assert.equal(isRoomChatAvailable({ connected: false, roomCode: 'AB12C' }), false);
+    assert.equal(isRoomChatAvailable({ connected: true, roomCode: '' }), false);
+});
+
+test('authoritative frame interval follows snapshot tick distance with sane clamps', function () {
+    assert.equal(computeAuthoritativeFrameIntervalMs(-1, 0, 30) >= 60, true);
+    assert.equal(computeAuthoritativeFrameIntervalMs(10, 12, 30), 66.66666666666667);
+    assert.equal(computeAuthoritativeFrameIntervalMs(10, 30, 30), 200);
+});
+
 test('beginOnlineMatch and init/status helpers derive runtime metadata', function () {
     var net = {};
     var payload = {
@@ -144,6 +163,8 @@ test('beginOnlineMatch and init/status helpers derive runtime metadata', functio
     assert.equal(initOptions.localPlayerIndex, 1);
     assert.equal(initOptions.humanCount, 2);
     assert.equal(initOptions.endOnObjectives, true);
+    assert.equal(net.lastAuthoritativeTick, -1);
+    assert.equal(net.authoritativeFrameIntervalMs > 0, true);
     assert.match(statusText, /P2/);
     assert.match(statusText, /Daily Relay/);
 });

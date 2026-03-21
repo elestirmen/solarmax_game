@@ -41,7 +41,7 @@ import { attachGameInputController, createInputState, reconcileInputStateAfterAu
 import { runAiAndWrapTickPhase, runCombatTickPhase, runEconomyTickPhase, runOnlineTickSyncPhase } from './assets/app/game_tick_phases.js';
 import { renderMarqueeLayer, renderMinimapLayer, renderWorldLayers } from './assets/app/render_layers.js';
 import { applyCampaignRunState, applyDailyChallengeRunState, applySkirmishRunState, buildCampaignLevelStartConfig, buildCustomMapStartConfig, buildDailyChallengeStartConfig, buildSkirmishStartConfig } from './assets/app/start_flow.js';
-import { applyRoomStateNetState, beginOnlineMatch, buildCreateRoomRequest, buildJoinRoomRequest, buildOnlineMatchInitOptions, buildOnlineMatchStatusText, buildRoomStateMenuPatches, computeOnlineCommandTick, getSocketEndpoint, resetOnlineRoomState } from './assets/net/online_session.js';
+import { applyRoomStateNetState, beginOnlineMatch, buildCreateRoomRequest, buildJoinRoomRequest, buildOnlineMatchInitOptions, buildOnlineMatchStatusText, buildRoomStateMenuPatches, computeAuthoritativeFrameIntervalMs, computeOnlineCommandTick, getSocketEndpoint, isRoomChatAvailable, resetOnlineRoomState } from './assets/net/online_session.js';
 import { canvasToViewportPoint, findHoveredNodeAtScreen } from './assets/app/hover_target.js';
 import { HUD_ACTION_HELP_DEFAULT, buildHudContextBadge, buildHudHintText, buildNodeHoverTip } from './assets/ui/hud_assistive.js';
 import { buildHudAdvisorCard } from './assets/ui/hud_advisor.js';
@@ -550,6 +550,9 @@ var net = {
     resyncRequestId: '',
     lastSummaryTick: -1,
     lastPingWallMs: 0,
+    lastAuthoritativeTick: -1,
+    authoritativeFrameAt: 0,
+    authoritativeFrameIntervalMs: computeAuthoritativeFrameIntervalMs(-1, 1, TICK_RATE),
     reconnectToken: '',
     resumePending: false,
 };
@@ -2277,10 +2280,11 @@ function drawRocketShape(ctx, x, y, dirX, dirY, col, flicker, alpha, scale, bank
     ctx.restore();
 }
 
-function drawFleetRocket(ctx, f, col, tick) {
+function drawFleetRocket(ctx, f, col, tick, renderState) {
     var count = Math.max(1, Number(f.count) || 1);
     var routeStart = fleetRouteStart(f), routeTarget = fleetRouteTarget(f);
     if (!routeStart || !routeTarget) return;
+    renderState = renderState && typeof renderState === 'object' ? renderState : getFleetRenderState(f);
     var cp = { x: f.cpx, y: f.cpy };
     var launchT = clamp(typeof f.launchT === 'number' ? f.launchT : 0, 0, 0.2);
     var trail = f.trail || [];
@@ -2295,8 +2299,14 @@ function drawFleetRocket(ctx, f, col, tick) {
     var leadBank = clamp(Number(f.bank) || 0, -1, 1);
     var jitterPhase = tick * 18 + (f.id || 0) * 1.37;
     var hitShake = hitJitter * hitFlash;
-    var renderX = f.x + hitDirX * Math.sin(jitterPhase) * hitShake * 0.75 - hitDirY * Math.cos(jitterPhase * 0.9) * hitShake * 0.45;
-    var renderY = f.y + hitDirY * Math.sin(jitterPhase) * hitShake * 0.75 + hitDirX * Math.cos(jitterPhase * 0.9) * hitShake * 0.45;
+    var fleetX = Number(renderState.x);
+    var fleetY = Number(renderState.y);
+    var fleetT = Number(renderState.t);
+    if (!Number.isFinite(fleetX)) fleetX = Number(f.x) || 0;
+    if (!Number.isFinite(fleetY)) fleetY = Number(f.y) || 0;
+    if (!Number.isFinite(fleetT)) fleetT = Number(f.t) || 0;
+    var renderX = fleetX + hitDirX * Math.sin(jitterPhase) * hitShake * 0.75 - hitDirY * Math.cos(jitterPhase * 0.9) * hitShake * 0.45;
+    var renderY = fleetY + hitDirY * Math.sin(jitterPhase) * hitShake * 0.75 + hitDirX * Math.cos(jitterPhase * 0.9) * hitShake * 0.45;
     var shipCol = hitFlash > 0 ? blendHex(col, '#ffffff', Math.min(0.6, hitFlash * 0.72)) : col;
     var trailAlphaBoost = clamp(0.92 + Math.max(0, routeVisual - 1) * 0.65 + (trailScale - 1) * 0.45 + hitFlash * 0.28, 0.85, 1.7);
     var trailWidthBoost = clamp(0.95 + (trailScale - 1) * 0.85, 0.9, 1.5);
@@ -2329,8 +2339,8 @@ function drawFleetRocket(ctx, f, col, tick) {
         dirY = f.headingY;
     } else if (tl > 0) {
         var from = trail[tl - 1];
-        dirX = f.x - from.x;
-        dirY = f.y - from.y;
+        dirX = fleetX - from.x;
+        dirY = fleetY - from.y;
     } else {
         dirX = routeTarget.x - routeStart.x;
         dirY = routeTarget.y - routeStart.y;
@@ -2366,7 +2376,7 @@ function drawFleetRocket(ctx, f, col, tick) {
             var jitter = hashMix(G.seed, f.id || 0, unitIndex, supportCount);
             var driftNoise = hashMix(G.seed + 31, f.srcId + unitIndex, f.tgtId, f.id || 0);
             var depthT = (row + 1) * spacingT * 0.55 + (driftNoise - 0.5) * spacingT * 0.28;
-            var tUnit = f.t - depthT;
+            var tUnit = fleetT - depthT;
             if (tUnit <= 0) continue;
             var curveT = launchT + (1 - launchT) * clamp(tUnit, 0, 0.999);
 
@@ -2393,9 +2403,12 @@ function drawFleetRocket(ctx, f, col, tick) {
     }
 }
 
-function drawHoldingFleet(ctx, fleet, col, tick, selected) {
-    var x = Number(fleet.x) || 0;
-    var y = Number(fleet.y) || 0;
+function drawHoldingFleet(ctx, fleet, col, tick, selected, renderState) {
+    renderState = renderState && typeof renderState === 'object' ? renderState : getFleetRenderState(fleet);
+    var x = Number(renderState.x);
+    var y = Number(renderState.y);
+    if (!Number.isFinite(x)) x = Number(fleet.x) || 0;
+    if (!Number.isFinite(y)) y = Number(fleet.y) || 0;
     var r = fleetSelectionRadius(fleet);
     var pulse = 0.72 + 0.28 * Math.sin(tick * 0.08 + (fleet.id || 0) * 0.31);
     var status = holdingFleetState(fleet);
@@ -2902,6 +2915,7 @@ function render(ctx, cv, tick) {
             bezCP: bezCP,
             drawHoldingFleet: drawHoldingFleet,
             drawFleetRocket: drawFleetRocket,
+            getFleetRenderState: getFleetRenderState,
             fleetVis: fleetVis,
             clamp: clamp,
             strategicPulseAppliesToNode: strategicPulseAppliesToNode,
@@ -3794,12 +3808,14 @@ function syncMatchHudControls() {
         flowHudBtn.setAttribute('data-help-disabled', 'Flow için önce bir veya daha fazla kendi node seç.');
     }
     if (chatToggle) {
-        chatToggle.disabled = !net.online;
-        chatToggle.title = net.online ? 'Sohbet' : 'Sohbet yalnızca çok oyunculuda';
-        chatToggle.setAttribute('data-help', net.online
-            ? 'Sohbet panelini açar veya kapatır. Emote ve kısa mesajlar burada.'
+        var chatAvailable = isRoomChatAvailable(net);
+        chatToggle.disabled = !chatAvailable;
+        chatToggle.title = chatAvailable ? 'Sohbet' : 'Sohbet yalnızca çok oyunculu odalarda';
+        chatToggle.setAttribute('data-help', chatAvailable
+            ? 'Sohbet paneli sürekli açıktır. Tıklarsan mesaj kutusuna odaklanır.'
             : 'Sohbet yalnızca çok oyunculu odalarda aktiftir.');
         chatToggle.setAttribute('data-help-disabled', 'Sohbet yalnızca çok oyunculu odalarda aktiftir.');
+        chatToggle.classList.toggle('active', chatAvailable && (G.state === 'playing' || G.state === 'paused'));
     }
     if (exportMapHudBtn) {
         exportMapHudBtn.setAttribute('data-help', 'Geçerli maçı JSON custom map olarak dışa aktarır.');
@@ -4398,6 +4414,41 @@ function currentAlivePlayerIndices() {
     return alive;
 }
 
+function currentPerfNow() {
+    if (typeof performance !== 'undefined' && performance && typeof performance.now === 'function') {
+        return performance.now();
+    }
+    return Date.now();
+}
+
+function getAuthoritativeRenderBlend() {
+    if (!(net.online && net.authoritativeEnabled && net.authoritativeReady)) return 1;
+    var frameAt = Number(net.authoritativeFrameAt) || 0;
+    if (frameAt <= 0) return 1;
+    var interval = Math.max(16, Number(net.authoritativeFrameIntervalMs) || computeAuthoritativeFrameIntervalMs(net.lastAuthoritativeTick - 2, net.lastAuthoritativeTick, TICK_RATE));
+    return clamp((currentPerfNow() - frameAt) / interval, 0, 1);
+}
+
+function getFleetRenderState(fleet) {
+    if (!fleet || typeof fleet !== 'object') return { x: 0, y: 0, t: 0 };
+    var targetX = Number(fleet.x) || 0;
+    var targetY = Number(fleet.y) || 0;
+    var targetT = Number(fleet.t) || 0;
+    var fromX = Number(fleet.renderFromX);
+    var fromY = Number(fleet.renderFromY);
+    var fromT = Number(fleet.renderFromT);
+    if (!Number.isFinite(fromX) || !Number.isFinite(fromY)) {
+        return { x: targetX, y: targetY, t: targetT };
+    }
+    var blend = getAuthoritativeRenderBlend();
+    if (blend >= 1) return { x: targetX, y: targetY, t: targetT };
+    return {
+        x: fromX + (targetX - fromX) * blend,
+        y: fromY + (targetY - fromY) * blend,
+        t: Number.isFinite(fromT) ? (fromT + (targetT - fromT) * blend) : targetT,
+    };
+}
+
 function rememberNetworkCommand(cmd) {
     if (!cmd || typeof cmd !== 'object') return;
     if (typeof cmd.seq !== 'number') return;
@@ -4594,10 +4645,16 @@ function handleAuthoritativeState(payload) {
         return;
     }
     if (payload.matchId !== net.matchId) return;
+    var payloadTick = Math.max(0, Math.floor(Number(payload.tick !== undefined ? payload.tick : payload.snapshot.tick) || 0));
+    if (net.lastAuthoritativeTick >= 0 && payloadTick <= net.lastAuthoritativeTick) return;
+    var nextFrameInterval = computeAuthoritativeFrameIntervalMs(net.lastAuthoritativeTick, payloadTick, TICK_RATE);
     pendingAuthoritativeState = null;
     var firstAuthoritativeFrame = !net.authoritativeReady;
     if (!applySyncSnapshot(payload.snapshot)) return;
     net.authoritativeReady = true;
+    net.lastAuthoritativeTick = payloadTick;
+    net.authoritativeFrameIntervalMs = nextFrameInterval;
+    net.authoritativeFrameAt = currentPerfNow();
     net.syncWarningTick = -99999;
     net.syncWarningText = '';
     if (typeof payload.hash === 'string' && payload.hash) rememberSyncSnapshot(payload.tick, payload.hash);
@@ -4664,43 +4721,59 @@ function applySyncSnapshot(snapshot) {
     if (!snapshot || typeof snapshot !== 'object') return false;
     var preservedHuman = G.human;
     var preservedCam = { x: G.cam.x, y: G.cam.y, zoom: G.cam.zoom };
+    var previousFleetRender = {};
+
+    for (var fi = 0; fi < G.fleets.length; fi++) {
+        var liveFleet = G.fleets[fi];
+        if (!liveFleet || liveFleet.id === undefined || liveFleet.id === null) continue;
+        var liveRender = getFleetRenderState(liveFleet);
+        previousFleetRender[liveFleet.id] = {
+            x: liveRender.x,
+            y: liveRender.y,
+            t: liveRender.t,
+            owner: liveFleet.owner,
+            srcId: liveFleet.srcId,
+            tgtId: liveFleet.tgtId,
+            holding: !!liveFleet.holding,
+        };
+    }
 
     G.tick = Math.max(0, Math.floor(Number(snapshot.tick) || 0));
     G.winner = Number(snapshot.winner);
     if (!isFinite(G.winner)) G.winner = -1;
     G.state = snapshot.state === 'gameOver' ? 'gameOver' : 'playing';
-    G.nodes = JSON.parse(JSON.stringify(Array.isArray(snapshot.nodes) ? snapshot.nodes : []));
-    G.fleets = JSON.parse(JSON.stringify(Array.isArray(snapshot.fleets) ? snapshot.fleets : []));
-    G.flows = JSON.parse(JSON.stringify(Array.isArray(snapshot.flows) ? snapshot.flows : []));
-    G.wormholes = JSON.parse(JSON.stringify(Array.isArray(snapshot.wormholes) ? snapshot.wormholes : []));
-    G.mapFeature = JSON.parse(JSON.stringify(snapshot.mapFeature || { type: 'none' }));
-    G.mapMutator = JSON.parse(JSON.stringify(snapshot.mapMutator || { type: 'none' }));
+    G.nodes = Array.isArray(snapshot.nodes) ? snapshot.nodes : [];
+    G.fleets = Array.isArray(snapshot.fleets) ? snapshot.fleets : [];
+    G.flows = Array.isArray(snapshot.flows) ? snapshot.flows : [];
+    G.wormholes = Array.isArray(snapshot.wormholes) ? snapshot.wormholes : [];
+    G.mapFeature = snapshot.mapFeature || { type: 'none' };
+    G.mapMutator = snapshot.mapMutator || { type: 'none' };
     G.playlist = String(snapshot.playlist || G.playlist || 'standard');
     G.doctrineId = String(snapshot.doctrineId || G.doctrineId || '');
-    G.doctrines = JSON.parse(JSON.stringify(Array.isArray(snapshot.doctrines) ? snapshot.doctrines : G.doctrines || []));
+    G.doctrines = Array.isArray(snapshot.doctrines) ? snapshot.doctrines : (G.doctrines || []);
     G.doctrineStates = ensureDoctrineStates(G.doctrines, Array.isArray(snapshot.doctrineStates) ? snapshot.doctrineStates : G.doctrineStates || []);
-    G.encounters = JSON.parse(JSON.stringify(Array.isArray(snapshot.encounters) ? snapshot.encounters : G.encounters || []));
-    G.objectives = JSON.parse(JSON.stringify(Array.isArray(snapshot.objectives) ? snapshot.objectives : G.objectives || []));
-    G.missionScript = JSON.parse(JSON.stringify(snapshot.missionScript || null));
-    G.missionState = JSON.parse(JSON.stringify(snapshot.missionState || null));
+    G.encounters = Array.isArray(snapshot.encounters) ? snapshot.encounters : (G.encounters || []);
+    G.objectives = Array.isArray(snapshot.objectives) ? snapshot.objectives : (G.objectives || []);
+    G.missionScript = snapshot.missionScript || null;
+    G.missionState = snapshot.missionState || null;
     G.missionFailureText = String(snapshot.missionFailureText || '');
     G.endOnObjectives = snapshot.endOnObjectives === true;
     G.encounterContext = {};
-    G.playerCapital = JSON.parse(JSON.stringify(snapshot.playerCapital || {}));
+    G.playerCapital = snapshot.playerCapital || {};
     G.strategicNodes = Array.isArray(snapshot.strategicNodes) ? snapshot.strategicNodes.slice() : [];
-    G.strategicPulse = JSON.parse(JSON.stringify(snapshot.strategicPulse || currentStrategicPulse(G.tick)));
-    G.powerByPlayer = JSON.parse(JSON.stringify(snapshot.powerByPlayer || {}));
-    G.capByPlayer = JSON.parse(JSON.stringify(snapshot.capByPlayer || {}));
-    G.unitByPlayer = JSON.parse(JSON.stringify(snapshot.unitByPlayer || {}));
-    G.stats = JSON.parse(JSON.stringify(snapshot.stats || G.stats || {}));
+    G.strategicPulse = snapshot.strategicPulse || currentStrategicPulse(G.tick);
+    G.powerByPlayer = snapshot.powerByPlayer || {};
+    G.capByPlayer = snapshot.capByPlayer || {};
+    G.unitByPlayer = snapshot.unitByPlayer || {};
+    G.stats = snapshot.stats || G.stats || {};
     G.aiTicks = Array.isArray(snapshot.aiTicks) ? snapshot.aiTicks.slice() : [];
-    G.aiProfiles = JSON.parse(JSON.stringify(snapshot.aiProfiles || []));
-    G.turretBeams = JSON.parse(JSON.stringify(Array.isArray(snapshot.turretBeams) ? snapshot.turretBeams : []));
-    G.fieldBeams = JSON.parse(JSON.stringify(Array.isArray(snapshot.fieldBeams) ? snapshot.fieldBeams : []));
-    G.shockwaves = JSON.parse(JSON.stringify(Array.isArray(snapshot.shockwaves) ? snapshot.shockwaves : []));
+    G.aiProfiles = Array.isArray(snapshot.aiProfiles) ? snapshot.aiProfiles : [];
+    G.turretBeams = Array.isArray(snapshot.turretBeams) ? snapshot.turretBeams : [];
+    G.fieldBeams = Array.isArray(snapshot.fieldBeams) ? snapshot.fieldBeams : [];
+    G.shockwaves = Array.isArray(snapshot.shockwaves) ? snapshot.shockwaves : [];
     G.flowId = Math.max(0, Math.floor(Number(snapshot.flowId) || 0));
     G.fleetSerial = Math.max(0, Math.floor(Number(snapshot.fleetSerial) || 0));
-    G.fog = JSON.parse(JSON.stringify(snapshot.fog || initFog(G.players.length, G.nodes.length)));
+    G.fog = snapshot.fog || initFog(G.players.length, G.nodes.length);
 
     for (var ni = 0; ni < G.nodes.length; ni++) {
         var node = G.nodes[ni];
@@ -4709,6 +4782,21 @@ function applySyncSnapshot(snapshot) {
         node.selected = false;
         node.maxUnits = nodeCapacity(node);
         node.units = clamp(node.units, 0, node.maxUnits);
+    }
+    for (var fi2 = 0; fi2 < G.fleets.length; fi2++) {
+        var fleet = G.fleets[fi2];
+        if (!fleet) continue;
+        fleet.active = fleet.active !== false;
+        if (!Array.isArray(fleet.trail)) fleet.trail = [];
+        var previousFleet = previousFleetRender[fleet.id];
+        var canBlendFleet = previousFleet &&
+            previousFleet.owner === fleet.owner &&
+            previousFleet.srcId === fleet.srcId &&
+            previousFleet.tgtId === fleet.tgtId &&
+            previousFleet.holding === !!fleet.holding;
+        fleet.renderFromX = canBlendFleet ? previousFleet.x : (Number(fleet.x) || 0);
+        fleet.renderFromY = canBlendFleet ? previousFleet.y : (Number(fleet.y) || 0);
+        fleet.renderFromT = canBlendFleet ? previousFleet.t : (Number(fleet.t) || 0);
     }
     for (var pi = 0; pi < G.players.length; pi++) {
         if (snapshot.players && snapshot.players[pi]) {
@@ -4900,6 +4988,57 @@ function openTuningPanel() {
     syncTuningBackdrop();
 }
 
+function shouldShowChatPanel(state) {
+    return isRoomChatAvailable(net) && (state === 'playing' || state === 'paused' || state === 'mainMenu');
+}
+
+function desiredChatDock(state) {
+    if (state === 'mainMenu') return $('multiplayerChatDock');
+    if (state === 'playing' || state === 'paused') return $('hudChatDock');
+    return null;
+}
+
+function syncChatPanelVisibility(state) {
+    var cp = document.getElementById('chatPanel');
+    if (!cp) return;
+    var currentState = state || (G && G.state ? G.state : 'mainMenu');
+    var available = shouldShowChatPanel(currentState);
+    var dock = desiredChatDock(currentState);
+    if (dock && cp.parentNode !== dock) dock.appendChild(cp);
+    cp.classList.toggle('chat-panel-docked', !!dock);
+    cp.classList.toggle('chat-panel-menu', dock && dock.id === 'multiplayerChatDock');
+    cp.classList.toggle('chat-panel-hud', dock && dock.id === 'hudChatDock');
+    cp.classList.toggle('hidden', !available);
+    if (chatToggle) {
+        var expanded = available && currentState !== 'mainMenu';
+        chatToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+        chatToggle.classList.toggle('active', expanded);
+    }
+    syncChatPanelMeta();
+}
+
+function syncChatPanelMeta() {
+    var pingEl = document.getElementById('chatPingDisplay');
+    if (!pingEl) return;
+    if (!isRoomChatAvailable(net)) {
+        pingEl.textContent = '';
+        return;
+    }
+    if (!net.online) {
+        pingEl.textContent = 'Ping: --';
+        return;
+    }
+    var pingText = buildPingDisplayText({
+        online: net.online,
+        lastPingMs: net.lastPingMs,
+        syncWarningText: net.syncWarningText,
+        currentTick: G.tick,
+        syncWarningTick: net.syncWarningTick,
+        syncWindowTicks: SYNC_HASH_INTERVAL_TICKS * 2,
+    });
+    pingEl.textContent = pingText || 'Ping: --';
+}
+
 function showUI(st) {
     if (st !== 'playing') inGameMenuOpen = false;
     // Ana menü / game over vb. çıkışta tuningOpen sıfırlanmazsa, sonraki showUI('playing')
@@ -4912,7 +5051,7 @@ function showUI(st) {
     var ig = st === 'playing' || st === 'paused';
     hud.classList.toggle('hidden', !ig);
     if (powerSidebar) powerSidebar.classList.toggle('hidden', !ig);
-    var cp = document.getElementById('chatPanel'); if (cp) cp.classList.toggle('hidden', !ig || !net.online);
+    syncChatPanelVisibility(st);
     if (st === 'mainMenu') {
         setMenuPanel(net.roomCode ? 'multiplayer' : 'hub', { keepOverlay: true });
         applyMenuStateToInputs();
@@ -4970,6 +5109,30 @@ function chatColorForPlayer(index) {
     return 'var(--danger)';
 }
 
+function emitChatMessage(rawText) {
+    var message = String(rawText || '').trim().slice(0, 120);
+    if (!message) return false;
+    if (!net.socket || !isRoomChatAvailable(net)) {
+        setRoomStatus('Sohbet için aktif bir online odaya bağlı olmalısın.', true);
+        return false;
+    }
+    if (typeof net.socket.timeout === 'function') {
+        net.socket.timeout(2000).emit('chat', { message: message }, function (err, response) {
+            if (err) {
+                setRoomStatus('Sohbet mesajı sunucuya ulaştırılamadı.', true);
+                showGameToast('Sohbet gönderilemedi.');
+                return;
+            }
+            if (response && response.ok === false) {
+                setRoomStatus(response.message || 'Sohbet mesajı gönderilemedi.', true);
+            }
+        });
+    } else {
+        net.socket.emit('chat', { message: message });
+    }
+    return true;
+}
+
 function roomButtonState() {
     applyLobbyControlState({
         playerNameInput: playerNameIn,
@@ -5006,6 +5169,7 @@ function clearRoomState(message, opts) {
     if (!opts.preserveResume) clearRoomResumeState();
     if (message) setRoomStatus(message, false);
     roomButtonState();
+    syncChatPanelVisibility(G && G.state ? G.state : 'mainMenu');
     syncRoomTypeInputs();
     syncPauseOverlayContent();
     syncMatchHudControls();
@@ -5155,6 +5319,7 @@ function ensureSocket() {
             isHost: net.isHost,
         }), false);
         setMenuLobbyMeta(buildMenuLobbyMeta({ roomCode: state.code }));
+        syncChatPanelVisibility(G.state);
         roomButtonState();
         if (G.state === 'mainMenu') setMenuPanel('multiplayer', { keepOverlay: true });
     });
@@ -5203,6 +5368,7 @@ function ensureSocket() {
         var latencyTicks = net.lastPingMs / 2 / 33.33;
         var realServerTick = payload.serverTick + latencyTicks;
         net.syncDrift = G.tick - realServerTick;
+        syncChatPanelMeta();
     });
 
     net.socket.on('matchStarted', function (payload) {
@@ -5989,20 +6155,33 @@ if (themeBtn) themeBtn.addEventListener('click', function () {
 });
 syncThemeButton();
 bindHudActionHelp();
-var chatPanel = $('chatPanel'), chatInput = $('chatInput'), chatToggle = $('chatToggle');
+var chatPanel = $('chatPanel'), chatInput = $('chatInput'), chatToggle = $('chatToggle'), chatSendBtn = $('chatSendBtn');
 if (chatToggle) chatToggle.addEventListener('click', function () {
-    if (chatPanel) chatPanel.classList.toggle('hidden');
+    if (!chatPanel || !isRoomChatAvailable(net)) return;
+    syncChatPanelVisibility(G && G.state ? G.state : 'mainMenu');
+    if (chatInput) {
+        chatInput.focus();
+        if (typeof chatInput.select === 'function') chatInput.select();
+    }
 });
 if (chatInput) chatInput.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && chatInput.value.trim()) {
-        if (net.socket && net.roomCode) net.socket.emit('chat', { message: chatInput.value.trim() });
+        e.preventDefault();
+        e.stopPropagation();
+        if (emitChatMessage(chatInput.value)) chatInput.value = '';
+    }
+});
+if (chatSendBtn) chatSendBtn.addEventListener('click', function () {
+    if (!chatInput) return;
+    if (emitChatMessage(chatInput.value)) {
         chatInput.value = '';
+        chatInput.focus();
     }
 });
 document.querySelectorAll('.emote-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {
         var em = btn.getAttribute('data-emote');
-        if (em && net.socket && net.roomCode) net.socket.emit('emote', { emote: em });
+        if (em && net.socket && isRoomChatAvailable(net)) net.socket.emit('emote', { emote: em });
     });
 });
 var rematchBtn = $('rematchBtn');
@@ -6299,6 +6478,7 @@ function loop(ts) {
                 syncWindowTicks: SYNC_HASH_INTERVAL_TICKS * 2,
             });
         }
+        syncChatPanelMeta();
     }
     syncNodeHoverTip();
     if (G.state === 'playing' || G.state === 'paused') updatePowerSidebar();

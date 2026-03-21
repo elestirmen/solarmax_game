@@ -682,7 +682,15 @@ export function attachGameInputController(opts) {
         }
     }
 
+    function isEditableTarget(target) {
+        if (!target || typeof target !== 'object') return false;
+        if (target.isContentEditable === true) return true;
+        var tagName = typeof target.tagName === 'string' ? target.tagName.toUpperCase() : '';
+        return tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || tagName === 'BUTTON';
+    }
+
     function handleKeyDown(e) {
+        if (isEditableTarget(e && e.target)) return;
         var pauseKey = e.key === 'Escape' || e.key === 'p' || e.key === 'P';
         if (e.key === 'Escape' && opts.isHowToPlayVisible()) {
             opts.closeHowToPlayModal();

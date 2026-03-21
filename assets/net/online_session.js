@@ -7,6 +7,10 @@ function clampDelayTicks(value) {
     return value;
 }
 
+function normalizeRoomCode(value) {
+    return String(value || '').trim().toUpperCase();
+}
+
 export function getSocketEndpoint(locationLike) {
     if (!locationLike) return undefined;
     if (locationLike.protocol === 'file:') return 'http://127.0.0.1:3000';
@@ -41,9 +45,25 @@ export function buildJoinRoomRequest(opts) {
     return {
         action: 'join',
         playerName: opts.playerName || '',
-        roomCode: String(opts.roomCode || '').trim().toUpperCase(),
+        roomCode: normalizeRoomCode(opts.roomCode),
         reconnectToken: opts.reconnectToken || '',
     };
+}
+
+export function isRoomChatAvailable(net) {
+    net = net && typeof net === 'object' ? net : {};
+    return !!(net.connected && normalizeRoomCode(net.roomCode));
+}
+
+export function computeAuthoritativeFrameIntervalMs(previousTick, nextTick, tickRate) {
+    var rate = Math.max(1, Math.floor(Number(tickRate) || 30));
+    var prev = Math.floor(Number(previousTick));
+    var next = Math.floor(Number(nextTick));
+    var tickDelta = Number.isFinite(prev) && prev >= 0 && Number.isFinite(next) && next > prev ? (next - prev) : 2;
+    var interval = (1000 / rate) * tickDelta;
+    if (interval < 16) return 16;
+    if (interval > 200) return 200;
+    return interval;
 }
 
 export function resetOnlineRoomState(net, opts) {
@@ -66,12 +86,15 @@ export function resetOnlineRoomState(net, opts) {
     net.resyncRequestId = '';
     net.lastSummaryTick = -1;
     net.lastPingWallMs = 0;
+    net.lastAuthoritativeTick = -1;
+    net.authoritativeFrameAt = 0;
+    net.authoritativeFrameIntervalMs = computeAuthoritativeFrameIntervalMs(-1, 1, 30);
     net.resumePending = !!opts.preserveResume;
 }
 
 export function applyRoomStateNetState(net, state) {
     state = state && typeof state === 'object' ? state : {};
-    net.roomCode = state.code || '';
+    net.roomCode = normalizeRoomCode(state.code);
     net.isHost = !!state.isHost;
     net.players = Array.isArray(state.players) ? state.players : [];
     net.pendingJoin = false;
@@ -133,6 +156,9 @@ export function beginOnlineMatch(net, payload, socketId) {
     net.resyncRequestId = '';
     net.lastSummaryTick = -1;
     net.lastPingWallMs = 0;
+    net.lastAuthoritativeTick = -1;
+    net.authoritativeFrameAt = 0;
+    net.authoritativeFrameIntervalMs = computeAuthoritativeFrameIntervalMs(-1, 1, 30);
 
     var self = players.find(function (player) { return player && player.socketId === socketId; });
     net.localPlayerIndex = self ? self.index : 0;

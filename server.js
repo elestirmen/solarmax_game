@@ -1248,14 +1248,25 @@ io.on('connection', (socket) => {
         });
     });
 
-    socket.on('chat', (payload = {}) => {
+    socket.on('chat', (payload = {}, reply) => {
         const code = socketToRoom.get(socket.id);
-        if (!code) return;
+        if (!code) {
+            if (typeof reply === 'function') reply({ ok: false, message: 'Oda bağlantısı bulunamadı.' });
+            return;
+        }
         const room = rooms.get(code);
-        if (!room) return;
+        if (!room) {
+            if (typeof reply === 'function') reply({ ok: false, message: 'Oda kapandı.' });
+            return;
+        }
         const player = room.players.find(p => p.socketId === socket.id);
         const msg = String(payload.message || '').trim().slice(0, 120);
-        if (msg) io.to(code).emit('chat', { name: player ? player.name : '?', message: msg });
+        if (!msg) {
+            if (typeof reply === 'function') reply({ ok: false, message: 'Boş mesaj gönderilemez.' });
+            return;
+        }
+        io.to(code).emit('chat', { name: player ? player.name : '?', message: msg });
+        if (typeof reply === 'function') reply({ ok: true });
     });
 
     socket.on('emote', (payload = {}) => {

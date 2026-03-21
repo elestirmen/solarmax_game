@@ -204,14 +204,19 @@ function drawFleetsAndBeamsLayer(ctx, game, tick, inputState, hw, hh, constants,
         var fleet = game.fleets[i];
         if (!fleet.active) continue;
         if (game.tune.fogEnabled && fleet.owner !== game.human && !helpers.fleetVis(fleet, game.human, game.nodes)) continue;
-        if (Math.abs(fleet.x - game.cam.x) > fhw || Math.abs(fleet.y - game.cam.y) > fhh) continue;
+        var renderState = helpers.getFleetRenderState ? helpers.getFleetRenderState(fleet) : fleet;
+        var fleetX = Number(renderState.x);
+        var fleetY = Number(renderState.y);
+        if (!Number.isFinite(fleetX)) fleetX = Number(fleet.x) || 0;
+        if (!Number.isFinite(fleetY)) fleetY = Number(fleet.y) || 0;
+        if (Math.abs(fleetX - game.cam.x) > fhw || Math.abs(fleetY - game.cam.y) > fhh) continue;
         var col = game.players[fleet.owner] ? game.players[fleet.owner].color : constants.colNeutral;
         if (fleet.holding) {
-            helpers.drawHoldingFleet(ctx, fleet, col, tick, inputState.selFleets.has(fleet.id));
+            helpers.drawHoldingFleet(ctx, fleet, col, tick, inputState.selFleets.has(fleet.id), renderState);
             continue;
         }
-        if (fleet.t <= 0) continue;
-        helpers.drawFleetRocket(ctx, fleet, col, tick);
+        if ((Number.isFinite(renderState.t) ? renderState.t : fleet.t) <= 0) continue;
+        helpers.drawFleetRocket(ctx, fleet, col, tick, renderState);
     }
 
     for (var bi = 0; bi < game.turretBeams.length; bi++) {
