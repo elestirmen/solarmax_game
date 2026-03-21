@@ -516,7 +516,7 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
                 else typeBlend = 0.49;
                 bodyCol = helpers.blendHex(col, tdef.color, typeBlend);
             }
-            var planetCanvas = helpers.getPlanetTexture(n.id, n.radius);
+            var planetCanvas = helpers.getPlanetTexture(n.id, n.radius, n.kind);
             ctx.save();
             if (!vis && n.owner !== game.human) {
                 ctx.globalAlpha = 0.3;
@@ -524,6 +524,9 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             }
             ctx.drawImage(planetCanvas, n.pos.x - drawRadius, n.pos.y - drawRadius, drawRadius * 2, drawRadius * 2);
             ctx.restore();
+            if ((vis || n.owner === game.human || n.owner === -1) && typeof helpers.drawPlanetTypeVisual === 'function') {
+                helpers.drawPlanetTypeVisual(ctx, drawNode, tdef, bodyCol, tick);
+            }
             if (n.kind !== 'turret' && (vis || n.owner === game.human || n.owner === -1)) {
                 var rimAlpha = n.owner === -1 ? 0.5 : (n.kind === 'core' ? 0.24 : 0.58);
                 var rimW = n.kind === 'core' ? 1.2 : 2.45;

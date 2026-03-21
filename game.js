@@ -128,6 +128,21 @@ var NODE_TYPE_DEFS = {
     nexus: { label: 'Nexus', prod: 1.17, def: 1.13, cap: 1.13, flow: 1.22, speed: 1.12, color: '#c9a0dc' },
     turret: { label: 'Turret', prod: 0.0, def: 2.38, cap: 0.78, flow: 0.78, speed: 1.0, color: '#8ff0ff' },
 };
+var NODE_KIND_SIZE_PROFILES = {
+    relay: { target: 0.14, spread: 0.16, weight: 0.96, radiusPull: 0.34 },
+    forge: { target: 0.32, spread: 0.18, weight: 1.02, radiusPull: 0.28 },
+    core: { target: 0.52, spread: 0.26, weight: 1.2, radiusPull: 0.16 },
+    nexus: { target: 0.7, spread: 0.2, weight: 0.9, radiusPull: 0.24 },
+    bulwark: { target: 0.86, spread: 0.16, weight: 0.88, radiusPull: 0.34 },
+};
+var NODE_KIND_TEXTURE_SEEDS = {
+    core: 11,
+    forge: 23,
+    bulwark: 37,
+    relay: 41,
+    nexus: 53,
+    turret: 67,
+};
 
 var AI_ARCHETYPES = [
     { name: 'Rusher', aggr: 1.2, flow: 0.9, reserve: 0.85, upg: 0.45 },
@@ -246,15 +261,26 @@ var grad2 = new Float64Array([1,1,-1,1,1,-1,-1,-1,1,0,-1,0,1,0,-1,0,0,1,0,-1,0,1
 function createNoise2D(rnd) { rnd = rnd || Math.random; var perm = buildPermTable(rnd), gx = new Float64Array(perm).map(function(v){return grad2[(v%12)*2];}), gy = new Float64Array(perm).map(function(v){return grad2[(v%12)*2+1];}); var F2=0.5*(Math.sqrt(3)-1), G2=(3-Math.sqrt(3))/6; return function(x,y){ var s=(x+y)*F2, i=Math.floor(x+s)|0, j=Math.floor(y+s)|0, t=(i+j)*G2, X0=i-t, Y0=j-t, x0=x-X0, y0=y-Y0; var i1,j1; x0>y0?(i1=1,j1=0):(i1=0,j1=1); var x1=x0-i1+G2, y1=y0-j1+G2, x2=x0-1+2*G2, y2=y0-1+2*G2; var ii=i&255, jj=j&255; var n0=0,n1=0,n2=0; var t0=0.5-x0*x0-y0*y0; if(t0>=0){var gi=ii+perm[jj]; t0*=t0; n0=t0*t0*(gx[gi]*x0+gy[gi]*y0);} var t1=0.5-x1*x1-y1*y1; if(t1>=0){var gi=ii+i1+perm[jj+j1]; t1*=t1; n1=t1*t1*(gx[gi]*x1+gy[gi]*y1);} var t2=0.5-x2*x2-y2*y2; if(t2>=0){var gi=ii+1+perm[jj+1]; t2*=t2; n2=t2*t2*(gx[gi]*x2+gy[gi]*y2);} return 70*(n0+n1+n2); }; }
 function createSeededNoise(seed) { var rng = new RNG(seed); return createNoise2D(function () { return rng.next(); }); }
 function fbm(noise2D, x, y, octaves, persistence) { octaves = octaves || 4; persistence = persistence || 0.5; var total = 0, freq = 1, amp = 1, maxV = 0; for (var i = 0; i < octaves; i++) { total += noise2D(x * freq, y * freq) * amp; maxV += amp; amp *= persistence; freq *= 2; } return total / maxV; }
-function getPlanetTexture(id, radius) {
-    if (planetTexCache[id]) return planetTexCache[id];
+function planetTextureVariant(kind, rng) {
+    if (kind === 'forge') return 1;
+    if (kind === 'bulwark') return 2;
+    if (kind === 'relay') return rng.next() < 0.76 ? 3 : 0;
+    if (kind === 'nexus') return rng.next() < 0.88 ? 3 : 0;
+    return rng.next() < 0.72 ? 0 : 2;
+}
+function getPlanetTexture(id, radius, kind) {
+    kind = kind || 'core';
+    var cacheKey = id + ':' + Math.round((Number(radius) || 0) * 10) + ':' + kind;
+    if (planetTexCache[cacheKey]) return planetTexCache[cacheKey];
     var scale = 2, size = radius * 2 * scale, r = radius * scale, cx = r, cy = r;
     var canvas = document.createElement('canvas'); canvas.width = size; canvas.height = size;
     var ctx = canvas.getContext('2d', { alpha: true }); if (!ctx) return canvas;
-    var rng = new RNG(id * 9999), type = rng.nextInt(0, 3);
-    var noise2D = createSeededNoise(id * 12345), noiseDetail = createSeededNoise(id * 67890);
+    var kindSeed = NODE_KIND_TEXTURE_SEEDS[kind] || NODE_KIND_TEXTURE_SEEDS.core;
+    var rng = new RNG(id * 9999 + kindSeed * 131), type = planetTextureVariant(kind, rng);
+    var noise2D = createSeededNoise(id * 12345 + kindSeed * 41), noiseDetail = createSeededNoise(id * 67890 + kindSeed * 67);
     ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r - 1, 0, Math.PI * 2); ctx.clip();
-    var baseScale = 0.015, detailScale = 0.08;
+    var baseScale = kind === 'relay' ? 0.011 : (kind === 'bulwark' ? 0.019 : 0.015);
+    var detailScale = kind === 'nexus' ? 0.1 : (kind === 'bulwark' ? 0.06 : 0.08);
     var imgData = ctx.createImageData(size, size), data = imgData.data;
     for (var py = 0; py < size; py++) for (var px = 0; px < size; px++) {
         var dx = (px - cx) / r, dy = (py - cy) / r, distSq = dx * dx + dy * dy;
@@ -277,9 +303,24 @@ function getPlanetTexture(id, radius) {
     if (type !== 2) { for (var i = 0; i < rng.nextInt(12, 28); i++) { var fx = cx + rng.nextFloat(-r * 0.85, r * 0.85), fy = cy + rng.nextFloat(-r * 0.85, r * 0.85), fr = rng.nextFloat(r * 0.15, r * 0.5); if ((fx - cx) * (fx - cx) + (fy - cy) * (fy - cy) > (r - fr) * (r - fr)) continue; var ca = type === 0 ? 0.55 : (type === 1 ? 0.12 : 0.3), grad = ctx.createRadialGradient(fx, fy, 0, fx, fy, fr); grad.addColorStop(0, 'rgba(255,255,255,' + ca + ')'); grad.addColorStop(0.6, 'rgba(255,255,255,' + ca * 0.4 + ')'); grad.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = grad; ctx.beginPath(); ctx.ellipse(fx, fy, fr, fr * 0.6, rng.nextFloat(0, Math.PI), 0, Math.PI * 2); ctx.fill(); } }
     var sg = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r); sg.addColorStop(0, 'rgba(0,0,0,0)'); sg.addColorStop(0.6, 'rgba(0,0,0,0.35)'); sg.addColorStop(1, 'rgba(0,0,0,0.8)'); ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
     var sp = ctx.createRadialGradient(cx - r * 0.45, cy - r * 0.45, 0, cx - r * 0.45, cy - r * 0.45, r * 0.55); sp.addColorStop(0, 'rgba(255,255,255,0.45)'); sp.addColorStop(0.5, 'rgba(255,255,255,0.15)'); sp.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = sp; ctx.fill();
-    if (type !== 2) { var ac = { 0: 'rgba(100,180,255,', 1: 'rgba(255,140,60,', 3: 'rgba(180,120,255,' }[type] || 'rgba(150,150,200,'; var ag = ctx.createRadialGradient(cx, cy, r * 0.75, cx, cy, r); ag.addColorStop(0, ac + '0)'); ag.addColorStop(0.8, ac + '0.2)'); ag.addColorStop(1, ac + '0.55)'); ctx.fillStyle = ag; ctx.fill(); ctx.strokeStyle = ac + '0.85)'; ctx.lineWidth = 1.5 * scale; ctx.beginPath(); ctx.arc(cx, cy, r - 1, 0, Math.PI * 2); ctx.stroke(); }
+    if (type !== 2) {
+        var accentHex = (NODE_TYPE_DEFS[kind] && NODE_TYPE_DEFS[kind].color) || '#9fb8ff';
+        var accentMid = kind === 'core' ? 0.14 : (kind === 'relay' ? 0.16 : 0.2);
+        var accentEdge = kind === 'core' ? 0.4 : (kind === 'nexus' ? 0.62 : 0.54);
+        var ag = ctx.createRadialGradient(cx, cy, r * 0.75, cx, cy, r);
+        ag.addColorStop(0, hexToRgba(accentHex, 0));
+        ag.addColorStop(0.8, hexToRgba(accentHex, accentMid));
+        ag.addColorStop(1, hexToRgba(accentHex, accentEdge));
+        ctx.fillStyle = ag;
+        ctx.fill();
+        ctx.strokeStyle = hexToRgba(accentHex, 0.86);
+        ctx.lineWidth = 1.5 * scale;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r - 1, 0, Math.PI * 2);
+        ctx.stroke();
+    }
     else { ctx.strokeStyle = 'rgba(120,120,120,0.7)'; ctx.lineWidth = 1 * scale; ctx.beginPath(); ctx.arc(cx, cy, r - 1, 0, Math.PI * 2); ctx.stroke(); }
-    ctx.restore(); planetTexCache[id] = canvas; return canvas;
+    ctx.restore(); planetTexCache[cacheKey] = canvas; return canvas;
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ VECTOR Ã¢â€â‚¬Ã¢â€â‚¬
@@ -595,6 +636,42 @@ function nodeVisualScale(node, tick) {
     var visualLevel = getNodeUpgradeVisualLevel(node, tick === undefined ? G.tick : tick);
     return 1 + Math.max(0, visualLevel - 1) * UPGRADE_VISUAL_SCALE_PER_LEVEL;
 }
+function nodeKindRadiusNorm(radius) {
+    return clamp(((Number(radius) || NODE_RMIN) - NODE_RMIN) / Math.max(1, NODE_RMAX - NODE_RMIN), 0, 1);
+}
+function nodeKindProfile(kind) {
+    return NODE_KIND_SIZE_PROFILES[kind] || NODE_KIND_SIZE_PROFILES.core;
+}
+function nodeKindWeightForRadius(kind, radius) {
+    var profile = nodeKindProfile(kind);
+    var radiusNorm = nodeKindRadiusNorm(radius);
+    var spread = Math.max(0.05, profile.spread || 0.2);
+    var delta = radiusNorm - profile.target;
+    return Math.max(0.0001, (profile.weight || 1) * Math.exp(-(delta * delta) / (2 * spread * spread)));
+}
+function pickNodeKindForRadius(radius) {
+    var kinds = ['relay', 'forge', 'core', 'nexus', 'bulwark'];
+    var total = 0;
+    var weights = [];
+    for (var i = 0; i < kinds.length; i++) {
+        var weight = nodeKindWeightForRadius(kinds[i], radius) * (0.92 + G.rng.next() * 0.16);
+        weights.push(weight);
+        total += weight;
+    }
+    var roll = G.rng.next() * total;
+    for (var wi = 0; wi < kinds.length; wi++) {
+        roll -= weights[wi];
+        if (roll <= 0) return kinds[wi];
+    }
+    return 'core';
+}
+function tunedNodeRadiusForKind(radius, kind) {
+    var profile = nodeKindProfile(kind);
+    var targetRadius = NODE_RMIN + (NODE_RMAX - NODE_RMIN) * profile.target;
+    var pull = profile.radiusPull || 0;
+    var jitter = (G.rng.next() - 0.5) * 1.2;
+    return clamp(radius + (targetRadius - radius) * pull + jitter, NODE_RMIN, NODE_RMAX);
+}
 function nodeCapacity(node) {
     var td = nodeTypeOf(node);
     return Math.floor(MAX_UNITS * td.cap * nodeLevelCapMult(node));
@@ -640,12 +717,9 @@ function canUpgradeNodeForOwner(node, owner, tick) {
     return (Number(node.units) || 0) >= upgradeCost(node);
 }
 function initNodeKind(node) {
-    var roll = G.rng.next();
-    if (roll < 0.18) node.kind = 'forge';
-    else if (roll < 0.36) node.kind = 'bulwark';
-    else if (roll < 0.52) node.kind = 'relay';
-    else if (roll < 0.65) node.kind = 'nexus';
-    else node.kind = 'core';
+    node.kind = pickNodeKindForRadius(node.radius);
+    node.radius = tunedNodeRadiusForKind(node.radius, node.kind);
+    node.visionR = VISION_R + node.radius * 2;
     node.level = 1;
     node.maxUnits = nodeCapacity(node);
 }
@@ -3076,6 +3150,7 @@ function render(ctx, cv, tick) {
             blendHex: blendHex,
             darken: darken,
             getPlanetTexture: getPlanetTexture,
+            drawPlanetTypeVisual: drawPlanetTypeVisual,
             drawTypeBadge: drawTypeBadge,
             getNodeVisualScale: nodeVisualScale,
             getNodeUpgradeProgress: getNodeUpgradeProgress,
