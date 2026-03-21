@@ -13,6 +13,8 @@ export var SIM_CONSTANTS = {
     AI_AGG: 1.0,
     TRAIL_LEN: 12,
     NODE_LEVEL_MAX: 3,
+    UPGRADE_DURATION_TICKS: 60,
+    UPGRADE_VISUAL_SCALE_PER_LEVEL: 0.18,
     DDA_MAX_BOOST: 0.2,
     GRAVITY_SPEED_MULT: 1.35,
     SUPPLY_DIST: 220,
@@ -230,7 +232,7 @@ export function isNodeAssimilated(node) {
 export function upgradeCost(node) {
     var radius = Number(node && node.radius) || 0;
     var level = Number(node && node.level) || 1;
-    var cost = 48 + radius * 2.15 + (level - 1) * 36;
+    var cost = (48 + radius * 2.15 + (level - 1) * 36) * 1.18;
     if (node && node.kind === 'relay') cost *= 0.92;
     else if (node && node.kind === 'forge') cost *= 0.95;
     else if (node && node.kind === 'bulwark') cost *= 1.08;

@@ -49,6 +49,7 @@ export function findHoveredNodeAtScreen(opts) {
     var zoom = Math.max(0.01, Number(camera.zoom) || 1);
     var extraRadius = Math.max(0, Number(opts.extraRadius) || 0);
     var minRadius = Math.max(0, Number(opts.minRadius) || 0);
+    var radiusScaleFn = typeof opts.radiusScaleFn === 'function' ? opts.radiusScaleFn : null;
     var bestNode = null;
     var bestDistSq = Infinity;
 
@@ -58,7 +59,8 @@ export function findHoveredNodeAtScreen(opts) {
         if (visibilityTest && !visibilityTest(node)) continue;
 
         var screenNode = worldToScreenPoint(node.pos, camera, viewport);
-        var radius = Math.max(minRadius, (Number(node.radius) || 0) * zoom + extraRadius);
+        var radiusScale = radiusScaleFn ? Math.max(1, Number(radiusScaleFn(node)) || 1) : 1;
+        var radius = Math.max(minRadius, (Number(node.radius) || 0) * radiusScale * zoom + extraRadius);
         var dx = pointerX - screenNode.x;
         var dy = pointerY - screenNode.y;
         var distSq = dx * dx + dy * dy;

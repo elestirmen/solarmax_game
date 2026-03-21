@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { dispatchUnits } from '../assets/sim/state_ops.js';
+import { SIM_CONSTANTS } from '../assets/sim/shared_config.js';
+import { dispatchUnits, upgradeStateNode } from '../assets/sim/state_ops.js';
 
 function makeState() {
     return {
         seed: 42,
+        tick: 0,
         humanIndex: 0,
+        rules: { allowUpgrade: true },
         fleetSerial: 0,
         fleets: [],
         flows: [],
@@ -73,4 +76,18 @@ test('dispatchUnits can relaunch a holding fleet toward a node', function () {
     assert.equal(state.fleets[1].tgtId, 2);
     assert.equal(state.fleets[1].fromX, 70);
     assert.equal(state.fleets[1].fromY, 40);
+});
+
+test('upgradeStateNode starts a timed upgrade instead of applying instantly', function () {
+    var state = makeState();
+    state.tick = 12;
+    state.nodes[0].maxUnits = 200;
+    state.nodes[0].units = 140;
+
+    assert.equal(upgradeStateNode(state, 0, 0), true);
+    assert.equal(state.nodes[0].level, 1);
+    assert.equal(state.nodes[0].upgradeTargetLevel, 2);
+    assert.equal(state.nodes[0].upgradeStartTick, 12);
+    assert.equal(state.nodes[0].upgradeCompleteTick, 12 + SIM_CONSTANTS.UPGRADE_DURATION_TICKS);
+    assert.equal(upgradeStateNode(state, 0, 0), false);
 });

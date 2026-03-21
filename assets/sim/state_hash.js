@@ -158,6 +158,11 @@ export function computeSyncHash(state) {
         hash = mixHash(hash, node.defense ? 1 : 0);
         hash = mixHash(hash, scaledInt(node.assimilationProgress, 1000));
         hash = mixHash(hash, Number(node.assimilationLock) || 0);
+        hash = mixHash(hash, Number(node.upgradeStartTick) || 0);
+        hash = mixHash(hash, Number(node.upgradeCompleteTick) || 0);
+        hash = mixHash(hash, Number(node.upgradeTargetLevel) || 0);
+        hash = mixHash(hash, Number(node.lastUpgradeStartTick) || 0);
+        hash = mixHash(hash, Number(node.lastUpgradeCompleteTick) || 0);
     }
 
     var activeCount = 0;

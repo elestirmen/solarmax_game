@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { applySolarFlareFleetWipe, getSolarFlareFrame, smallestBlastTickAtOrAfter } from '../assets/sim/solar_flare.js';
+import { applySolarFlareFleetWipe, getSolarFlareFrame, getSolarFlareTransitions, smallestBlastTickAtOrAfter } from '../assets/sim/solar_flare.js';
 
 var cfg = {
     gapMinTicks: 100,
@@ -37,4 +37,12 @@ test('applySolarFlareFleetWipe clears active fleets only', function () {
     assert.equal(fleets[0].count, 0);
     assert.equal(fleets[0].trail.length, 0);
     assert.equal(fleets[1].active, false);
+});
+
+test('getSolarFlareTransitions detects warning entry and blast across snapshot gaps', function () {
+    assert.equal(getSolarFlareTransitions(78, 80, 0, cfg).warnStartTick, 80);
+    assert.equal(getSolarFlareTransitions(78, 80, 0, cfg).blastTick, -1);
+    assert.equal(getSolarFlareTransitions(98, 100, 0, cfg).warnStartTick, -1);
+    assert.equal(getSolarFlareTransitions(98, 100, 0, cfg).blastTick, 100);
+    assert.equal(getSolarFlareTransitions(80, 81, 0, cfg).warnStartTick, -1);
 });

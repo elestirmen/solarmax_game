@@ -120,6 +120,36 @@ test('computeSyncHash changes when doctrine or encounter control state changes',
     assert.notEqual(computeSyncHash(baseState), computeSyncHash(variant));
 });
 
+test('computeSyncHash changes when node upgrade timing changes', function () {
+    var baseState = {
+        tick: 30,
+        players: [{ alive: true, isAI: false }],
+        nodes: [{ id: 0, owner: 0, units: 14, level: 1, defense: false, assimilationProgress: 1, assimilationLock: 0 }],
+        fleets: [],
+    };
+    var variant = {
+        tick: 30,
+        players: [{ alive: true, isAI: false }],
+        nodes: [{
+            id: 0,
+            owner: 0,
+            units: 14,
+            level: 1,
+            defense: false,
+            assimilationProgress: 1,
+            assimilationLock: 0,
+            upgradeStartTick: 30,
+            upgradeCompleteTick: 90,
+            upgradeTargetLevel: 2,
+            lastUpgradeStartTick: 30,
+            lastUpgradeCompleteTick: -1,
+        }],
+        fleets: [],
+    };
+
+    assert.notEqual(computeSyncHash(baseState), computeSyncHash(variant));
+});
+
 test('computeSyncHash changes when mission phase state changes', function () {
     var baseState = {
         tick: 30,

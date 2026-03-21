@@ -3,6 +3,7 @@ import { isDispatchAllowed } from './barrier.js';
 import { computeFriendlyReinforcementRoom } from './reinforcement.js';
 import { isStrategicPulseActiveForNode } from './strategic_pulse.js';
 import { SIM_CONSTANTS, buildFleetSpawnProfile, isNodeAssimilated, nodeCapacity, nodeTypeOf, upgradeCost } from './shared_config.js';
+import { beginNodeUpgrade, isNodeUpgradePending } from './node_upgrade.js';
 
 function clamp(value, min, max) {
     return value < min ? min : value > max ? max : value;
@@ -380,12 +381,11 @@ export function upgradeStateNode(state, owner, nodeId) {
     var node = state.nodes[nodeId];
     if (!node || node.owner !== owner || !isNodeAssimilated(node)) return false;
     if ((Number(node.level) || 1) >= SIM_CONSTANTS.NODE_LEVEL_MAX) return false;
+    if (isNodeUpgradePending(node, state.tick)) return false;
     var cost = upgradeCost(node);
     if ((Number(node.units) || 0) < cost) return false;
     node.units -= cost;
-    node.level = (Number(node.level) || 1) + 1;
-    node.maxUnits = nodeCapacity(node);
-    if (node.units > node.maxUnits) node.units = node.maxUnits;
+    if (!beginNodeUpgrade(node, state.tick, SIM_CONSTANTS.UPGRADE_DURATION_TICKS)) return false;
     if (owner === state.humanIndex && state.stats) {
         state.stats.upgrades = (Number(state.stats.upgrades) || 0) + 1;
     }

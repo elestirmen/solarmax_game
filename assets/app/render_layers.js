@@ -10,6 +10,17 @@ function nodeIsWormholeEndpoint(game, nodeId) {
     return false;
 }
 
+function traceRoundedPill(ctx, x, y, w, h) {
+    var r = Math.min(h * 0.5, w * 0.5);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+}
+
 function drawSolarFlareCorona(ctx, game, tick, constants) {
     var cfg = constants.solarFlare;
     if (!cfg || !game || (game.state !== 'playing' && game.state !== 'paused')) return;
@@ -280,9 +291,26 @@ function drawFleetsAndBeamsLayer(ctx, game, tick, inputState, hw, hh, constants,
 }
 
 function drawNodesLayer(ctx, game, tick, constants, helpers) {
+    var getNodeVisualScale = typeof helpers.getNodeVisualScale === 'function' ? helpers.getNodeVisualScale : function () { return 1; };
+    var getNodeUpgradeProgress = typeof helpers.getNodeUpgradeProgress === 'function' ? helpers.getNodeUpgradeProgress : function () { return 0; };
+    var isNodeUpgradePending = typeof helpers.isNodeUpgradePending === 'function' ? helpers.isNodeUpgradePending : function () { return false; };
     for (var i = 0; i < game.nodes.length; i++) {
         var n = game.nodes[i];
         var vis = !game.tune.fogEnabled || !!game.fog.vis[game.human][n.id];
+        var visualScale = Math.max(1, Number(getNodeVisualScale(n, tick)) || 1);
+        var drawRadius = Math.max(1, (Number(n.radius) || 0) * visualScale);
+        var drawNode = visualScale === 1 ? n : {
+            id: n.id,
+            owner: n.owner,
+            kind: n.kind,
+            pos: n.pos,
+            radius: drawRadius,
+            defense: n.defense,
+            level: n.level,
+            units: n.units,
+        };
+        var upgrading = isNodeUpgradePending(n, tick);
+        var upgradeProgress = upgrading ? helpers.clamp(getNodeUpgradeProgress(n, tick), 0, 1) : 0;
         var col;
         var dUnits;
         if (n.owner === -1) col = constants.colNeutral;
@@ -299,7 +327,7 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
 
         if (n.selected && n.owner === game.human) {
             ctx.beginPath();
-            ctx.arc(n.pos.x, n.pos.y, n.radius + 4, 0, Math.PI * 2);
+            ctx.arc(n.pos.x, n.pos.y, drawRadius + 4, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(255,255,255,0.5)';
             ctx.lineWidth = 1.5;
             ctx.stroke();
@@ -307,7 +335,7 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
 
         if ((vis || n.owner === game.human) && n.owner >= 0 && n.supplied === false) {
             ctx.beginPath();
-            ctx.arc(n.pos.x, n.pos.y, n.radius + 3, 0, Math.PI * 2);
+            ctx.arc(n.pos.x, n.pos.y, drawRadius + 3, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(255,100,100,0.35)';
             ctx.setLineDash([2, 3]);
             ctx.lineWidth = 1;
@@ -318,14 +346,14 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             ctx.font = 'bold 10px sans-serif';
             ctx.fillStyle = 'rgba(255,255,255,0.9)';
             ctx.textAlign = 'center';
-            ctx.fillText('\u26E8', n.pos.x, n.pos.y - n.radius - 4);
+            ctx.fillText('\u26E8', n.pos.x, n.pos.y - drawRadius - 4);
         }
         var whEnd = nodeIsWormholeEndpoint(game, n.id);
         if ((vis || n.owner === game.human) && whEnd) {
             var bhPhase = tick * 0.098 + n.id * 0.71;
             var cx = n.pos.x;
             var cy = n.pos.y;
-            var r = n.radius;
+            var r = drawRadius;
             var diskOut = r + 21 + Math.sin(bhPhase * 1.05) * 1.8;
             ctx.save();
             var gravHalo = ctx.createRadialGradient(cx, cy, r * 0.35, cx, cy, diskOut);
@@ -365,21 +393,21 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
 
         if ((vis || n.owner === game.human) && n.strategic) {
             ctx.beginPath();
-            ctx.arc(n.pos.x, n.pos.y, n.radius + 4, 0, Math.PI * 2);
+            ctx.arc(n.pos.x, n.pos.y, drawRadius + 4, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(255,215,0,0.3)';
             ctx.lineWidth = 1;
             ctx.stroke();
             if (helpers.strategicPulseAppliesToNode(n.id)) {
                 var pulseGlow = 0.45 + Math.sin(tick * 0.12 + n.id) * 0.2;
                 ctx.beginPath();
-                ctx.arc(n.pos.x, n.pos.y, n.radius + 9, 0, Math.PI * 2);
+                ctx.arc(n.pos.x, n.pos.y, drawRadius + 9, 0, Math.PI * 2);
                 ctx.strokeStyle = 'rgba(255,230,120,' + pulseGlow + ')';
                 ctx.lineWidth = 2.2;
                 ctx.stroke();
                 ctx.font = 'bold 9px Outfit,sans-serif';
                 ctx.fillStyle = 'rgba(255,235,170,0.95)';
                 ctx.textAlign = 'center';
-                ctx.fillText('PULSE', n.pos.x, n.pos.y - n.radius - 10);
+                ctx.fillText('PULSE', n.pos.x, n.pos.y - drawRadius - 10);
             }
         }
 
@@ -389,22 +417,22 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             var gateAlpha = (vis || n.owner === game.human) ? 0.95 : 0.62;
             ctx.save();
             ctx.beginPath();
-            ctx.arc(n.pos.x, n.pos.y, n.radius + 9, 0, Math.PI * 2);
+            ctx.arc(n.pos.x, n.pos.y, drawRadius + 9, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(255,220,140,' + (0.28 + gatePulse * 0.24) * gateAlpha + ')';
             ctx.lineWidth = 1.8;
             ctx.stroke();
             ctx.beginPath();
-            ctx.moveTo(n.pos.x, n.pos.y - n.radius - 8);
-            ctx.lineTo(n.pos.x + 5, n.pos.y - n.radius - 2);
-            ctx.lineTo(n.pos.x, n.pos.y - n.radius + 4);
-            ctx.lineTo(n.pos.x - 5, n.pos.y - n.radius - 2);
+            ctx.moveTo(n.pos.x, n.pos.y - drawRadius - 8);
+            ctx.lineTo(n.pos.x + 5, n.pos.y - drawRadius - 2);
+            ctx.lineTo(n.pos.x, n.pos.y - drawRadius + 4);
+            ctx.lineTo(n.pos.x - 5, n.pos.y - drawRadius - 2);
             ctx.closePath();
             ctx.fillStyle = 'rgba(255,220,140,' + gateAlpha + ')';
             ctx.fill();
             ctx.font = 'bold 10px Outfit,sans-serif';
             ctx.fillStyle = 'rgba(255,232,180,' + gateAlpha + ')';
             ctx.textAlign = 'center';
-            ctx.fillText('GATE', n.pos.x, n.pos.y + n.radius + 13);
+            ctx.fillText('GATE', n.pos.x, n.pos.y + drawRadius + 13);
             ctx.restore();
         }
 
@@ -413,19 +441,19 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             var encounterCol = n.encounterType === 'mega_turret' ? 'rgba(255,196,132,' : 'rgba(130,238,255,';
             ctx.save();
             ctx.beginPath();
-            ctx.arc(n.pos.x, n.pos.y, n.radius + 12, 0, Math.PI * 2);
+            ctx.arc(n.pos.x, n.pos.y, drawRadius + 12, 0, Math.PI * 2);
             ctx.strokeStyle = encounterCol + (0.24 + encounterPulse * 0.18) + ')';
             ctx.lineWidth = 1.5;
             ctx.stroke();
             ctx.font = 'bold 9px Outfit,sans-serif';
             ctx.fillStyle = encounterCol + '0.92)';
             ctx.textAlign = 'center';
-            ctx.fillText(n.encounterType === 'mega_turret' ? 'BOSS' : 'CORE', n.pos.x, n.pos.y - n.radius - 16);
+            ctx.fillText(n.encounterType === 'mega_turret' ? 'BOSS' : 'CORE', n.pos.x, n.pos.y - drawRadius - 16);
             ctx.restore();
         }
 
         if ((vis || n.owner === game.human) && n.owner >= 0 && n.assimilationProgress !== undefined && n.assimilationProgress < 1) {
-            var ringR = n.radius + 7;
+            var ringR = drawRadius + 7;
             var lockPhase = (n.assimilationLock || 0) > 0 ? (1 - helpers.clamp((n.assimilationLock || 0) / constants.assimLockTicks, 0, 1)) : 1;
             var assimPhase = helpers.clamp(n.assimilationProgress || 0, 0, 1);
             var prog = helpers.clamp(lockPhase * 0.5 + assimPhase * 0.5, 0, 1);
@@ -473,12 +501,12 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             hasOrbiters = orbitalSquads.length > 0;
         }
         if (hasOrbiters) {
-            for (var osi = 0; osi < orbitalSquads.length; osi++) helpers.drawOrbitalSquadron(ctx, n, orbitalSquads[osi], col, tick, false);
+            for (var osi = 0; osi < orbitalSquads.length; osi++) helpers.drawOrbitalSquadron(ctx, drawNode, orbitalSquads[osi], col, tick, false);
         }
 
         var tdef = helpers.nodeTypeOf(n);
         if (n.kind === 'turret') {
-            helpers.drawTurretStation(ctx, n, col, tick);
+            helpers.drawTurretStation(ctx, drawNode, col, tick);
         } else {
             var bodyCol = col;
             if ((vis || n.owner === game.human) && col.indexOf('#') === 0) {
@@ -494,13 +522,13 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
                 ctx.globalAlpha = 0.3;
                 ctx.filter = 'grayscale(100%) brightness(50%)';
             }
-            ctx.drawImage(planetCanvas, n.pos.x - n.radius, n.pos.y - n.radius, n.radius * 2, n.radius * 2);
+            ctx.drawImage(planetCanvas, n.pos.x - drawRadius, n.pos.y - drawRadius, drawRadius * 2, drawRadius * 2);
             ctx.restore();
             if (n.kind !== 'turret' && (vis || n.owner === game.human || n.owner === -1)) {
                 var rimAlpha = n.owner === -1 ? 0.5 : (n.kind === 'core' ? 0.24 : 0.58);
                 var rimW = n.kind === 'core' ? 1.2 : 2.45;
                 ctx.beginPath();
-                ctx.arc(n.pos.x, n.pos.y, n.radius + 1.38, 0, Math.PI * 2);
+                ctx.arc(n.pos.x, n.pos.y, drawRadius + 1.38, 0, Math.PI * 2);
                 ctx.strokeStyle = helpers.hexToRgba(tdef.color, rimAlpha);
                 ctx.lineWidth = rimW;
                 ctx.stroke();
@@ -508,30 +536,30 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             if (whEnd && (vis || n.owner === game.human)) {
                 ctx.save();
                 ctx.beginPath();
-                ctx.arc(n.pos.x, n.pos.y, n.radius, 0, Math.PI * 2);
+                ctx.arc(n.pos.x, n.pos.y, drawRadius, 0, Math.PI * 2);
                 ctx.clip();
                 ctx.globalCompositeOperation = 'multiply';
                 var voidGrad = ctx.createRadialGradient(
                     n.pos.x, n.pos.y, 0,
-                    n.pos.x, n.pos.y, n.radius * 1.05
+                    n.pos.x, n.pos.y, drawRadius * 1.05
                 );
                 voidGrad.addColorStop(0, 'rgba(20, 8, 32, 0.96)');
                 voidGrad.addColorStop(0.42, 'rgba(38, 18, 58, 0.62)');
                 voidGrad.addColorStop(0.72, 'rgba(70, 40, 88, 0.28)');
                 voidGrad.addColorStop(1, 'rgba(255, 255, 255, 0)');
                 ctx.fillStyle = voidGrad;
-                ctx.fillRect(n.pos.x - n.radius, n.pos.y - n.radius, n.radius * 2, n.radius * 2);
+                ctx.fillRect(n.pos.x - drawRadius, n.pos.y - drawRadius, drawRadius * 2, drawRadius * 2);
                 ctx.restore();
 
                 ctx.save();
                 ctx.globalCompositeOperation = 'screen';
                 ctx.beginPath();
-                ctx.arc(n.pos.x, n.pos.y, n.radius + 1.3, 0, Math.PI * 2);
+                ctx.arc(n.pos.x, n.pos.y, drawRadius + 1.3, 0, Math.PI * 2);
                 ctx.strokeStyle = 'rgba(255, 195, 120, 0.52)';
                 ctx.lineWidth = 1.65;
                 ctx.stroke();
                 ctx.beginPath();
-                ctx.arc(n.pos.x, n.pos.y, n.radius - 1.1, 0, Math.PI * 2);
+                ctx.arc(n.pos.x, n.pos.y, drawRadius - 1.1, 0, Math.PI * 2);
                 ctx.strokeStyle = 'rgba(140, 90, 220, 0.32)';
                 ctx.lineWidth = 1;
                 ctx.stroke();
@@ -540,40 +568,104 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             if ((vis || n.owner === game.human) && n.owner >= 0 && col && col.indexOf('#') === 0) {
                 ctx.save();
                 ctx.beginPath();
-                ctx.arc(n.pos.x, n.pos.y, n.radius, 0, Math.PI * 2);
+                ctx.arc(n.pos.x, n.pos.y, drawRadius, 0, Math.PI * 2);
                 ctx.clip();
-                var tint = ctx.createRadialGradient(n.pos.x - n.radius * 0.3, n.pos.y - n.radius * 0.3, 0, n.pos.x, n.pos.y, n.radius * 1.2);
+                var tint = ctx.createRadialGradient(n.pos.x - drawRadius * 0.3, n.pos.y - drawRadius * 0.3, 0, n.pos.x, n.pos.y, drawRadius * 1.2);
                 tint.addColorStop(0, helpers.hexToRgba(col, 0.35));
                 tint.addColorStop(0.7, helpers.hexToRgba(col, 0.15));
                 tint.addColorStop(1, 'rgba(0,0,0,0)');
                 ctx.fillStyle = tint;
-                ctx.fillRect(n.pos.x - n.radius, n.pos.y - n.radius, n.radius * 2, n.radius * 2);
+                ctx.fillRect(n.pos.x - drawRadius, n.pos.y - drawRadius, drawRadius * 2, drawRadius * 2);
                 ctx.restore();
                 ctx.beginPath();
-                ctx.arc(n.pos.x, n.pos.y, n.radius + 2, 0, Math.PI * 2);
+                ctx.arc(n.pos.x, n.pos.y, drawRadius + 2, 0, Math.PI * 2);
                 ctx.strokeStyle = helpers.hexToRgba(col, 0.9);
                 ctx.lineWidth = 2.5;
                 ctx.stroke();
             }
         }
 
-        if ((vis || n.owner === game.human) && n.level > 1) {
-            for (var lv = 1; lv < n.level; lv++) {
-                var la = -Math.PI / 2 + (lv - 1) * 0.5;
-                var lx = n.pos.x + Math.cos(la) * (n.radius + 5);
-                var ly = n.pos.y + Math.sin(la) * (n.radius + 5);
+        if ((vis || n.owner === game.human) && upgrading) {
+            var chargeTint = tdef.color || '#ffffff';
+            var chargePulse = 0.55 + 0.45 * Math.sin(tick * 0.22 + n.id * 0.9);
+            var chargeHeight = drawRadius * (0.85 + upgradeProgress * 0.45);
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            var chargeGlow = ctx.createRadialGradient(n.pos.x, n.pos.y, drawRadius * 0.3, n.pos.x, n.pos.y, drawRadius + 24);
+            chargeGlow.addColorStop(0, helpers.hexToRgba(chargeTint, 0));
+            chargeGlow.addColorStop(0.72, helpers.hexToRgba(chargeTint, 0.12 + chargePulse * 0.12));
+            chargeGlow.addColorStop(1, helpers.hexToRgba(chargeTint, 0));
+            ctx.beginPath();
+            ctx.arc(n.pos.x, n.pos.y, drawRadius + 24, 0, Math.PI * 2);
+            ctx.fillStyle = chargeGlow;
+            ctx.fill();
+
+            var beamGrad = ctx.createLinearGradient(n.pos.x, n.pos.y - drawRadius - chargeHeight, n.pos.x, n.pos.y + drawRadius + chargeHeight);
+            beamGrad.addColorStop(0, helpers.hexToRgba(chargeTint, 0));
+            beamGrad.addColorStop(0.2, helpers.hexToRgba(chargeTint, 0.06));
+            beamGrad.addColorStop(0.5, helpers.hexToRgba(chargeTint, 0.26 + upgradeProgress * 0.12));
+            beamGrad.addColorStop(0.8, helpers.hexToRgba(chargeTint, 0.06));
+            beamGrad.addColorStop(1, helpers.hexToRgba(chargeTint, 0));
+            ctx.fillStyle = beamGrad;
+            ctx.fillRect(n.pos.x - drawRadius * 0.34, n.pos.y - drawRadius - chargeHeight, drawRadius * 0.68, drawRadius * 2 + chargeHeight * 2);
+
+            ctx.setLineDash([6, 5]);
+            ctx.lineDashOffset = -tick * 1.6;
+            ctx.beginPath();
+            ctx.arc(n.pos.x, n.pos.y, drawRadius + 8 + Math.sin(tick * 0.18 + n.id) * 1.2, -Math.PI * 0.75, Math.PI * 1.18);
+            ctx.strokeStyle = helpers.hexToRgba(chargeTint, 0.34 + chargePulse * 0.18);
+            ctx.lineWidth = 2.2;
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            for (var spark = 0; spark < 3; spark++) {
+                var sparkA = tick * 0.14 + n.id * 0.63 + spark * 2.1;
+                var sparkR = drawRadius + 7 + spark * 2.2 + Math.sin(tick * 0.2 + spark) * 0.8;
+                var sparkX = n.pos.x + Math.cos(sparkA) * sparkR;
+                var sparkY = n.pos.y + Math.sin(sparkA) * sparkR;
                 ctx.beginPath();
-                ctx.arc(lx, ly, 1.5, 0, Math.PI * 2);
-                ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                ctx.arc(sparkX, sparkY, 1.7 + upgradeProgress * 1.15, 0, Math.PI * 2);
+                ctx.fillStyle = helpers.hexToRgba('#ffffff', 0.8 - spark * 0.14);
                 ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        if ((vis || n.owner === game.human) && n.level > 1) {
+            var upgradeTint = tdef.color || '#ffffff';
+            var ringCount = Math.max(1, n.level - 1);
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            for (var ring = 0; ring < ringCount; ring++) {
+                var phase = tick * 0.045 + n.id * 0.7 + ring * 0.9;
+                var ringRadius = drawRadius + 4.4 + ring * 3.4 + Math.sin(phase) * 0.35;
+                ctx.beginPath();
+                ctx.arc(n.pos.x, n.pos.y, ringRadius, -Math.PI * 0.76 + ring * 0.18, Math.PI * 0.68 + ring * 0.18);
+                ctx.strokeStyle = helpers.hexToRgba(upgradeTint, Math.min(0.66, 0.25 + ring * 0.13 + (n.kind === 'nexus' ? 0.08 : 0)));
+                ctx.lineWidth = 1.25 + ring * 0.18;
+                ctx.stroke();
+            }
+            ctx.restore();
+            for (var lv = 1; lv < n.level; lv++) {
+                var offsetIndex = lv - (ringCount + 1) * 0.5;
+                var la = -Math.PI / 2 + offsetIndex * 0.42;
+                var lx = n.pos.x + Math.cos(la) * (drawRadius + 7.2);
+                var ly = n.pos.y + Math.sin(la) * (drawRadius + 7.2);
+                ctx.beginPath();
+                ctx.arc(lx, ly, n.kind === 'nexus' ? 2.45 : 2.1, 0, Math.PI * 2);
+                ctx.fillStyle = helpers.hexToRgba(upgradeTint, n.kind === 'nexus' ? 0.96 : 0.84);
+                ctx.fill();
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = 'rgba(255,255,255,0.86)';
+                ctx.stroke();
             }
         }
 
         if (hasOrbiters) {
-            for (var osj = 0; osj < orbitalSquads.length; osj++) helpers.drawOrbitalSquadron(ctx, n, orbitalSquads[osj], col, tick, true);
+            for (var osj = 0; osj < orbitalSquads.length; osj++) helpers.drawOrbitalSquadron(ctx, drawNode, orbitalSquads[osj], col, tick, true);
         }
 
-        ctx.font = 'bold ' + Math.max(11, n.radius * 0.5) + 'px Outfit,sans-serif';
+        ctx.font = 'bold ' + Math.max(11, drawRadius * 0.5) + 'px Outfit,sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         var unitFill = '#fff';
@@ -595,11 +687,26 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
         ctx.shadowBlur = 0;
 
         if (vis || n.owner === game.human) {
-            helpers.drawTypeBadge(ctx, n, helpers.nodeTypeOf(n));
-            if (n.level > 1) {
+            helpers.drawTypeBadge(ctx, drawNode, helpers.nodeTypeOf(n));
+            if (n.level > 1 || upgrading) {
+                var levelText = upgrading ? ('UP ' + Math.round(upgradeProgress * 100) + '%') : ('L' + n.level);
                 ctx.font = 'bold 9px Outfit,sans-serif';
-                ctx.fillStyle = 'rgba(255,255,255,0.82)';
-                ctx.fillText('L' + n.level, n.pos.x, n.pos.y - n.radius * 0.66);
+                var badgeTextWidth = ctx.measureText(levelText).width;
+                var badgeW = Math.max(upgrading ? 36 : 19, badgeTextWidth + 8);
+                var badgeH = 12;
+                var badgeX = n.pos.x - badgeW * 0.5;
+                var badgeY = n.pos.y - drawRadius - 10;
+                traceRoundedPill(ctx, badgeX, badgeY, badgeW, badgeH);
+                ctx.fillStyle = helpers.hexToRgba(tdef.color || '#ffffff', upgrading ? 0.34 : (n.kind === 'nexus' ? 0.36 : 0.24));
+                ctx.fill();
+                ctx.lineWidth = 1;
+                ctx.strokeStyle = upgrading ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.34)';
+                ctx.stroke();
+                ctx.strokeStyle = 'rgba(5,8,14,0.74)';
+                ctx.lineWidth = 2.6;
+                ctx.strokeText(levelText, n.pos.x, badgeY + badgeH * 0.5 + 0.5);
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(levelText, n.pos.x, badgeY + badgeH * 0.5 + 0.5);
             }
         }
     }

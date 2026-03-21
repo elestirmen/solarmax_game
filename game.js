@@ -18,8 +18,9 @@ import { buildEncounterState, encounterHint, encounterName, encounterSummary, st
 import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } from './assets/sim/ruleset.js';
 import { computeFriendlyReinforcementRoom } from './assets/sim/reinforcement.js';
 import { buildFleetSpawnProfile, getFleetUnitSpacingT, hashMix } from './assets/sim/shared_config.js';
+import { beginNodeUpgrade, getNodeUpgradeProgress, getNodeUpgradeVisualLevel, isNodeUpgradePending, normalizeNodeUpgradeState, resolvePendingNodeUpgrades } from './assets/sim/node_upgrade.js';
 import { getStrategicPulseState, isStrategicPulseActiveForNode } from './assets/sim/strategic_pulse.js';
-import { applySolarFlareFleetWipe, getSolarFlareFrame } from './assets/sim/solar_flare.js';
+import { applySolarFlareFleetWipe, getSolarFlareFrame, getSolarFlareTransitions } from './assets/sim/solar_flare.js';
 import { computeSyncHash } from './assets/sim/state_hash.js';
 import { applyPlayerCommandWithOps } from './assets/sim/command_apply.js';
 import { sanitizeCommandData } from './assets/sim/command_schema.js';
@@ -67,6 +68,8 @@ var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
     PLAYER_COLORS = ['#4a8eff', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'],
     TRAIL_LEN = 12, MAX_ORBIT_SQUADS = 14, MAX_ORBIT_SHIPS_PER_SQUAD = 6, ORBIT_UNITS_PER_VISIBLE_SHIP = 2, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 14, ORBIT_MAX_RINGS = 4,
     NODE_LEVEL_MAX = 3,
+    UPGRADE_DURATION_TICKS = 60,
+    UPGRADE_VISUAL_SCALE_PER_LEVEL = 0.18,
     DDA_MAX_BOOST = 0.2,
     GRAVITY_RADIUS = 170,
     GRAVITY_SPEED_MULT = 1.35,
@@ -588,6 +591,10 @@ function nodeTypeOf(node) { return NODE_TYPE_DEFS[node.kind] || NODE_TYPE_DEFS.c
 function nodeLevelProdMult(node) { return 1 + (node.level - 1) * 0.15; }
 function nodeLevelDefMult(node) { return 1 + (node.level - 1) * 0.2; }
 function nodeLevelCapMult(node) { return 1 + (node.level - 1) * 0.12; }
+function nodeVisualScale(node, tick) {
+    var visualLevel = getNodeUpgradeVisualLevel(node, tick === undefined ? G.tick : tick);
+    return 1 + Math.max(0, visualLevel - 1) * UPGRADE_VISUAL_SCALE_PER_LEVEL;
+}
 function nodeCapacity(node) {
     var td = nodeTypeOf(node);
     return Math.floor(MAX_UNITS * td.cap * nodeLevelCapMult(node));
@@ -617,13 +624,20 @@ function preferredCameraNodeForPlayer(playerIndex) {
     return G.nodes[0] || null;
 }
 function upgradeCost(node) {
-    var cost = 48 + node.radius * 2.15 + (node.level - 1) * 36;
+    var cost = (48 + node.radius * 2.15 + (node.level - 1) * 36) * 1.18;
     if (node.kind === 'relay') cost *= 0.92;
     else if (node.kind === 'forge') cost *= 0.95;
     else if (node.kind === 'bulwark') cost *= 1.08;
     else if (node.kind === 'turret') cost *= 1.12;
     if (node.supplied === true) cost *= SUPPLIED_UPGRADE_DISCOUNT;
     return Math.max(28, Math.floor(cost));
+}
+function canUpgradeNodeForOwner(node, owner, tick) {
+    if (!node || node.owner !== owner || !isNodeAssimilated(node)) return false;
+    if (!G.rules || !G.rules.allowUpgrade) return false;
+    if ((Number(node.level) || 1) >= NODE_LEVEL_MAX) return false;
+    if (isNodeUpgradePending(node, tick === undefined ? G.tick : tick)) return false;
+    return (Number(node.units) || 0) >= upgradeCost(node);
 }
 function initNodeKind(node) {
     var roll = G.rng.next();
@@ -705,40 +719,61 @@ function solarFlareCfg() {
         warnTicks: SOLAR_FLARE_WARN_TICKS,
     };
 }
+function triggerSolarFlareWarningFeedback() {
+    showHintToast('UYARI: Güneş patlaması geliyor — uzaydaki filolarını gezegenlere çek!');
+    if (typeof AudioFX !== 'undefined' && typeof AudioFX.solarFlareWarning === 'function') AudioFX.solarFlareWarning();
+}
+function triggerSolarFlareBlastFeedback(opts) {
+    opts = opts || {};
+    var wiped = Number.isFinite(opts.wiped) ? Math.max(0, Math.floor(opts.wiped)) : null;
+    G.solarFlareFx.blastFlash = 1.05;
+    enqueueShockwave(MAP_W * 0.5, MAP_H * 0.5, {
+        radius: 120,
+        grow: 520,
+        life: 0.85,
+        color: '#ffcc66',
+        alpha: 0.42,
+        fillAlpha: 0.08,
+        lineWidth: 2.4,
+    });
+    spawnParticles(MAP_W * 0.5, MAP_H * 0.5, wiped === null ? 40 : Math.min(56, 32 + wiped * 2), '#ff9a4a', false, {
+        spread: Math.PI * 2,
+        speedMin: 3,
+        speedMax: 14,
+        drag: 0.88,
+        lifeMin: 0.35,
+        lifeMax: 0.9,
+        glow: 1.2,
+    });
+    showHintToast(opts.message || (wiped !== null
+        ? (wiped > 0
+            ? ('Güneş patlaması: ' + wiped + ' filo buharlaştı. Gezegenlerdeki birlikler güvende.')
+            : 'Güneş patlaması: uzaydaki filolar yok oldu (şu an yolda filo yoktu).')
+        : 'Güneş patlaması vurdu. Uzaydaki filolar güvende değil; birlikleri gezegenlerde tut.'));
+    if (typeof AudioFX !== 'undefined' && typeof AudioFX.solarFlareBlast === 'function') AudioFX.solarFlareBlast();
+}
+function replayAuthoritativeSolarFlareFeedback(previousTick, nextTick) {
+    var transitions = getSolarFlareTransitions(previousTick, nextTick, G.seed, solarFlareCfg());
+    if (transitions.warnStartTick >= 0) {
+        triggerSolarFlareWarningFeedback();
+    }
+    if (transitions.blastTick >= 0) {
+        triggerSolarFlareBlastFeedback({
+            message: 'Güneş patlaması vurdu. Sunucu state güncellendi; uzaydaki filolar temizlendi.',
+        });
+    }
+}
 function maybeApplySolarFlareCombat() {
     if (G.state !== 'playing') return;
     var cfg = solarFlareCfg();
     var cur = getSolarFlareFrame(G.tick, G.seed, cfg);
     var prev = G.tick <= 0 ? { phase: 'idle' } : getSolarFlareFrame(G.tick - 1, G.seed, cfg);
     if (cur.phase === 'warn' && prev.phase !== 'warn') {
-        showHintToast('UYARI: Güneş patlaması geliyor — uzaydaki filolarını gezegenlere çek!');
-        if (typeof AudioFX !== 'undefined' && typeof AudioFX.solarFlareWarning === 'function') AudioFX.solarFlareWarning();
+        triggerSolarFlareWarningFeedback();
     }
     if (cur.phase === 'blast') {
         var wiped = applySolarFlareFleetWipe(G.fleets);
-        G.solarFlareFx.blastFlash = 1.05;
-        enqueueShockwave(MAP_W * 0.5, MAP_H * 0.5, {
-            radius: 120,
-            grow: 520,
-            life: 0.85,
-            color: '#ffcc66',
-            alpha: 0.42,
-            fillAlpha: 0.08,
-            lineWidth: 2.4,
-        });
-        spawnParticles(MAP_W * 0.5, MAP_H * 0.5, Math.min(56, 32 + wiped * 2), '#ff9a4a', false, {
-            spread: Math.PI * 2,
-            speedMin: 3,
-            speedMax: 14,
-            drag: 0.88,
-            lifeMin: 0.35,
-            lifeMax: 0.9,
-            glow: 1.2,
-        });
-        showHintToast(wiped > 0
-            ? ('Güneş patlaması: ' + wiped + ' filo buharlaştı. Gezegenlerdeki birlikler güvende.')
-            : 'Güneş patlaması: uzaydaki filolar yok oldu (şu an yolda filo yoktu).');
-        if (typeof AudioFX !== 'undefined' && typeof AudioFX.solarFlareBlast === 'function') AudioFX.solarFlareBlast();
+        triggerSolarFlareBlastFeedback({ wiped: wiped });
     }
 }
 function strategicPulseToast() {
@@ -1557,6 +1592,118 @@ function enqueueShockwave(x, y, opts) {
     if (G.shockwaves.length > 80) G.shockwaves = G.shockwaves.slice(-72);
 }
 
+var lastUpgradeFeedbackSoundAt = -99999;
+function playUpgradeFeedbackSound(kind) {
+    if (typeof AudioFX === 'undefined') return;
+    var now = currentPerfNow();
+    if (now - lastUpgradeFeedbackSoundAt < (kind === 'complete' ? 90 : 60)) return;
+    lastUpgradeFeedbackSoundAt = now;
+    if (kind === 'start' && typeof AudioFX.upgradeStart === 'function') AudioFX.upgradeStart();
+    else if (kind === 'complete' && typeof AudioFX.upgradeComplete === 'function') AudioFX.upgradeComplete();
+    else if (typeof AudioFX.upgrade === 'function') AudioFX.upgrade();
+}
+
+function triggerNodeUpgradeStartFeedback(node, opts) {
+    opts = opts || {};
+    if (!node || !node.pos) return;
+    if (!opts.forceVisible && !isNodeVisibleToHuman(node)) return;
+    var tint = nodeTypeOf(node).color || '#9fd0ff';
+    var renderRadius = Math.max(10, (Number(node.radius) || 18) * nodeVisualScale(node, G.tick));
+    enqueueShockwave(node.pos.x, node.pos.y, {
+        color: tint,
+        radius: renderRadius * 0.72,
+        grow: renderRadius * 0.5 + 10,
+        life: 0.18,
+        alpha: 0.24,
+        fillAlpha: 0.05,
+        lineWidth: 1.4,
+    });
+    spawnParticles(node.pos.x, node.pos.y, 16, tint, false, {
+        spread: Math.PI * 2,
+        speedMin: 1.6,
+        speedMax: 5.2,
+        drag: 0.92,
+        lifeMin: 0.2,
+        lifeMax: 0.45,
+        radiusScale: 1.05,
+        glow: 0.62,
+    });
+    if (!opts.silent) playUpgradeFeedbackSound('start');
+}
+
+function triggerNodeUpgradeCompleteFeedback(node, opts) {
+    opts = opts || {};
+    if (!node || !node.pos) return;
+    if (!opts.forceVisible && !isNodeVisibleToHuman(node)) return;
+    var tint = nodeTypeOf(node).color || '#c6e0ff';
+    var renderRadius = Math.max(12, (Number(node.radius) || 18) * nodeVisualScale(node, G.tick));
+    enqueueShockwave(node.pos.x, node.pos.y, {
+        color: tint,
+        radius: renderRadius * 0.78,
+        grow: renderRadius * 0.95 + 18,
+        life: 0.42,
+        alpha: 0.42,
+        fillAlpha: 0.12,
+        lineWidth: 2.3,
+    });
+    enqueueShockwave(node.pos.x, node.pos.y, {
+        color: '#ffffff',
+        radius: renderRadius * 0.42,
+        grow: renderRadius * 0.48 + 10,
+        life: 0.18,
+        alpha: 0.58,
+        fillAlpha: 0.18,
+        lineWidth: 1.6,
+    });
+    spawnParticles(node.pos.x, node.pos.y, 28, tint, false, {
+        spread: Math.PI * 2,
+        speedMin: 3.2,
+        speedMax: 9.4,
+        drag: 0.9,
+        lifeMin: 0.28,
+        lifeMax: 0.72,
+        radiusScale: 1.28,
+        glow: 0.86,
+    });
+    if (!opts.silent) playUpgradeFeedbackSound('complete');
+}
+
+function captureNodeUpgradeReplayState(nodes) {
+    var snapshot = {};
+    if (!Array.isArray(nodes)) return snapshot;
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (!node) continue;
+        snapshot[node.id] = {
+            lastUpgradeStartTick: Math.floor(Number(node.lastUpgradeStartTick) || -1),
+            lastUpgradeCompleteTick: Math.floor(Number(node.lastUpgradeCompleteTick) || -1),
+        };
+    }
+    return snapshot;
+}
+
+function resolveLocalPendingNodeUpgrades() {
+    var completedNodes = resolvePendingNodeUpgrades(G.nodes, G.tick, nodeCapacity);
+    for (var i = 0; i < completedNodes.length; i++) triggerNodeUpgradeCompleteFeedback(completedNodes[i]);
+}
+
+function replayAuthoritativeUpgradeFeedback(previousNodes, previousTick, nextTick) {
+    previousNodes = previousNodes || {};
+    for (var i = 0; i < G.nodes.length; i++) {
+        var node = normalizeNodeUpgradeState(G.nodes[i]);
+        if (!node) continue;
+        var previous = previousNodes[node.id] || {};
+        var startTick = Math.floor(Number(node.lastUpgradeStartTick) || -1);
+        var completeTick = Math.floor(Number(node.lastUpgradeCompleteTick) || -1);
+        if (startTick >= 0 && startTick !== (Math.floor(Number(previous.lastUpgradeStartTick) || -1)) && startTick > previousTick && startTick <= nextTick) {
+            triggerNodeUpgradeStartFeedback(node);
+        }
+        if (completeTick >= 0 && completeTick !== (Math.floor(Number(previous.lastUpgradeCompleteTick) || -1)) && completeTick > previousTick && completeTick <= nextTick) {
+            triggerNodeUpgradeCompleteFeedback(node);
+        }
+    }
+}
+
 function applyImpactFeedback(impacts) {
     if (!Array.isArray(impacts) || impacts.length === 0) return;
     for (var i = 0; i < impacts.length; i++) {
@@ -1612,13 +1759,13 @@ function upgradeNode(owner, nodeId) {
     var node = G.nodes[nodeId];
     if (!node || node.owner !== owner || !isNodeAssimilated(node)) return false;
     if (node.level >= NODE_LEVEL_MAX) return false;
+    if (isNodeUpgradePending(node, G.tick)) return false;
     var cost = upgradeCost(node);
     if (node.units < cost) return false;
     node.units -= cost;
-    node.level++;
-    node.maxUnits = nodeCapacity(node);
-    if (node.units > node.maxUnits) node.units = node.maxUnits;
-    if (owner === G.human) { G.stats.upgrades++; if (typeof AudioFX !== 'undefined') AudioFX.upgrade(); }
+    if (!beginNodeUpgrade(node, G.tick, UPGRADE_DURATION_TICKS)) return false;
+    if (owner === G.human) G.stats.upgrades++;
+    triggerNodeUpgradeStartFeedback(node);
     return true;
 }
 
@@ -1648,6 +1795,7 @@ function gameTick(runtimeOpts) {
         runtimeOpts: runtimeOpts,
         applyPlayerCommand: applyPlayerCommand,
     });
+    resolveLocalPendingNodeUpgrades();
 
     runEconomyTickPhase({
         game: G,
@@ -1783,6 +1931,7 @@ function gameTick(runtimeOpts) {
             checkEnd: checkEnd,
         },
     });
+    resolveLocalPendingNodeUpgrades();
 }
 function checkEnd() {
     var resolved = resolveMatchEndState({
@@ -2928,6 +3077,9 @@ function render(ctx, cv, tick) {
             darken: darken,
             getPlanetTexture: getPlanetTexture,
             drawTypeBadge: drawTypeBadge,
+            getNodeVisualScale: nodeVisualScale,
+            getNodeUpgradeProgress: getNodeUpgradeProgress,
+            isNodeUpgradePending: isNodeUpgradePending,
         },
     });
     ctx.restore();
@@ -3110,7 +3262,7 @@ function updateTouchPinch(a, b) {
     G.cam.x = inp.pinchWorldCenter.x - (center.x - cv.width / 2) / G.cam.zoom;
     G.cam.y = inp.pinchWorldCenter.y - (center.y - cv.height / 2) / G.cam.zoom;
 }
-function hitNode(wp) { for (var i = 0; i < G.nodes.length; i++) { var n = G.nodes[i]; if (dist(wp, n.pos) <= n.radius + 5) return n; } return null; }
+function hitNode(wp) { for (var i = 0; i < G.nodes.length; i++) { var n = G.nodes[i]; if (dist(wp, n.pos) <= n.radius * nodeVisualScale(n, G.tick) + 5) return n; } return null; }
 function hitNodeForTouch(wp) {
     var slackWorld = 0;
     if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) {
@@ -3118,7 +3270,7 @@ function hitNodeForTouch(wp) {
     }
     for (var i = 0; i < G.nodes.length; i++) {
         var n = G.nodes[i];
-        if (dist(wp, n.pos) <= n.radius + 5 + slackWorld) return n;
+        if (dist(wp, n.pos) <= n.radius * nodeVisualScale(n, G.tick) + 5 + slackWorld) return n;
     }
     return null;
 }
@@ -3154,6 +3306,16 @@ function selectedOwnedNodeIds(exceptId) {
         if (!node || node.owner !== G.human || id === exceptId) return;
         ids.push(node.id);
     });
+    return ids;
+}
+function selectedUpgradeableNodeIds() {
+    var ids = [];
+    var owned = selectedOwnedNodeIds();
+    for (var i = 0; i < owned.length; i++) {
+        var node = G.nodes[owned[i]];
+        if (!canUpgradeNodeForOwner(node, G.human, G.tick)) continue;
+        ids.push(node.id);
+    }
     return ids;
 }
 function selectEntityIds(nodeIds, fleetIds, append) {
@@ -3326,7 +3488,7 @@ function toggleFlowFromSelectionTo(targetId) {
     return true;
 }
 function activateSelectionUpgrade() {
-    var targetIds = selectedOwnedNodeIds();
+    var targetIds = selectedUpgradeableNodeIds();
     if (!targetIds.length || !(G.rules && G.rules.allowUpgrade)) return false;
     if (issueOnlineCommand('upgrade', { nodeIds: targetIds })) return true;
     for (var i = 0; i < targetIds.length; i++) upgradeNode(G.human, targetIds[i]);
@@ -3638,6 +3800,7 @@ function hoveredNodeAtScreen(screenPos) {
         camera: G.cam,
         viewport: { width: cv.width, height: cv.height },
         visibilityTest: isNodeVisibleToHuman,
+        radiusScaleFn: function (node) { return nodeVisualScale(node, G.tick); },
         extraRadius: 8,
         minRadius: 16,
     });
@@ -3802,11 +3965,11 @@ function syncMatchHudControls() {
         spdBtn.setAttribute('data-help-disabled', 'Online maçlarda hız sunucu senkronu için sabittir.');
     }
     if (upgradeHudBtn) {
-        upgradeHudBtn.disabled = G.state !== 'playing' || !selectedOwnedNodeIds().length || !(G.rules && G.rules.allowUpgrade);
+        upgradeHudBtn.disabled = G.state !== 'playing' || !selectedUpgradeableNodeIds().length || !(G.rules && G.rules.allowUpgrade);
         upgradeHudBtn.title = G.rules && G.rules.allowUpgrade ? 'Seçili gezegenleri yükselt' : 'Bu modda upgrade kapalı';
         upgradeHudBtn.setAttribute('data-help', 'Seçili kendi node\'larını upgrade eder. Kısayol: U.');
         upgradeHudBtn.setAttribute('data-help-disabled', G.rules && G.rules.allowUpgrade
-            ? 'Önce kendi bir node seç. Upgrade yalnızca asimile ve yeterli garnizonlu node\'larda çalışır.'
+            ? 'Önce uygun bir kendi node seç. Upgrade yalnızca asimile, beklemede olmayan ve yeterli garnizonlu node\'larda çalışır.'
             : 'Bu modda upgrade kapalı.');
     }
     if (defenseHudBtn) {
@@ -4054,7 +4217,8 @@ function selectionMetaText() {
         var parts = [nodeTypeOf(node).label + ' L' + node.level, ownerLabel];
         if (node.owner === G.human) {
             if (G.rules && G.rules.allowUpgrade) {
-                if (node.level >= NODE_LEVEL_MAX) parts.push('Upgrade: MAX');
+                if (isNodeUpgradePending(node, G.tick)) parts.push('Upgrade: Yükseliyor %' + Math.round(getNodeUpgradeProgress(node, G.tick) * 100) + ' -> L' + node.upgradeTargetLevel);
+                else if (node.level >= NODE_LEVEL_MAX) parts.push('Upgrade: MAX');
                 else parts.push('Upgrade: ' + upgradeCost(node));
             } else {
                 parts.push('Upgrade OFF');
@@ -4081,7 +4245,9 @@ function selectionMetaText() {
     if (!owned.length) return summary.join(' | ');
 
     if (G.rules && G.rules.allowUpgrade) {
-        var upgradeable = owned.filter(function (node) { return node.level < NODE_LEVEL_MAX; });
+        var upgrading = owned.filter(function (node) { return isNodeUpgradePending(node, G.tick); });
+        if (upgrading.length) summary.push('Yükseliyor x' + upgrading.length);
+        var upgradeable = owned.filter(function (node) { return canUpgradeNodeForOwner(node, G.human, G.tick); });
         if (upgradeable.length) {
             var minCost = Infinity, maxCost = 0;
             for (var i = 0; i < upgradeable.length; i++) {
@@ -4510,6 +4676,11 @@ function captureSyncSnapshot() {
                 gate: !!node.gate,
                 assimilationProgress: node.assimilationProgress,
                 assimilationLock: node.assimilationLock || 0,
+                upgradeStartTick: Math.floor(Number(node.upgradeStartTick) || -1),
+                upgradeCompleteTick: Math.floor(Number(node.upgradeCompleteTick) || -1),
+                upgradeTargetLevel: Math.floor(Number(node.upgradeTargetLevel) || 0),
+                lastUpgradeStartTick: Math.floor(Number(node.lastUpgradeStartTick) || -1),
+                lastUpgradeCompleteTick: Math.floor(Number(node.lastUpgradeCompleteTick) || -1),
             };
         }),
         fleets: G.fleets.filter(function (fleet) { return fleet && fleet.active; }).map(function (fleet) {
@@ -4668,10 +4839,16 @@ function handleAuthoritativeState(payload) {
     if (payload.matchId !== net.matchId) return;
     var payloadTick = Math.max(0, Math.floor(Number(payload.tick !== undefined ? payload.tick : payload.snapshot.tick) || 0));
     if (net.lastAuthoritativeTick >= 0 && payloadTick <= net.lastAuthoritativeTick) return;
+    var previousAuthoritativeTick = net.lastAuthoritativeTick;
+    var previousUpgradeNodes = captureNodeUpgradeReplayState(G.nodes);
     var nextFrameInterval = computeAuthoritativeFrameIntervalMs(net.lastAuthoritativeTick, payloadTick, TICK_RATE);
     pendingAuthoritativeState = null;
     var firstAuthoritativeFrame = !net.authoritativeReady;
     if (!applySyncSnapshot(payload.snapshot)) return;
+    if (!firstAuthoritativeFrame && previousAuthoritativeTick >= 0) {
+        replayAuthoritativeSolarFlareFeedback(previousAuthoritativeTick, payloadTick);
+        replayAuthoritativeUpgradeFeedback(previousUpgradeNodes, previousAuthoritativeTick, payloadTick);
+    }
     net.authoritativeReady = true;
     net.lastAuthoritativeTick = payloadTick;
     net.authoritativeFrameIntervalMs = nextFrameInterval;
@@ -4801,6 +4978,7 @@ function applySyncSnapshot(snapshot) {
         node.id = ni;
         node.visionR = VISION_R + node.radius * 2;
         node.selected = false;
+        normalizeNodeUpgradeState(node);
         node.maxUnits = nodeCapacity(node);
         node.units = clamp(node.units, 0, node.maxUnits);
     }

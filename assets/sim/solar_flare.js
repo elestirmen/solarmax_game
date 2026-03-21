@@ -62,6 +62,25 @@ export function getSolarFlareFrame(tick, seed, cfg) {
     return { phase: 'idle', ticksToBlast: dist, warnTicks: W, gapMin: minG, gapMax: maxG };
 }
 
+export function getSolarFlareTransitions(previousTick, nextTick, seed, cfg) {
+    cfg = cfg || {};
+    var prev = Math.floor(Number(previousTick));
+    var next = Math.max(0, Math.floor(Number(nextTick) || 0));
+    if (!Number.isFinite(prev)) prev = -1;
+    if (next <= prev) return { warnStartTick: -1, blastTick: -1 };
+
+    var minG = Math.max(30, Math.floor(Number(cfg.gapMinTicks) || 5400));
+    var W = Math.max(1, Math.floor(Number(cfg.warnTicks) || 180));
+    if (W >= minG) W = Math.max(1, minG - 1);
+
+    var blastTick = smallestBlastTickAtOrAfter(Math.max(0, prev + 1), seed, cfg);
+    var warnStartTick = blastTick - W;
+    return {
+        warnStartTick: prev < warnStartTick && warnStartTick <= next && next < blastTick ? warnStartTick : -1,
+        blastTick: prev < blastTick && blastTick <= next ? blastTick : -1,
+    };
+}
+
 /** Deactivate every fleet in transit or holding in space. Returns how many were cleared. */
 export function applySolarFlareFleetWipe(fleets) {
     if (!Array.isArray(fleets)) return 0;

@@ -123,6 +123,24 @@ test('applyCommandToAuthoritativeState adds deterministic launch variance for re
     assert.notEqual(state.fleets[0].offsetL, state.fleets[1].offsetL);
 });
 
+test('simulateAuthoritativeTick resolves timed upgrades after the configured duration', function () {
+    var snapshot = baseSnapshot();
+    snapshot.nodes[0].units = 140;
+    var state = buildAuthoritativeState(snapshot, {
+        manifest: { seed: 'sim-seed', difficulty: 'normal', rulesMode: 'advanced', fogEnabled: false },
+    });
+
+    assert.equal(applyCommandToAuthoritativeState(state, 0, 'upgrade', { nodeId: 0 }), true);
+    assert.equal(state.nodes[0].level, 1);
+    assert.equal(state.nodes[0].upgradeTargetLevel, 2);
+
+    for (var i = 0; i < SIM_CONSTANTS.UPGRADE_DURATION_TICKS; i++) simulateAuthoritativeTick(state);
+
+    assert.equal(state.nodes[0].level, 2);
+    assert.equal(state.nodes[0].upgradeTargetLevel, 0);
+    assert.equal(state.nodes[0].lastUpgradeCompleteTick >= SIM_CONSTANTS.UPGRADE_DURATION_TICKS, true);
+});
+
 test('simulateAuthoritativeTick advances state and resolves game over when only one player has assets', function () {
     var snapshot = baseSnapshot();
     snapshot.players[1].alive = false;

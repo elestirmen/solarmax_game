@@ -32,6 +32,7 @@ import {
     pickAIProfile,
 } from './shared_config.js';
 import { addFlowLink, dispatchUnits, removeFlowLink, toggleDefenseMode, upgradeStateNode } from './state_ops.js';
+import { normalizeNodeUpgradeState, resolvePendingNodeUpgrades } from './node_upgrade.js';
 
 function cloneValue(value) {
     return JSON.parse(JSON.stringify(value));
@@ -211,6 +212,7 @@ function ensureNodeDefaults(node, index) {
     node.selected = false;
     node.assimilationLock = Math.max(0, Math.floor(Number(node.assimilationLock) || 0));
     if (node.assimilationProgress === undefined || node.assimilationProgress === null) node.assimilationProgress = 1;
+    normalizeNodeUpgradeState(node);
     return node;
 }
 
@@ -439,6 +441,7 @@ export function applyCommandToAuthoritativeState(state, playerIndex, type, data)
 export function simulateAuthoritativeTick(state) {
     if (!state || state.state !== 'playing') return state;
     state.doctrineStates = tickDoctrineStates(state.doctrines, state.doctrineStates);
+    resolvePendingNodeUpgrades(state.nodes, state.tick, nodeCapacity);
 
     state.strategicPulse = getStrategicPulseState({
         strategicNodeIds: state.strategicNodes,
@@ -730,5 +733,6 @@ export function simulateAuthoritativeTick(state) {
     decayTransientBeams(state.shockwaves, SIM_CONSTANTS.TICK_DT);
     decayFleetHitVisuals(state.fleets, SIM_CONSTANTS.TICK_DT);
     state.tick += 1;
+    resolvePendingNodeUpgrades(state.nodes, state.tick, nodeCapacity);
     return state;
 }
