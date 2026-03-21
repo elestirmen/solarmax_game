@@ -17,6 +17,30 @@
       "wins": 0,
       "games": 1,
       "ts": 1774117856452
+    },
+    {
+      "name": "elestirmen",
+      "wins": 1,
+      "games": 1,
+      "ts": 1774119991842
+    },
+    {
+      "name": "aleminkralı",
+      "wins": 0,
+      "games": 1,
+      "ts": 1774119991842
+    },
+    {
+      "name": "elestirmen",
+      "wins": 1,
+      "games": 1,
+      "ts": 1774120453060
+    },
+    {
+      "name": "gebeşkaplumbağa",
+      "wins": 0,
+      "games": 1,
+      "ts": 1774120453060
     }
   ],
   "dailyChallengeScores": []

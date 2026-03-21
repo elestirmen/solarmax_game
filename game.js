@@ -513,11 +513,12 @@ function showGameToast(message, opts) {
     toast.textContent = message;
     toast.style.display = 'block';
     if (gameToastTimer) clearTimeout(gameToastTimer);
+    var durationMs = Math.max(800, Math.floor(Number(opts.durationMs) || 1200));
     gameToastTimer = setTimeout(function () {
         toast.style.display = 'none';
         activeGameToastKind = '';
         gameToastTimer = 0;
-    }, 1200);
+    }, durationMs);
 }
 function hintsEnabled() {
     return !uiPrefs || uiPrefs.hintsEnabled !== false;
@@ -3414,7 +3415,7 @@ if (howToPlayOv) {
     });
 }
 var roomStatusEl = $('roomStatus'), roomPlayersEl = $('roomPlayers'), roomListEl = $('roomList');
-var chatMessagesEl = $('chatMessages');
+var chatFeedEl = $('chatFeed'), chatMessagesEl = $('chatMessages'), chatPingDisplayEl = $('chatPingDisplay');
 var pauseTitleEl = $('pauseTitle'), pauseHintEl = $('pauseHint'), resumeBtn = $('resumeBtn'), quitBtn = $('quitBtn');
 var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameOverStats'), restartBtn = $('restartBtn'), nextLevelBtn = $('nextLevelBtn');
 var hudTelemetryRow = $('hudTelemetryRow'), hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), hudCap = $('hudCap'), hudMeta = $('hudMeta'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
@@ -3475,6 +3476,25 @@ var menuState = createMenuState({
         roomType: multiRoomTypeIn ? multiRoomTypeIn.value : 'standard',
     },
 });
+var onlineSeedPinned = false;
+var autoOnlineSeedSeq = 0;
+
+function buildAutoOnlineSeed() {
+    autoOnlineSeedSeq = (autoOnlineSeedSeq + 1) % 1000000;
+    var mixed = (Date.now() % 1000000000) ^ Math.floor(Math.random() * 0xfffff) ^ autoOnlineSeedSeq;
+    return String(100000 + (Math.abs(mixed) % 900000));
+}
+
+function refreshAutoOnlineSeed() {
+    if (onlineSeedPinned) return menuState.skirmish.seed;
+    var nextSeed = buildAutoOnlineSeed();
+    updateSkirmishMenuState({ seed: nextSeed });
+    return nextSeed;
+}
+
+function updateOnlineSeedPin(rawValue) {
+    onlineSeedPinned = String(rawValue || '').trim() !== '';
+}
 
 function applySkirmishMenuState() {
     var sk = menuState.skirmish;
@@ -3810,12 +3830,13 @@ function syncMatchHudControls() {
     if (chatToggle) {
         var chatAvailable = isRoomChatAvailable(net);
         chatToggle.disabled = !chatAvailable;
-        chatToggle.title = chatAvailable ? 'Sohbet' : 'Sohbet yalnızca çok oyunculu odalarda';
+        chatToggle.title = chatAvailable ? 'Mesaj yaz' : 'Sohbet yalnızca çok oyunculu odalarda';
         chatToggle.setAttribute('data-help', chatAvailable
-            ? 'Sohbet paneli sürekli açıktır. Tıklarsan mesaj kutusuna odaklanır.'
+            ? 'Mesaj yazma alanını açar; gönderilen satırlar ekranın solunda görünür.'
             : 'Sohbet yalnızca çok oyunculu odalarda aktiftir.');
         chatToggle.setAttribute('data-help-disabled', 'Sohbet yalnızca çok oyunculu odalarda aktiftir.');
-        chatToggle.classList.toggle('active', chatAvailable && (G.state === 'playing' || G.state === 'paused'));
+        chatToggle.classList.toggle('active', chatAvailable && isChatComposerOpen());
+        chatToggle.setAttribute('aria-expanded', chatAvailable && isChatComposerOpen() ? 'true' : 'false');
     }
     if (exportMapHudBtn) {
         exportMapHudBtn.setAttribute('data-help', 'Geçerli maçı JSON custom map olarak dışa aktarır.');
@@ -4944,7 +4965,10 @@ if (menuOpenContentBtn) menuOpenContentBtn.addEventListener('click', function ()
 if (menuOpenMultiplayerBtn) menuOpenMultiplayerBtn.addEventListener('click', function () { setMenuPanel('multiplayer'); });
 if (menuOpenToolsBtn) menuOpenToolsBtn.addEventListener('click', function () { setMenuPanel('tools'); });
 if (menuBackBtn) menuBackBtn.addEventListener('click', function () { setMenuPanel(menuBackBtn.dataset.target || 'hub'); });
-if (hostSetupBtn) hostSetupBtn.addEventListener('click', function () { setMenuPanel('host_setup'); });
+if (hostSetupBtn) hostSetupBtn.addEventListener('click', function () {
+    refreshAutoOnlineSeed();
+    setMenuPanel('host_setup');
+});
 if (hostSetupBackBtn) hostSetupBackBtn.addEventListener('click', function () { setMenuPanel('multiplayer'); });
 
 if (roomListEl) {
@@ -4988,37 +5012,74 @@ function openTuningPanel() {
     syncTuningBackdrop();
 }
 
-function shouldShowChatPanel(state) {
+function shouldShowChatUi(state) {
     return isRoomChatAvailable(net) && (state === 'playing' || state === 'paused' || state === 'mainMenu');
 }
 
-function desiredChatDock(state) {
-    if (state === 'mainMenu') return $('multiplayerChatDock');
-    if (state === 'playing' || state === 'paused') return $('hudChatDock');
-    return null;
+function isChatComposerOpen() {
+    return !!chatComposer && !chatComposer.classList.contains('hidden');
 }
 
-function syncChatPanelVisibility(state) {
-    var cp = document.getElementById('chatPanel');
-    if (!cp) return;
-    var currentState = state || (G && G.state ? G.state : 'mainMenu');
-    var available = shouldShowChatPanel(currentState);
-    var dock = desiredChatDock(currentState);
-    if (dock && cp.parentNode !== dock) dock.appendChild(cp);
-    cp.classList.toggle('chat-panel-docked', !!dock);
-    cp.classList.toggle('chat-panel-menu', dock && dock.id === 'multiplayerChatDock');
-    cp.classList.toggle('chat-panel-hud', dock && dock.id === 'hudChatDock');
-    cp.classList.toggle('hidden', !available);
+function syncChatButtons(state, available) {
+    var composerOpen = available && isChatComposerOpen();
     if (chatToggle) {
-        var expanded = available && currentState !== 'mainMenu';
-        chatToggle.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-        chatToggle.classList.toggle('active', expanded);
+        chatToggle.disabled = !available;
+        chatToggle.title = available ? 'Mesaj yaz' : 'Sohbet yalnızca çok oyunculu odalarda';
+        chatToggle.setAttribute('aria-expanded', composerOpen ? 'true' : 'false');
+        chatToggle.classList.toggle('active', composerOpen);
     }
-    syncChatPanelMeta();
+    if (menuChatToggle) {
+        var showMenuButton = available && state === 'mainMenu';
+        menuChatToggle.classList.toggle('hidden', !showMenuButton);
+        menuChatToggle.disabled = !showMenuButton;
+        menuChatToggle.title = showMenuButton ? 'Mesaj yaz' : 'Sohbet yalnızca odadayken aktif';
+        menuChatToggle.setAttribute('aria-expanded', showMenuButton && composerOpen ? 'true' : 'false');
+        menuChatToggle.classList.toggle('active', showMenuButton && composerOpen);
+    }
 }
 
-function syncChatPanelMeta() {
-    var pingEl = document.getElementById('chatPingDisplay');
+function setChatComposerVisible(visible, opts) {
+    opts = opts || {};
+    var currentState = opts.state || (G && G.state ? G.state : 'mainMenu');
+    var available = shouldShowChatUi(currentState);
+    var open = !!visible && available;
+    if (chatComposer) {
+        chatComposer.classList.toggle('chat-composer-menu', currentState === 'mainMenu');
+        chatComposer.classList.toggle('chat-composer-hud', currentState === 'playing' || currentState === 'paused');
+        chatComposer.classList.toggle('hidden', !open);
+        chatComposer.setAttribute('aria-hidden', open ? 'false' : 'true');
+    }
+    if (chatFeedEl) {
+        chatFeedEl.classList.toggle('chat-feed-with-composer', open);
+    }
+    if (!open && chatInput && opts.clearOnClose) chatInput.value = '';
+    syncChatButtons(currentState, available);
+    if (open && opts.focus && chatInput) {
+        chatInput.focus();
+        if (opts.select !== false && typeof chatInput.select === 'function') chatInput.select();
+    }
+}
+
+function syncChatUiVisibility(state) {
+    var currentState = state || (G && G.state ? G.state : 'mainMenu');
+    var available = shouldShowChatUi(currentState);
+    if (chatFeedEl) {
+        chatFeedEl.classList.toggle('hidden', !available);
+        chatFeedEl.classList.toggle('chat-feed-menu', currentState === 'mainMenu');
+        chatFeedEl.classList.toggle('chat-feed-hud', currentState === 'playing' || currentState === 'paused');
+        chatFeedEl.classList.toggle('chat-feed-with-composer', available && isChatComposerOpen());
+    }
+    if (chatComposer) {
+        chatComposer.classList.toggle('chat-composer-menu', currentState === 'mainMenu');
+        chatComposer.classList.toggle('chat-composer-hud', currentState === 'playing' || currentState === 'paused');
+    }
+    if (!available) setChatComposerVisible(false, { state: currentState, clearOnClose: true });
+    else syncChatButtons(currentState, true);
+    syncChatMeta();
+}
+
+function syncChatMeta() {
+    var pingEl = chatPingDisplayEl;
     if (!pingEl) return;
     if (!isRoomChatAvailable(net)) {
         pingEl.textContent = '';
@@ -5051,7 +5112,7 @@ function showUI(st) {
     var ig = st === 'playing' || st === 'paused';
     hud.classList.toggle('hidden', !ig);
     if (powerSidebar) powerSidebar.classList.toggle('hidden', !ig);
-    syncChatPanelVisibility(st);
+    syncChatUiVisibility(st);
     if (st === 'mainMenu') {
         setMenuPanel(net.roomCode ? 'multiplayer' : 'hub', { keepOverlay: true });
         applyMenuStateToInputs();
@@ -5084,7 +5145,7 @@ function setRoomStatus(msg, error) {
     setRoomStatusState(roomStatusEl, msg || '', error === true ? 'error' : (error === 'success' ? 'success' : 'info'));
 }
 
-var CHAT_LOG_LIMIT = 120;
+var CHAT_LOG_LIMIT = 24;
 function clearChatMessages() {
     if (!chatMessagesEl) return;
     chatMessagesEl.replaceChildren();
@@ -5092,13 +5153,24 @@ function clearChatMessages() {
 function appendChatMessage(text, color) {
     if (!chatMessagesEl || !text) return;
     var line = document.createElement('div');
+    line.className = 'chat-feed-line';
     line.textContent = text;
     if (color) line.style.color = color;
     chatMessagesEl.appendChild(line);
     while (chatMessagesEl.childNodes.length > CHAT_LOG_LIMIT) {
         chatMessagesEl.removeChild(chatMessagesEl.firstChild);
     }
-    chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+}
+function isLocalChatSender(name) {
+    var sender = String(name || '').trim();
+    var local = String(net.playerName || '').trim();
+    return !!sender && !!local && sender === local;
+}
+function notifyIncomingChatSurface(text, senderName) {
+    if (!text || isLocalChatSender(senderName)) return;
+    if (document.activeElement === chatInput) return;
+    showGameToast(text, { kind: 'chat', durationMs: 2400 });
+    if (G && G.state === 'mainMenu') setRoomStatus(text, false);
 }
 function chatColorForPlayer(index) {
     var idx = Math.floor(Number(index));
@@ -5169,7 +5241,7 @@ function clearRoomState(message, opts) {
     if (!opts.preserveResume) clearRoomResumeState();
     if (message) setRoomStatus(message, false);
     roomButtonState();
-    syncChatPanelVisibility(G && G.state ? G.state : 'mainMenu');
+    syncChatUiVisibility(G && G.state ? G.state : 'mainMenu');
     syncRoomTypeInputs();
     syncPauseOverlayContent();
     syncMatchHudControls();
@@ -5194,6 +5266,7 @@ function doCreateRoom() {
 
     setRoomStatus('Oda kuruluyor...', false);
     var roomMode = normalizeMenuRoomType(menuState.multiplayer.roomType);
+    refreshAutoOnlineSeed();
     var sk = menuState.skirmish;
     if (roomMode === 'custom' && !currentCustomMapConfig) {
         setRoomStatus('Custom oda açmak için önce bir custom map yükle.', true);
@@ -5319,7 +5392,7 @@ function ensureSocket() {
             isHost: net.isHost,
         }), false);
         setMenuLobbyMeta(buildMenuLobbyMeta({ roomCode: state.code }));
-        syncChatPanelVisibility(G.state);
+        syncChatUiVisibility(G.state);
         roomButtonState();
         if (G.state === 'mainMenu') setMenuPanel('multiplayer', { keepOverlay: true });
     });
@@ -5368,7 +5441,7 @@ function ensureSocket() {
         var latencyTicks = net.lastPingMs / 2 / 33.33;
         var realServerTick = payload.serverTick + latencyTicks;
         net.syncDrift = G.tick - realServerTick;
-        syncChatPanelMeta();
+        syncChatMeta();
     });
 
     net.socket.on('matchStarted', function (payload) {
@@ -5391,6 +5464,7 @@ function ensureSocket() {
         currentCustomMapConfig = onlineState.onlineCustomMap;
         clearSelection(true);
         clearChatMessages();
+        setChatComposerVisible(false, { state: 'playing', clearOnClose: true });
         spIdx = 0;
         G.speed = 1;
         spdBtn.textContent = 'HIZ 1x';
@@ -5440,10 +5514,14 @@ function ensureSocket() {
     });
 
     net.socket.on('chat', function (payload) {
-        appendChatMessage((payload.name || '?') + ': ' + (payload.message || ''));
+        var chatText = (payload.name || '?') + ': ' + (payload.message || '');
+        appendChatMessage(chatText);
+        notifyIncomingChatSurface(chatText, payload && payload.name);
     });
     net.socket.on('emote', function (payload) {
-        appendChatMessage((payload.name || '?') + ': ' + (payload.emote || '').toUpperCase(), 'var(--accent)');
+        var emoteText = (payload.name || '?') + ': ' + (payload.emote || '').toUpperCase();
+        appendChatMessage(emoteText, 'var(--accent)');
+        notifyIncomingChatSurface(emoteText, payload && payload.name);
     });
     net.socket.on('rematchVote', function (payload) {
         appendChatMessage(payload.name + ' tekrar oynamak istiyor (' + payload.count + '/' + payload.total + ')', 'var(--success)');
@@ -5483,8 +5561,14 @@ function syncRoomTypeInputs() {
     }, getRoomTypeUiState(roomMode));
 }
 syncRoomTypeInputs();
-if (seedIn) seedIn.addEventListener('input', function () { updateSkirmishMenuState({ seed: seedIn.value }); });
-if (multiSeedIn) multiSeedIn.addEventListener('input', function () { updateSkirmishMenuState({ seed: multiSeedIn.value }); });
+if (seedIn) seedIn.addEventListener('input', function () {
+    updateOnlineSeedPin(seedIn.value);
+    updateSkirmishMenuState({ seed: seedIn.value });
+});
+if (multiSeedIn) multiSeedIn.addEventListener('input', function () {
+    updateOnlineSeedPin(multiSeedIn.value);
+    updateSkirmishMenuState({ seed: multiSeedIn.value });
+});
 if (ncIn) ncIn.addEventListener('input', function () { updateSkirmishMenuState({ nodeCount: ncIn.value }); });
 if (multiNodeIn) multiNodeIn.addEventListener('input', function () { updateSkirmishMenuState({ nodeCount: multiNodeIn.value }); });
 if (diffSel) diffSel.addEventListener('change', function () { updateSkirmishMenuState({ difficulty: diffSel.value }); });
@@ -5499,7 +5583,10 @@ if (menuFogCb) menuFogCb.addEventListener('change', function () { updateSkirmish
 if (multiRoomTypeIn) multiRoomTypeIn.addEventListener('change', function () { updateMultiplayerMenuState({ roomType: multiRoomTypeIn.value }); });
 if (playerNameIn) playerNameIn.addEventListener('input', function () { updateMultiplayerMenuState({ playerName: playerNameIn.value }); });
 if (joinRoomCodeInput) joinRoomCodeInput.addEventListener('input', function () { updateMultiplayerMenuState({ joinCode: joinRoomCodeInput.value }); });
-if (rndSeedBtn) rndSeedBtn.addEventListener('click', function () { updateSkirmishMenuState({ seed: '' + Math.floor(Math.random() * 100000) }); });
+if (rndSeedBtn) rndSeedBtn.addEventListener('click', function () {
+    onlineSeedPinned = true;
+    updateSkirmishMenuState({ seed: '' + Math.floor(Math.random() * 100000) });
+});
 var SCENARIO_UNLOCKED_KEY = 'stellar_scenario_unlocked_v1';
 var SCENARIO_COMPLETED_KEY = 'stellar_scenario_completed_v1';
 var LEGACY_CAMPAIGN_UNLOCKED_KEY = 'stellar_campaign_unlocked_v2';
@@ -6155,34 +6242,37 @@ if (themeBtn) themeBtn.addEventListener('click', function () {
 });
 syncThemeButton();
 bindHudActionHelp();
-var chatPanel = $('chatPanel'), chatInput = $('chatInput'), chatToggle = $('chatToggle'), chatSendBtn = $('chatSendBtn');
-if (chatToggle) chatToggle.addEventListener('click', function () {
-    if (!chatPanel || !isRoomChatAvailable(net)) return;
-    syncChatPanelVisibility(G && G.state ? G.state : 'mainMenu');
-    if (chatInput) {
-        chatInput.focus();
-        if (typeof chatInput.select === 'function') chatInput.select();
-    }
-});
+var chatComposer = $('chatComposer'), chatInput = $('chatInput'), chatToggle = $('chatToggle'), menuChatToggle = $('menuChatToggle'), chatSendBtn = $('chatSendBtn');
+function openChatComposer() {
+    if (!isRoomChatAvailable(net)) return;
+    setChatComposerVisible(true, { focus: true });
+}
+function bindChatComposerToggle(btn) {
+    if (!btn) return;
+    btn.addEventListener('click', function () {
+        openChatComposer();
+    });
+}
+bindChatComposerToggle(chatToggle);
+bindChatComposerToggle(menuChatToggle);
 if (chatInput) chatInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') {
+        e.preventDefault();
+        e.stopPropagation();
+        setChatComposerVisible(false, { clearOnClose: false });
+        return;
+    }
     if (e.key === 'Enter' && chatInput.value.trim()) {
         e.preventDefault();
         e.stopPropagation();
-        if (emitChatMessage(chatInput.value)) chatInput.value = '';
+        if (emitChatMessage(chatInput.value)) setChatComposerVisible(false, { clearOnClose: true });
     }
 });
 if (chatSendBtn) chatSendBtn.addEventListener('click', function () {
     if (!chatInput) return;
     if (emitChatMessage(chatInput.value)) {
-        chatInput.value = '';
-        chatInput.focus();
+        setChatComposerVisible(false, { clearOnClose: true });
     }
-});
-document.querySelectorAll('.emote-btn').forEach(function (btn) {
-    btn.addEventListener('click', function () {
-        var em = btn.getAttribute('data-emote');
-        if (em && net.socket && isRoomChatAvailable(net)) net.socket.emit('emote', { emote: em });
-    });
 });
 var rematchBtn = $('rematchBtn');
 if (rematchBtn) rematchBtn.addEventListener('click', function () {
@@ -6478,7 +6568,7 @@ function loop(ts) {
                 syncWindowTicks: SYNC_HASH_INTERVAL_TICKS * 2,
             });
         }
-        syncChatPanelMeta();
+        syncChatMeta();
     }
     syncNodeHoverTip();
     if (G.state === 'playing' || G.state === 'paused') updatePowerSidebar();

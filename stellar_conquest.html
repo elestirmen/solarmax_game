@@ -3004,21 +3004,114 @@
         .minimap canvas { width: 100%; height: 100%; display: block; }
         .ping-display { margin-left: 12px; font-size: .75rem; color: var(--text-dim); }
         body.theme-light { --bg: #e8ecf4; --panel-bg: rgba(220,228,240,0.95); --panel-border: rgba(80,100,140,0.3); --text: #2a3548; --text-dim: #5a6a82; }
-        .chat-panel { position: fixed; bottom: 48px; left: 12px; width: 280px; max-height: 160px; background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: var(--radius); z-index: 80; display: flex; flex-direction: column; }
-        .chat-panel.hidden { display: none; }
-        .chat-panel.chat-panel-docked { position: static; inset: auto; width: 100%; max-width: none; max-height: 220px; border-radius: 14px; z-index: auto; box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
-        .chat-panel.chat-panel-menu { margin-top: 12px; background: linear-gradient(180deg, rgba(255,255,255,0.045), rgba(255,255,255,0.02)), rgba(8, 13, 24, 0.7); }
-        .chat-panel.chat-panel-hud { margin-top: 2px; background: linear-gradient(180deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02)), rgba(8, 13, 24, 0.72); }
-        .chat-panel-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px 0; }
-        .chat-panel-title { color: #eef4ff; font-family: 'Orbitron', var(--font); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase; }
-        .chat-panel-status { color: var(--text-dim); font-size: .68rem; white-space: nowrap; }
-        #chatMessages { flex: 1; overflow-y: auto; padding: 8px; font-size: .8rem; max-height: 100px; }
-        .chat-panel.chat-panel-docked #chatMessages { max-height: none; min-height: 96px; }
-        .chat-input-row { display: flex; padding: 6px; gap: 4px; }
-        #chatInput { flex: 1; padding: 6px; border: 1px solid var(--panel-border); border-radius: 4px; background: rgba(255,255,255,0.05); color: var(--text); font-size: .85rem; }
-        #chatSendBtn { padding: 6px 10px; border: 1px solid var(--panel-border); border-radius: 4px; background: rgba(74,142,255,0.18); color: var(--text); font-size: .74rem; font-weight: 700; cursor: pointer; }
-        .emote-bar { display: flex; gap: 2px; }
-        .emote-btn { padding: 4px 8px; font-size: .7rem; background: rgba(255,255,255,0.08); border: 1px solid var(--panel-border); border-radius: 4px; color: var(--text); cursor: pointer; }
+        .chat-feed {
+            position: fixed;
+            left: 14px;
+            width: min(320px, calc(100vw - 28px));
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 112;
+            pointer-events: none;
+        }
+        .chat-feed.hidden { display: none; }
+        .chat-feed.chat-feed-menu { bottom: 24px; }
+        .chat-feed.chat-feed-hud { bottom: 110px; }
+        .chat-feed.chat-feed-with-composer.chat-feed-menu { bottom: 24px; }
+        .chat-feed.chat-feed-with-composer.chat-feed-hud { bottom: 110px; }
+        .chat-feed-meta {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding-left: 2px;
+            color: var(--text-dim);
+            font-size: .62rem;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+        .chat-feed-label {
+            display: inline-flex;
+            align-items: center;
+            min-height: 18px;
+            padding: 2px 8px;
+            border: 1px solid rgba(118, 162, 255, 0.16);
+            border-radius: 999px;
+            background: rgba(8, 13, 24, 0.62);
+            color: #eef4ff;
+            font-family: 'Orbitron', var(--font);
+        }
+        .chat-feed-status {
+            white-space: nowrap;
+            text-shadow: 0 1px 1px rgba(0, 0, 0, 0.24);
+        }
+        #chatMessages {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 6px;
+            max-height: min(34vh, 232px);
+            overflow: hidden;
+        }
+        .chat-feed-line {
+            max-width: 100%;
+            padding: 7px 10px;
+            border: 1px solid rgba(118, 162, 255, 0.12);
+            border-radius: 10px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.018)),
+                rgba(8, 13, 24, 0.8);
+            box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+            color: var(--text);
+            font-size: .74rem;
+            line-height: 1.35;
+            word-break: break-word;
+            white-space: pre-wrap;
+            animation: chatFeedIn .18s ease;
+        }
+        .chat-composer {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: min(420px, calc(100vw - 28px));
+            max-width: calc(100vw - 28px);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px;
+            border: 1px solid rgba(118, 162, 255, 0.18);
+            border-radius: 16px;
+            background:
+                linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.018)),
+                rgba(8, 13, 24, 0.9);
+            box-shadow: 0 12px 26px rgba(0, 0, 0, 0.24);
+            z-index: 116;
+        }
+        .chat-composer.hidden { display: none; }
+        .chat-composer.chat-composer-menu { bottom: auto; }
+        .chat-composer.chat-composer-hud { bottom: auto; }
+        #chatInput {
+            flex: 1;
+            min-width: 0;
+            padding: 7px 10px;
+            border: 1px solid rgba(118, 162, 255, 0.12);
+            border-radius: 10px;
+            background: rgba(255,255,255,0.05);
+            color: var(--text);
+            font-size: .78rem;
+        }
+        #chatSendBtn {
+            padding: 7px 10px;
+            border: 1px solid rgba(118, 162, 255, 0.18);
+            border-radius: 10px;
+            background: rgba(74,142,255,0.2);
+            color: #eef4ff;
+            font-size: .64rem;
+            font-weight: 700;
+            cursor: pointer;
+            letter-spacing: .05em;
+            white-space: nowrap;
+        }
         .chat-dock {
             min-width: 0;
         }
@@ -3026,7 +3119,13 @@
             display: none;
         }
         .menu-chat-dock {
-            margin-top: 12px;
+            margin-top: 8px;
+            display: flex;
+            justify-content: flex-start;
+        }
+        @keyframes chatFeedIn {
+            from { opacity: 0; transform: translateX(-6px); }
+            to { opacity: 1; transform: translateX(0); }
         }
         .achievement-toast { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); padding: 12px 24px; background: linear-gradient(135deg, #4a8eff, #6366f1); border-radius: var(--radius); color: #fff; font-weight: 600; z-index: 200; animation: fadeIn .3s ease; }
         #campaignMissionHud { position: fixed; top: 12px; left: 12px; width: 320px; max-width: calc(100vw - 180px); padding: 10px; background: rgba(12, 18, 34, 0.9); border: 1px solid var(--panel-border); border-radius: 12px; z-index: 46; backdrop-filter: blur(8px); }
@@ -3228,34 +3327,45 @@
                 z-index: 54;
             }
 
-            .chat-panel {
+            .chat-feed,
+            .chat-composer {
                 left: 8px;
                 right: 8px;
                 width: auto;
                 max-width: none;
-                bottom: calc(188px + env(safe-area-inset-bottom));
-                max-height: min(34dvh, 260px);
-                border-radius: 16px;
+            }
+
+            .chat-feed.chat-feed-menu {
+                bottom: calc(20px + env(safe-area-inset-bottom));
+            }
+
+            .chat-feed.chat-feed-hud {
+                bottom: calc(224px + env(safe-area-inset-bottom));
+            }
+
+            .chat-feed.chat-feed-with-composer.chat-feed-menu {
+                bottom: calc(20px + env(safe-area-inset-bottom));
+            }
+
+            .chat-feed.chat-feed-with-composer.chat-feed-hud {
+                bottom: calc(224px + env(safe-area-inset-bottom));
+            }
+
+            .chat-composer {
+                top: 50%;
+                left: 50%;
+                right: auto;
+                transform: translate(-50%, -50%);
+                width: min(420px, calc(100vw - 16px));
+                max-width: calc(100vw - 16px);
             }
 
             #chatMessages {
-                max-height: none;
+                max-height: min(22dvh, 170px);
             }
 
-            .chat-input-row {
-                flex-direction: column;
-                gap: 6px;
-            }
-
-            .emote-bar {
-                display: grid;
-                grid-template-columns: repeat(4, minmax(0, 1fr));
-                gap: 4px;
-            }
-
-            .emote-btn {
-                width: 100%;
-                padding: 8px 4px;
+            .chat-feed-line {
+                font-size: .76rem;
             }
 
             .achievement-toast {
@@ -3913,6 +4023,7 @@
                         <div id="hostControls" class="room-row room-row-spaced hidden">
                             <button id="startRoomBtn" class="primary-btn" style="margin:0; flex:1">Oyunu Başlat (Host)</button>
                         </div>
+                        <button id="menuChatToggle" class="secondary-btn room-inline-spaced hidden" type="button">CHAT</button>
                         <button id="leaveRoomBtn" class="secondary-btn room-inline-spaced hidden">Odadan Ayrıl</button>
                         <p id="roomStatus" class="room-status info" aria-live="polite"></p>
                         <div id="roomPlayers" class="room-players"></div>
@@ -4329,19 +4440,16 @@
         <div id="powerTitle">Güç</div>
         <div id="powerList"></div>
     </div>
-    <div id="chatPanel" class="chat-panel hidden">
-        <div class="chat-panel-header">
-            <span class="chat-panel-title">Sohbet</span>
-            <span id="chatPingDisplay" class="chat-panel-status">Ping: --</span>
+    <div id="chatFeed" class="chat-feed hidden" aria-live="polite">
+        <div class="chat-feed-meta">
+            <span class="chat-feed-label">Sohbet</span>
+            <span id="chatPingDisplay" class="chat-feed-status">Ping: --</span>
         </div>
-        <div id="chatMessages"></div>
-        <div class="chat-input-row">
-            <input id="chatInput" type="text" placeholder="Mesaj..." maxlength="120" />
-            <button id="chatSendBtn" type="button">GONDER</button>
-            <div class="emote-bar">
-                <button class="emote-btn" data-emote="gg">GG</button><button class="emote-btn" data-emote="gl">GL</button><button class="emote-btn" data-emote="wp">WP</button><button class="emote-btn" data-emote="nice">Nice</button>
-            </div>
-        </div>
+        <div id="chatMessages" role="log" aria-live="polite" aria-relevant="additions text"></div>
+    </div>
+    <div id="chatComposer" class="chat-composer hidden" aria-hidden="true">
+        <input id="chatInput" type="text" placeholder="Mesaj..." maxlength="120" />
+        <button id="chatSendBtn" type="button">GONDER</button>
     </div>
     <div id="nodeHoverTip" class="node-hover-tip hidden" aria-hidden="true">
         <div id="nodeHoverTipTitle" class="node-hover-tip-title">Core</div>
