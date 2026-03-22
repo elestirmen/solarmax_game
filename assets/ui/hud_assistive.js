@@ -6,6 +6,7 @@ var NODE_TYPE_TIPS = {
     bulwark: 'Kalın garnizon ve yüksek kapasite; üretim nispeten düşük. Dar geçit ve kuşatmayı emmek için ideal.',
     relay: 'Akış (flow) ve filo hızı güçlü. Uzun hatta takviye ve hızlı cephe taşıması için omurga düğümü.',
     nexus: 'Hibrit bonus: biraz üretim, savunma, akış ve kapasite. Esnek orta oyun ve yedek “iyi her şey” köşesi.',
+    gate: 'Bariyer kapısı. Çizginin üstünde durur; ele geçirildiğinde senin filoların için sınır hattını açar.',
     turret: 'Üretmez; menzil içindeki düşmanı otomatik vurur. Saldırıdan önce çevreyi temizle, tek dalga ile deneme.',
 };
 
@@ -15,6 +16,7 @@ var NODE_TYPE_LABELS = {
     bulwark: 'Bulwark',
     relay: 'Relay',
     nexus: 'Nexus',
+    gate: 'Gate',
     turret: 'Turret',
 };
 
@@ -36,24 +38,46 @@ export function buildHudHintText(opts) {
     var nodeCount = Math.max(0, Math.floor(Number(opts.nodeCount) || 0));
     var fleetCount = Math.max(0, Math.floor(Number(opts.fleetCount) || 0));
     var ownedCount = Math.max(0, Math.floor(Number(opts.ownedCount) || 0));
+    var touchMode = opts.coarsePointer === true;
 
     if (opts.commandMode === 'flow') {
+        if (touchMode) {
+            return 'Flow: hedef gezegene dokun, bağlantıyı aç veya kapat. İptal için boş alana dokun.';
+        }
         return 'Flow: hedef gezegene tıkla, bağlantıyı aç veya kapat. İptal için boş alana tıkla.';
     }
     if (!nodeCount && !fleetCount) {
+        if (touchMode) {
+            return 'Kendi gezegenine dokunarak seç. Kamerayı taşımak ve zoom için iki parmak kullan. Savunma ve flow alttaki komutlarda.';
+        }
         return 'Sol tıkla kendi gezegenini seç. Sağ tık: savunma veya flow. Boş uzaya bırakınca park filosu oluşur.';
     }
     if (fleetCount && !nodeCount) {
+        if (touchMode) {
+            return 'Park filosu seçili: hedefe dokunarak gönder veya boş noktaya taşı. Gerekirse başka kaynakları da seçip toplu gönder.';
+        }
         return 'Park filosu seçili: hedefe sol tıkla gönder veya boş noktaya taşı (staging). Shift ile çoklu seçim.';
     }
     if (ownedCount > 1 || fleetCount > 1) {
+        if (touchMode) {
+            return 'Çoklu seçim hazır: hedef gezegene dokunarak gönder. Savunma ve flow için alttaki komutları kullan.';
+        }
         return 'Çoklu seçim: hedefe sol tıkla gönder. Sağ tıkla savunma (kendi dünya) veya flow (düşman/tarafsız).';
     }
     if (ownedCount === 1) {
+        if (touchMode) {
+            return 'Kaynak hazır: hedef gezegene dokunarak gönderim yap. Yükseltme, savunma ve flow alttaki komutlarda.';
+        }
         return 'Kaynak hazır: hedefe sol tıkla gönderim yap. Sağ tık bu dünyada savunmayı açar veya kapatır.';
     }
     if (nodeCount > 0) {
+        if (touchMode) {
+            return 'Bu dünya senin değil. Emir vermek için önce kendi gezegenine veya park filona dokun.';
+        }
         return 'Bu dünya senin değil. Emir için önce kendi gezegenini veya park filonu seç.';
+    }
+    if (touchMode) {
+        return 'Gönderim oranını alttaki yüzde düğmeleri veya kaydırıcıyla değiştir; seçiliyken sürükleyerek toplu gönder.';
     }
     return 'Gönderim oranını 1–0 tuşları veya slider ile değiştir; Ctrl+sürükleyerek toplu gönder.';
 }

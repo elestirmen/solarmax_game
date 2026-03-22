@@ -1,3 +1,4 @@
+import { syncBarrierGateNodes } from './barrier.js';
 import { selectBarrierGateIds } from './barrier_layout.js';
 import { buildEncounterState } from './encounters.js';
 import { resolveMapMutator } from './mutator.js';
@@ -160,13 +161,16 @@ function placeBarrierFeature(state) {
     if (!gateIds.length) return false;
 
     for (var i = 0; i < state.nodes.length; i++) state.nodes[i].gate = false;
+    syncBarrierGateNodes({
+        nodes: state.nodes,
+        barrierX: barrierX,
+        gateIds: gateIds,
+    });
     for (var g = 0; g < gateIds.length; g++) {
         var gate = state.nodes[gateIds[g]];
-        if (gate.kind === 'turret') {
-            gate.kind = normalizeNodeKindForRuleset('core', state.rulesMode);
-            gate.level = 1;
-        }
+        if (!gate) continue;
         gate.gate = true;
+        gate.kind = normalizeNodeKindForRuleset('gate', state.rulesMode);
         gate.assimilationProgress = 1;
         gate.assimilationLock = 0;
         gate.maxUnits = nodeCapacity(gate);

@@ -26,6 +26,8 @@ test('normalizeCustomMapConfig sanitizes owners, gates, and feature data', funct
     assert.equal(normalized.playerCount, 3);
     assert.equal(normalized.nodes[2].owner, -1);
     assert.deepEqual(normalized.mapFeature.gateIds, [0]);
+    assert.equal(normalized.nodes[0].kind, 'gate');
+    assert.equal(normalized.nodes[0].pos.x, normalized.mapFeature.x);
     assert.equal(normalized.mapMutator.type, 'blackout');
     assert.deepEqual(normalized.strategicNodes, [1]);
     assert.equal(normalized.playerCapital[0], 0);
@@ -89,6 +91,22 @@ test('buildCustomMapSnapshot keeps player slots and feature-normalized coordinat
     assert.equal(snapshot.doctrineId, 'siege');
     assert.equal(snapshot.encounters.length, 1);
     assert.equal(snapshot.nodes[1].encounterType, 'relay_core');
+});
+
+test('buildCustomMapSnapshot snaps barrier gates onto the barrier line and preserves gate kind', function () {
+    var snapshot = buildCustomMapSnapshot({
+        playerCount: 2,
+        nodes: [
+            { x: 760, y: 180, owner: -1, units: 14, kind: 'core', gate: true },
+            { x: 120, y: 120, owner: 0, units: 20, kind: 'core' },
+            { x: 1400, y: 120, owner: 1, units: 20, kind: 'core' },
+        ],
+        mapFeature: { type: 'barrier', x: 800, gateIds: [0] },
+    }, [{ botControlled: false }, { botControlled: true }]);
+
+    assert.equal(snapshot.nodes[0].kind, 'gate');
+    assert.equal(snapshot.nodes[0].gate, true);
+    assert.equal(snapshot.nodes[0].pos.x, 800);
 });
 
 test('normalizeCustomMapConfig fills missing doctrine, encounter, and tune data from playlist defaults', function () {

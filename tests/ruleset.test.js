@@ -21,4 +21,5 @@ test('advanced ruleset keeps node kinds and upgrades enabled', function () {
 test('ruleset normalization falls back to advanced', function () {
     assert.equal(normalizeRulesetMode('unknown'), 'advanced');
     assert.equal(normalizeNodeKindForRuleset('forge', 'classic'), 'core');
+    assert.equal(normalizeNodeKindForRuleset('gate', 'classic'), 'gate');
 });

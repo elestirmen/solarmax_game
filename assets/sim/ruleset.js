@@ -36,6 +36,7 @@ export function getRulesetConfig(mode) {
 }
 
 export function normalizeNodeKindForRuleset(kind, mode) {
+    if (String(kind || '').toLowerCase() === 'gate') return 'gate';
     var cfg = getRulesetConfig(mode);
     if (cfg.simplifyNodeKinds) return 'core';
     return kind || 'core';

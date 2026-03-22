@@ -18,6 +18,7 @@ import { initFog, updateVis } from './fog.js';
 import { isTerritoryBonusBlockedAtPoint, resolveMapMutator } from './mutator.js';
 import { evaluateCampaignObjectives } from '../campaign/objectives.js';
 import { advanceMissionState, applyMissionScript } from './mission_script.js';
+import { syncBarrierGateNodes } from './barrier.js';
 import {
     PLAYER_COLORS,
     SIM_CONSTANTS,
@@ -313,6 +314,19 @@ export function buildAuthoritativeState(snapshot, opts) {
         stats: cloneValue(snapshot.stats || defaultStats()),
         lastAppliedSeq: typeof snapshot.lastAppliedSeq === 'number' ? snapshot.lastAppliedSeq : -1,
     };
+    if (state.mapFeature && state.mapFeature.type === 'barrier') {
+        syncBarrierGateNodes({
+            nodes: state.nodes,
+            barrierX: state.mapFeature.x,
+            gateIds: Array.isArray(state.mapFeature.gateIds) ? state.mapFeature.gateIds : [],
+        });
+        for (var bg = 0; bg < state.nodes.length; bg++) {
+            var barrierNode = state.nodes[bg];
+            if (!barrierNode || !barrierNode.gate) continue;
+            barrierNode.maxUnits = nodeCapacity(barrierNode);
+            if (barrierNode.units > barrierNode.maxUnits) barrierNode.units = barrierNode.maxUnits;
+        }
+    }
     state.doctrineStates = ensureDoctrineStates(state.doctrines, Array.isArray(snapshot.doctrineStates) ? snapshot.doctrineStates : []);
     state.encounters = buildEncounterState(
         snapshot.encounters !== undefined ? snapshot.encounters : manifest.encounters,

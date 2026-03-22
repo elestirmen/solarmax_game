@@ -3,6 +3,7 @@ import { normalizeDoctrineId } from './doctrine.js';
 import { buildEncounterState, normalizeEncounterList } from './encounters.js';
 import { normalizeMissionScript } from './mission_script.js';
 import { normalizePlaylistId, resolvePlaylistConfig } from './playlists.js';
+import { syncBarrierGateNodes } from './barrier.js';
 
 var MAP_W = 1600;
 var MAP_H = 1000;
@@ -15,6 +16,7 @@ var VALID_KINDS = {
     bulwark: true,
     relay: true,
     nexus: true,
+    gate: true,
     turret: true,
 };
 
@@ -126,7 +128,7 @@ export function normalizeCustomMapConfig(rawMap) {
             kind: normalizeNodeKind(rawNode.kind),
             defense: rawNode.defense === true,
             strategic: rawNode.strategic === true,
-            gate: rawNode.gate === true,
+            gate: rawNode.gate === true || normalizeNodeKind(rawNode.kind) === 'gate',
             assimilationProgress: clamp(rawNode.assimilationProgress === undefined ? 1 : rawNode.assimilationProgress, 0, 1),
             assimilationLock: clamp(rawNode.assimilationLock, 0, 600),
         });
@@ -179,13 +181,27 @@ export function normalizeCustomMapConfig(rawMap) {
         var gateIds = sanitizeIndexList(rawFeature.gateIds, nodes.length, 6);
         if (!gateIds.length) {
             for (var gi = 0; gi < nodes.length; gi++) {
-                if (nodes[gi].gate) gateIds.push(nodes[gi].id);
+                if (nodes[gi].gate || nodes[gi].kind === 'gate') gateIds.push(nodes[gi].id);
             }
         }
         mapFeature.x = clamp(rawFeature.x, 0, MAP_W);
         mapFeature.gateIds = gateIds;
     } else if (featureType === 'wormhole') {
         if (!wormholes.length && nodes.length >= 2) wormholes.push({ a: 0, b: nodes.length - 1 });
+    }
+
+    if (featureType === 'barrier') {
+        syncBarrierGateNodes({
+            nodes: nodes,
+            barrierX: mapFeature.x,
+            gateIds: mapFeature.gateIds,
+        });
+    } else {
+        for (var ngi = 0; ngi < nodes.length; ngi++) {
+            if (!nodes[ngi]) continue;
+            if (nodes[ngi].kind === 'gate') nodes[ngi].kind = 'core';
+            nodes[ngi].gate = false;
+        }
     }
 
     var playerCapital = sanitizePlayerCapital(rawMap.playerCapital, nodes, playerCount);
@@ -239,10 +255,11 @@ export function buildCustomMapSnapshot(rawMap, players) {
     var playerCapital = cloneValue(customMap.playerCapital || {});
 
     if (mapFeature.type === 'barrier') {
-        var gateIds = Array.isArray(mapFeature.gateIds) ? mapFeature.gateIds : [];
-        for (var gi = 0; gi < gateIds.length; gi++) {
-            if (nodes[gateIds[gi]]) nodes[gateIds[gi]].gate = true;
-        }
+        syncBarrierGateNodes({
+            nodes: nodes,
+            barrierX: mapFeature.x,
+            gateIds: Array.isArray(mapFeature.gateIds) ? mapFeature.gateIds : [],
+        });
     } else if (mapFeature.type === 'gravity' && mapFeature.nodeId >= 0 && nodes[mapFeature.nodeId]) {
         mapFeature.x = nodes[mapFeature.nodeId].pos.x;
         mapFeature.y = nodes[mapFeature.nodeId].pos.y;

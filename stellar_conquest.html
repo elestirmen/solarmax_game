@@ -19,6 +19,9 @@
         :root {
             --app-vvh: 100dvh;
             --app-vvw: 100vw;
+            --mobile-chat-hud-offset: 224px;
+            --mobile-toast-hud-offset: 214px;
+            --mobile-minimap-hud-offset: 198px;
             --bg: #0a0e17;
             --panel-bg: rgba(12, 18, 34, 0.92);
             --panel-border: rgba(80, 140, 255, 0.2);
@@ -2386,6 +2389,35 @@
             display: block;
         }
 
+        .hud-mobile-tabs {
+            display: none;
+            width: 100%;
+            gap: 6px;
+        }
+
+        .hud-mobile-tab {
+            min-height: 34px;
+            padding: 7px 10px;
+            border: 1px solid var(--panel-border);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.05);
+            color: var(--text);
+            font-family: 'Orbitron', var(--font);
+            font-size: .66rem;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            touch-action: manipulation;
+        }
+
+        .hud-mobile-tab.active {
+            background: rgba(74, 142, 255, 0.22);
+            border-color: rgba(74, 142, 255, 0.42);
+            color: #eef4ff;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+        }
+
         #hudRight button[data-importance="primary"] {
             background: rgba(74, 142, 255, 0.12);
             border-color: rgba(74, 142, 255, 0.24);
@@ -3340,7 +3372,7 @@
             }
 
             .chat-feed.chat-feed-hud {
-                bottom: calc(224px + env(safe-area-inset-bottom));
+                bottom: calc(var(--mobile-chat-hud-offset, 224px) + env(safe-area-inset-bottom));
             }
 
             .chat-feed.chat-feed-with-composer.chat-feed-menu {
@@ -3348,7 +3380,7 @@
             }
 
             .chat-feed.chat-feed-with-composer.chat-feed-hud {
-                bottom: calc(224px + env(safe-area-inset-bottom));
+                bottom: calc(var(--mobile-chat-hud-offset, 224px) + env(safe-area-inset-bottom));
             }
 
             .chat-composer {
@@ -3369,7 +3401,7 @@
             }
 
             .achievement-toast {
-                bottom: calc(214px + env(safe-area-inset-bottom));
+                bottom: calc(var(--mobile-toast-hud-offset, 214px) + env(safe-area-inset-bottom));
                 width: calc(100vw - 32px);
                 max-width: 420px;
                 text-align: center;
@@ -3379,7 +3411,7 @@
             .minimap {
                 top: auto;
                 right: 8px;
-                bottom: calc(198px + env(safe-area-inset-bottom));
+                bottom: calc(var(--mobile-minimap-hud-offset, 198px) + env(safe-area-inset-bottom));
                 width: 96px;
                 height: 62px;
             }
@@ -3388,6 +3420,11 @@
                 left: 8px;
                 right: 8px;
                 bottom: max(8px, env(safe-area-inset-bottom));
+                display: grid;
+                grid-template-columns: minmax(0, 1.7fr) minmax(112px, 1fr);
+                grid-template-areas:
+                    "send tabs"
+                    "panel panel";
                 padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
                 border: 1px solid rgba(91, 139, 255, 0.22);
                 border-radius: 18px;
@@ -3395,15 +3432,22 @@
                     linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02)),
                     var(--panel-bg);
                 box-shadow: 0 18px 36px rgba(4, 8, 18, 0.28);
-                flex-direction: column;
                 align-items: stretch;
                 gap: 10px;
                 -webkit-tap-highlight-color: transparent;
             }
 
+            #hud[data-mobile-expanded="false"] {
+                grid-template-areas: "send tabs";
+                padding-top: 7px;
+                padding-bottom: calc(7px + env(safe-area-inset-bottom));
+                gap: 8px;
+            }
+
             #hud button,
             #hud .send-quick-btn,
-            #hud input[type="range"] {
+            #hud input[type="range"],
+            .hud-mobile-tab {
                 touch-action: manipulation;
             }
 
@@ -3414,11 +3458,22 @@
                 min-width: 0;
             }
 
+            .hud-mobile-tabs {
+                grid-area: tabs;
+                display: grid;
+                grid-template-columns: 1fr;
+                align-content: stretch;
+            }
+
             #hudCenter {
-                order: 1;
+                grid-area: panel;
                 align-items: flex-start;
                 gap: 6px;
                 max-width: none;
+                max-height: min(28dvh, 210px);
+                overflow-y: auto;
+                -webkit-overflow-scrolling: touch;
+                overscroll-behavior: contain;
             }
 
             .hud-center-top {
@@ -3438,7 +3493,7 @@
             }
 
             #hudLeft {
-                order: 2;
+                grid-area: send;
                 align-items: stretch;
                 gap: 6px;
             }
@@ -3461,10 +3516,37 @@
             }
 
             #hudRight {
-                order: 3;
+                grid-area: panel;
                 display: flex;
                 flex-direction: column;
                 gap: 6px;
+            }
+
+            #hud[data-mobile-panel="commands"] #hudCenter {
+                display: none;
+            }
+
+            #hud[data-mobile-panel="status"] #hudRight {
+                display: none;
+            }
+
+            #hud[data-mobile-expanded="false"] #hudCenter,
+            #hud[data-mobile-expanded="false"] #hudRight {
+                display: none;
+            }
+
+            #hud[data-mobile-expanded="false"] #hudLeft {
+                padding: 5px 7px;
+                gap: 5px;
+            }
+
+            #hud[data-mobile-expanded="false"] #hudLeft .hud-block-title {
+                display: none;
+            }
+
+            #hud[data-mobile-expanded="false"] .send-quick-btn {
+                min-height: 30px;
+                padding: 5px 0;
             }
 
             #hudRight .hud-block-heading .hud-context-badge-muted {
@@ -3488,6 +3570,7 @@
 
             .hud-action-tip {
                 min-height: 0;
+                display: none;
             }
 
             #powerSidebar {
@@ -3615,6 +3698,32 @@
 
         }
 
+        @media (max-width: 900px) and (max-height: 520px) {
+            #hud {
+                gap: 6px;
+                padding-top: 8px;
+                padding-bottom: calc(8px + env(safe-area-inset-bottom));
+            }
+
+            #hud[data-mobile-expanded="false"] {
+                padding-top: 6px;
+                padding-bottom: calc(6px + env(safe-area-inset-bottom));
+            }
+
+            #hudCenter {
+                max-height: min(32dvh, 132px);
+            }
+
+            .hud-actions-wrap > .hud-action-group:first-child {
+                grid-template-columns: repeat(6, minmax(0, 1fr));
+            }
+
+            #hudRight button {
+                min-height: 34px;
+                font-size: 0.66rem;
+            }
+        }
+
         @media (max-width: 640px) {
             .menu-panel {
                 padding: 16px 12px;
@@ -3671,11 +3780,18 @@
 
             #hud {
                 gap: 8px;
+                grid-template-columns: minmax(0, 1fr) 104px;
                 padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
+            }
+
+            #hud[data-mobile-expanded="false"] {
+                gap: 6px;
+                padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
             }
 
             #hudCenter {
                 gap: 4px;
+                max-height: min(34dvh, 180px);
             }
 
             .hud-center-top {
@@ -3708,6 +3824,12 @@
                 min-height: 34px;
                 padding: 6px 0;
                 font-size: 0.68rem;
+            }
+
+            #hud[data-mobile-expanded="false"] .send-quick-btn {
+                min-height: 28px;
+                padding: 4px 0;
+                font-size: 0.64rem;
             }
 
             #hudRight {
@@ -3768,11 +3890,11 @@
             }
 
             .achievement-toast {
-                bottom: calc(214px + env(safe-area-inset-bottom));
+                bottom: calc(var(--mobile-toast-hud-offset, 214px) + env(safe-area-inset-bottom));
             }
 
             .minimap {
-                bottom: calc(198px + env(safe-area-inset-bottom));
+                bottom: calc(var(--mobile-minimap-hud-offset, 198px) + env(safe-area-inset-bottom));
                 width: 84px;
                 height: 56px;
             }
@@ -4455,7 +4577,7 @@
         <div id="nodeHoverTipTitle" class="node-hover-tip-title">Core</div>
         <div id="nodeHoverTipBody" class="node-hover-tip-body">Referans tip: üretim, savunma ve kapasite dengeli. Öğrenme ve genel cephe için güvenli varsayılan.</div>
     </div>
-    <div id="hud" class="hidden">
+    <div id="hud" class="hidden" data-mobile-panel="commands" data-mobile-expanded="false">
         <div id="hudLeft">
             <div class="hud-block-title">Gönderim</div>
             <div class="hud-send-top">
@@ -4469,6 +4591,10 @@
                 <button type="button" class="send-quick-btn" data-send-pct="100">100%</button>
             </div>
         </div>
+        <div id="hudMobileTabs" class="hud-mobile-tabs" aria-label="Mobil HUD panelleri">
+            <button type="button" id="hudMobileCommandsBtn" class="hud-mobile-tab active" aria-controls="hudRight" aria-pressed="true">KOMUT</button>
+            <button type="button" id="hudMobileStatusBtn" class="hud-mobile-tab" aria-controls="hudCenter" aria-pressed="false">DURUM</button>
+        </div>
         <div id="hudCenter">
             <div class="hud-block-heading"><span class="hud-block-title">Durum</span><span id="hudContextBadge" class="hud-context-badge">Hazır</span></div>
             <div id="hudTelemetryRow" class="hud-center-top"><span id="hudTick">Tick: 0</span><span id="hudCap">Cap 0/0</span><span id="pingDisplay" class="ping-display"></span></div>
@@ -4481,7 +4607,7 @@
             </div>
         </div>
         <div id="hudRight">
-            <div class="hud-block-heading"><span class="hud-block-title">Komutlar</span><span class="hud-context-badge hud-context-badge-muted">Mouse + kısayol</span></div>
+            <div class="hud-block-heading"><span class="hud-block-title">Komutlar</span><span id="hudCommandHintBadge" class="hud-context-badge hud-context-badge-muted">Mouse + kısayol</span></div>
             <div class="hud-actions-wrap">
                 <div class="hud-action-group">
                     <button id="pauseBtn" title="Duraklat" data-importance="primary" data-help="Yerel oyunda duraklatır; çevrim içinde maç menüsü ve bağlantı seçenekleri.">MENÜ</button>

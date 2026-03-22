@@ -9,6 +9,12 @@ test('HUD helpers return empty-state guidance', function () {
     assert.match(buildHudHintText({ nodeCount: 0, fleetCount: 0 }), /Sol tıkla kendi gezegenini seç/);
 });
 
+test('HUD helpers switch to touch-first guidance on coarse pointers', function () {
+    assert.match(buildHudHintText({ nodeCount: 0, fleetCount: 0, coarsePointer: true }), /iki parmak/i);
+    assert.match(buildHudHintText({ commandMode: 'flow', coarsePointer: true }), /dokun/i);
+    assert.doesNotMatch(buildHudHintText({ ownedCount: 1, nodeCount: 1, coarsePointer: true }), /Sağ tık/);
+});
+
 test('HUD helpers describe flow mode and multi selection correctly', function () {
     assert.equal(buildHudContextBadge({ commandMode: 'flow', nodeCount: 2, fleetCount: 0 }), 'Flow hedefi seçiliyor');
     assert.match(buildHudHintText({ commandMode: 'flow' }), /Flow:/);
@@ -24,11 +30,13 @@ test('HUD helpers distinguish owned and foreign selections', function () {
 
 test('HUD hover tips explain planet roles succinctly', function () {
     var forgeTip = buildNodeHoverTip({ kind: 'forge', label: 'Forge' });
+    var gateTip = buildNodeHoverTip({ kind: 'gate', label: 'Gate' });
     var turretTip = buildNodeHoverTip({ kind: 'turret', label: 'Turret' });
     var fallbackTip = buildNodeHoverTip({ kind: 'unknown' });
 
     assert.equal(forgeTip.title, 'Forge');
     assert.match(forgeTip.body, /Üretim yüksek/);
+    assert.match(gateTip.body, /Bariyer kapısı/);
     assert.match(turretTip.body, /Üretmez/);
     assert.equal(fallbackTip.title, 'Core');
 });

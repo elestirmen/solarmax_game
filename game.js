@@ -7,7 +7,7 @@
 import { computeSendCount } from './assets/sim/dispatch_math.js';
 import { applyTurretDamage } from './assets/sim/turret.js';
 import { shouldStartDragSend, resolveRightClickAction } from './assets/sim/input_policy.js';
-import { isDispatchAllowed } from './assets/sim/barrier.js';
+import { controlsBarrierForOwner, isDispatchAllowed, syncBarrierGateNodes } from './assets/sim/barrier.js';
 import { selectBarrierGateIds } from './assets/sim/barrier_layout.js';
 import { applyDefenseFieldDamage, getDefenseFieldStats } from './assets/sim/defense_field.js';
 import { computePlayerUnitCount, computeGlobalCap } from './assets/sim/cap.js';
@@ -126,6 +126,7 @@ var NODE_TYPE_DEFS = {
     bulwark: { label: 'Bulwark', prod: 0.66, def: 1.58, cap: 1.3, flow: 0.86, speed: 0.93, color: '#afb7c3' },
     relay: { label: 'Relay', prod: 0.86, def: 0.92, cap: 0.8, flow: 1.45, speed: 1.42, color: '#9bb6be' },
     nexus: { label: 'Nexus', prod: 1.17, def: 1.13, cap: 1.13, flow: 1.22, speed: 1.12, color: '#b5acc1' },
+    gate: { label: 'Gate', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#f0be6a' },
     turret: { label: 'Turret', prod: 0.0, def: 2.38, cap: 0.78, flow: 0.78, speed: 1.0, color: '#a4c0c4' },
 };
 var NODE_KIND_TEXTURE_SEEDS = {
@@ -134,6 +135,7 @@ var NODE_KIND_TEXTURE_SEEDS = {
     bulwark: 37,
     relay: 41,
     nexus: 53,
+    gate: 59,
     turret: 67,
 };
 
@@ -885,13 +887,16 @@ function placeBarrierFeature() {
     if (!gateIds.length) return false;
 
     for (var ni = 0; ni < G.nodes.length; ni++) G.nodes[ni].gate = false;
+    syncBarrierGateNodes({
+        nodes: G.nodes,
+        barrierX: barrierX,
+        gateIds: gateIds,
+    });
     for (var g = 0; g < gateIds.length; g++) {
         var gate = G.nodes[gateIds[g]];
-        if (gate.kind === 'turret') {
-            gate.kind = normalizeNodeKindForRuleset('core', G.rulesMode);
-            gate.level = 1;
-        }
+        if (!gate) continue;
         gate.gate = true;
+        gate.kind = normalizeNodeKindForRuleset('gate', G.rulesMode);
         gate.assimilationProgress = 1;
         gate.assimilationLock = 0;
         gate.maxUnits = nodeCapacity(gate);
@@ -995,9 +1000,20 @@ function applyCustomMapDefinition(customMap) {
         var gateIds = Array.isArray(G.mapFeature.gateIds) ? G.mapFeature.gateIds.slice() : [];
         G.mapFeature.gateIds = gateIds;
         for (var gi = 0; gi < gateIds.length; gi++) gateSet[gateIds[gi]] = true;
-        for (var bi = 0; bi < G.nodes.length; bi++) G.nodes[bi].gate = !!gateSet[G.nodes[bi].id];
+        syncBarrierGateNodes({
+            nodes: G.nodes,
+            barrierX: G.mapFeature.x,
+            gateIds: gateIds,
+        });
+        for (var bi = 0; bi < G.nodes.length; bi++) {
+            G.nodes[bi].gate = !!gateSet[G.nodes[bi].id];
+            if (G.nodes[bi].gate) G.nodes[bi].kind = 'gate';
+        }
     } else {
-        for (var ng = 0; ng < G.nodes.length; ng++) G.nodes[ng].gate = false;
+        for (var ng = 0; ng < G.nodes.length; ng++) {
+            G.nodes[ng].gate = false;
+            if (G.nodes[ng].kind === 'gate') G.nodes[ng].kind = 'core';
+        }
     }
 
     if (G.mapFeature.type === 'gravity' && G.mapFeature.nodeId >= 0 && G.nodes[G.mapFeature.nodeId]) {
@@ -2123,11 +2139,23 @@ function drawWorldBackdrop(ctx, tick, hw, hh) {
     ctx.restore();
 }
 
+function traceRoundedPill(ctx, x, y, w, h) {
+    var r = Math.min(h * 0.5, w * 0.5);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+}
+
 function nodeTypeLetter(kind) {
     if (kind === 'forge') return 'F';
     if (kind === 'bulwark') return 'B';
     if (kind === 'relay') return 'R';
     if (kind === 'nexus') return 'N';
+    if (kind === 'gate') return 'G';
     if (kind === 'turret') return 'T';
     return 'C';
 }
@@ -2482,6 +2510,88 @@ function drawTurretStation(ctx, n, col, tick) {
     ctx.strokeStyle = hexToRgba(shellColor, 0.35);
     ctx.lineWidth = 1;
     ctx.stroke();
+    ctx.restore();
+}
+
+function drawGateStation(ctx, n, col, tick) {
+    var cx = n.pos.x, cy = n.pos.y, r = n.radius;
+    var pulse = 0.62 + Math.sin(tick * 0.09 + n.id * 0.41) * 0.38;
+    var shellColor = col && col.indexOf('#') === 0 ? blendHex(col, NODE_TYPE_DEFS.gate.color, 0.22) : NODE_TYPE_DEFS.gate.color;
+    var barrierX = G.mapFeature && G.mapFeature.type === 'barrier' ? Number(G.mapFeature.x) : cx;
+    var vertical = Math.abs(cx - barrierX) < 0.5;
+    var armOffset = vertical ? r * 0.82 : r * 0.58;
+    var armHalfH = r * 0.8;
+    var coreR = Math.max(5, r * 0.38);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen';
+    var halo = ctx.createRadialGradient(cx, cy, coreR, cx, cy, r + 16);
+    halo.addColorStop(0, hexToRgba('#fff5d6', 0.28 + pulse * 0.12));
+    halo.addColorStop(0.48, hexToRgba(shellColor, 0.12 + pulse * 0.1));
+    halo.addColorStop(1, hexToRgba(shellColor, 0));
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 16, 0, Math.PI * 2);
+    ctx.fillStyle = halo;
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = hexToRgba(shellColor, 0.92);
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 4, Math.PI * 0.2 + tick * 0.01, Math.PI * 0.82 + tick * 0.01);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 4, Math.PI * 1.18 - tick * 0.012, Math.PI * 1.8 - tick * 0.012);
+    ctx.stroke();
+
+    ctx.fillStyle = hexToRgba(blendHex(shellColor, '#081019', 0.28), 0.9);
+    ctx.strokeStyle = hexToRgba(shellColor, 0.88);
+    ctx.lineWidth = 1.8;
+    if (vertical) {
+        traceRoundedPill(ctx, cx - armOffset - r * 0.26, cy - armHalfH, r * 0.52, armHalfH * 2);
+        ctx.fill();
+        ctx.stroke();
+        traceRoundedPill(ctx, cx + armOffset - r * 0.26, cy - armHalfH, r * 0.52, armHalfH * 2);
+        ctx.fill();
+        ctx.stroke();
+    } else {
+        traceRoundedPill(ctx, cx - armHalfH, cy - armOffset - r * 0.26, armHalfH * 2, r * 0.52);
+        ctx.fill();
+        ctx.stroke();
+        traceRoundedPill(ctx, cx - armHalfH, cy + armOffset - r * 0.26, armHalfH * 2, r * 0.52);
+        ctx.fill();
+        ctx.stroke();
+    }
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.92, 0, Math.PI * 2);
+    ctx.fillStyle = hexToRgba('#09111c', 0.9);
+    ctx.fill();
+    ctx.strokeStyle = hexToRgba(shellColor, 0.95);
+    ctx.lineWidth = 2.4;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, coreR, 0, Math.PI * 2);
+    ctx.fillStyle = hexToRgba('#fff4cf', 0.95);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r * 0.9);
+    ctx.lineTo(cx, cy + r * 0.9);
+    ctx.strokeStyle = hexToRgba(shellColor, 0.42);
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+
+    ctx.setLineDash([5, 4]);
+    ctx.lineDashOffset = -tick * 0.8;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 8, 0, Math.PI * 2);
+    ctx.strokeStyle = hexToRgba(shellColor, 0.36 + pulse * 0.18);
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.setLineDash([]);
     ctx.restore();
 }
 
@@ -3196,6 +3306,7 @@ function render(ctx, cv, tick) {
             getNodeOrbitalSquads: getNodeOrbitalSquads,
             drawOrbitalSquadron: drawOrbitalSquadron,
             drawTurretStation: drawTurretStation,
+            drawGateStation: drawGateStation,
             nodeTypeOf: nodeTypeOf,
             blendHex: blendHex,
             darken: darken,
@@ -3265,7 +3376,9 @@ function drawMapFeature(ctx, tick) {
         var bx = barrier.x;
         var minY = MAP_PAD * 0.5;
         var maxY = MAP_H - MAP_PAD * 0.5;
+        var openForHuman = controlsBarrierForOwner({ barrier: barrier, owner: G.human, nodes: G.nodes });
         var cuts = [];
+        var segments = [];
         var gateIds = Array.isArray(barrier.gateIds) ? barrier.gateIds : [];
         for (var gi = 0; gi < gateIds.length; gi++) {
             var gate = G.nodes[gateIds[gi]];
@@ -3277,25 +3390,76 @@ function drawMapFeature(ctx, tick) {
         var segY = minY;
         ctx.save();
         ctx.setLineDash([8, 7]);
-        ctx.strokeStyle = 'rgba(255,120,120,0.35)';
-        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(255,120,120,' + barrierAlpha + ')';
+        ctx.lineWidth = barrierLineWidth;
         for (var ci = 0; ci < cuts.length; ci++) {
             var cut = cuts[ci];
             var y0 = clamp(cut.y0, minY, maxY);
             var y1 = clamp(cut.y1, minY, maxY);
-            if (y0 > segY) {
-                ctx.beginPath();
-                ctx.moveTo(bx, segY);
-                ctx.lineTo(bx, y0);
-                ctx.stroke();
-            }
+            if (y0 > segY) segments.push({ y0: segY, y1: y0 });
             segY = Math.max(segY, y1);
         }
-        if (segY < maxY) {
+        if (segY < maxY) segments.push({ y0: segY, y1: maxY });
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        for (var si = 0; si < segments.length; si++) {
+            var seg = segments[si];
+            var segPulse = 0.66 + 0.34 * Math.sin(tick * 0.05 + seg.y0 * 0.018);
+            var halfW = openForHuman ? 16 : 28;
+            var outerAlpha = openForHuman ? 0.035 : 0.17;
+            var coreAlpha = openForHuman ? 0.12 : 0.82;
+            var pulseAlpha = openForHuman ? 0.05 : 0.36;
+            var fillGrad = ctx.createLinearGradient(bx - halfW, 0, bx + halfW, 0);
+            fillGrad.addColorStop(0, 'rgba(255,80,60,0)');
+            fillGrad.addColorStop(0.24, 'rgba(255,98,78,' + (outerAlpha * 0.48 * segPulse) + ')');
+            fillGrad.addColorStop(0.5, 'rgba(255,220,190,' + (outerAlpha * segPulse) + ')');
+            fillGrad.addColorStop(0.76, 'rgba(255,98,78,' + (outerAlpha * 0.48 * segPulse) + ')');
+            fillGrad.addColorStop(1, 'rgba(255,80,60,0)');
+            ctx.fillStyle = fillGrad;
+            ctx.fillRect(bx - halfW, seg.y0, halfW * 2, seg.y1 - seg.y0);
+
             ctx.beginPath();
-            ctx.moveTo(bx, segY);
-            ctx.lineTo(bx, maxY);
+            ctx.moveTo(bx, seg.y0);
+            ctx.lineTo(bx, seg.y1);
+            ctx.strokeStyle = 'rgba(255,110,90,' + (outerAlpha * 0.95) + ')';
+            ctx.lineWidth = openForHuman ? 5 : 14;
             ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(bx, seg.y0);
+            ctx.lineTo(bx, seg.y1);
+            ctx.strokeStyle = 'rgba(255,180,145,' + (openForHuman ? 0.08 : 0.32) + ')';
+            ctx.lineWidth = openForHuman ? 2.8 : 6.2;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(bx, seg.y0);
+            ctx.lineTo(bx, seg.y1);
+            ctx.strokeStyle = 'rgba(255,248,232,' + coreAlpha + ')';
+            ctx.lineWidth = openForHuman ? 1 : 2.4;
+            ctx.stroke();
+
+            if (!openForHuman) {
+                ctx.setLineDash([18, 14]);
+                ctx.lineDashOffset = -tick * 1.1 - si * 9;
+                ctx.beginPath();
+                ctx.moveTo(bx, seg.y0);
+                ctx.lineTo(bx, seg.y1);
+                ctx.strokeStyle = 'rgba(255,246,220,' + pulseAlpha + ')';
+                ctx.lineWidth = 4.2;
+                ctx.stroke();
+                ctx.setLineDash([]);
+
+                ctx.beginPath();
+                ctx.moveTo(bx - 5.5, seg.y0);
+                ctx.lineTo(bx - 5.5, seg.y1);
+                ctx.moveTo(bx + 5.5, seg.y0);
+                ctx.lineTo(bx + 5.5, seg.y1);
+                ctx.strokeStyle = 'rgba(255,120,92,0.16)';
+                ctx.lineWidth = 1.25;
+                ctx.stroke();
+            }
         }
         ctx.restore();
 
@@ -3304,13 +3468,13 @@ function drawMapFeature(ctx, tick) {
             var pulse = 0.55 + 0.45 * Math.sin(tick * 0.08 + gateNode.id);
             ctx.beginPath();
             ctx.arc(gateNode.pos.x, gateNode.pos.y, gateNode.radius + 8, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255,210,120,' + (0.2 + pulse * 0.3) + ')';
-            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = 'rgba(255,210,120,' + (openForHuman ? 0.12 + pulse * 0.14 : 0.28 + pulse * 0.34) + ')';
+            ctx.lineWidth = openForHuman ? 1.1 : 1.8;
             ctx.stroke();
             ctx.font = 'bold 10px Outfit,sans-serif';
             ctx.fillStyle = 'rgba(255,225,160,0.92)';
-            ctx.textAlign = gateNode.pos.x <= bx ? 'right' : 'left';
-            ctx.fillText('GATE', bx + (gateNode.pos.x <= bx ? -16 : 16), gateNode.pos.y + 3);
+            ctx.textAlign = 'center';
+            ctx.fillText(openForHuman ? 'OPEN' : 'GATE', bx, gateNode.pos.y - gateNode.radius - 13);
         }
     }
 
@@ -3707,6 +3871,7 @@ var pauseTitleEl = $('pauseTitle'), pauseHintEl = $('pauseHint'), resumeBtn = $(
 var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameOverStats'), restartBtn = $('restartBtn'), nextLevelBtn = $('nextLevelBtn');
 var hudTelemetryRow = $('hudTelemetryRow'), hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), hudCap = $('hudCap'), hudMeta = $('hudMeta'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
 var hudContextBadge = $('hudContextBadge'), hudHintLine = $('hudHintLine'), hudCoachRow = $('hudCoachRow'), hudActionTip = $('hudActionTip');
+var hudCommandHintBadge = $('hudCommandHintBadge'), hudMobileCommandsBtn = $('hudMobileCommandsBtn'), hudMobileStatusBtn = $('hudMobileStatusBtn');
 var hudAdvisorCard = $('hudAdvisorCard'), hudAdvisorTitle = $('hudAdvisorTitle'), hudAdvisorBody = $('hudAdvisorBody');
 var nodeHoverTip = $('nodeHoverTip'), nodeHoverTipTitle = $('nodeHoverTipTitle'), nodeHoverTipBody = $('nodeHoverTipBody');
 var doctrineBtn = $('doctrineBtn'), upgradeHudBtn = $('upgradeHudBtn'), defenseHudBtn = $('defenseHudBtn'), flowHudBtn = $('flowHudBtn');
@@ -3723,6 +3888,8 @@ var audioToggleBtn = $('audioToggleBtn'), hudInfoToggleBtn = $('hudInfoToggleBtn
 var tuneVals = { p: $('tuneProductionVal'), f: $('tuneFleetSpeedVal'), d: $('tuneDefenseVal'), fi: $('tuneFlowIntervalVal'), aa: $('tuneAIAggressionVal'), ab: $('tuneAIBufferVal'), ad: $('tuneAIDecisionVal') };
 var UI_PREFS_KEY = 'stellar_ui_prefs_v1';
 var DEFAULT_SFX_VOLUME = 0.85, DEFAULT_MUSIC_VOLUME = 0.55;
+var hudMobilePanelMode = 'commands';
+var hudMobileExpanded = false;
 var tuningOpen = false, powerRenderKey = '', inGameMenuOpen = false, hudActionHelpBound = false;
 var menuPanelViews = {
     hub: menuHubView,
@@ -4434,6 +4601,7 @@ function syncHudAssistiveText() {
                 nodeCount: nodeCount,
                 fleetCount: fleetCount,
                 ownedCount: ownedCount,
+                coarsePointer: !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches),
             });
         }
     }
@@ -5216,6 +5384,51 @@ function openScenarioMenu() {
     scenarioOv.classList.remove('hidden');
 }
 
+function prefersCompactGameplayLayout() {
+    if (!window.matchMedia) return false;
+    return window.matchMedia('(max-width: 900px)').matches;
+}
+function syncHudLayoutMode() {
+    if (!hud) return;
+    var docEl = document.documentElement;
+    var compact = prefersCompactGameplayLayout();
+    var expanded = compact ? hudMobileExpanded === true : true;
+    var panel = compact ? (hudMobilePanelMode === 'status' ? 'status' : 'commands') : 'full';
+    hud.setAttribute('data-mobile-panel', panel);
+    hud.setAttribute('data-mobile-expanded', expanded ? 'true' : 'false');
+    if (hudMobileCommandsBtn) {
+        var commandsActive = !compact || (expanded && panel === 'commands');
+        hudMobileCommandsBtn.classList.toggle('active', commandsActive);
+        hudMobileCommandsBtn.setAttribute('aria-pressed', commandsActive ? 'true' : 'false');
+    }
+    if (hudMobileStatusBtn) {
+        var statusActive = compact && expanded && panel === 'status';
+        hudMobileStatusBtn.classList.toggle('active', statusActive);
+        hudMobileStatusBtn.setAttribute('aria-pressed', statusActive ? 'true' : 'false');
+    }
+    if (hudCommandHintBadge) {
+        hudCommandHintBadge.textContent = compact ? 'Dokunmatik HUD' : 'Mouse + kısayol';
+    }
+    if (docEl && docEl.style) {
+        docEl.style.setProperty('--mobile-chat-hud-offset', expanded ? '224px' : '112px');
+        docEl.style.setProperty('--mobile-toast-hud-offset', expanded ? '214px' : '100px');
+        docEl.style.setProperty('--mobile-minimap-hud-offset', expanded ? '198px' : '88px');
+    }
+}
+function setHudMobilePanel(panel) {
+    panel = panel === 'status' ? 'status' : 'commands';
+    if (prefersCompactGameplayLayout()) {
+        if (hudMobileExpanded && hudMobilePanelMode === panel) hudMobileExpanded = false;
+        else {
+            hudMobilePanelMode = panel;
+            hudMobileExpanded = true;
+        }
+    } else {
+        hudMobilePanelMode = panel;
+        hudMobileExpanded = true;
+    }
+    syncHudLayoutMode();
+}
 function syncInputLayoutHints() {
     var coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
     inp.dragThreshold = coarse ? 14 : 6;
@@ -5240,6 +5453,7 @@ function resize() {
     cv.width = w;
     cv.height = h;
     syncInputLayoutHints();
+    syncHudLayoutMode();
 }
 if (typeof history !== 'undefined' && history && 'scrollRestoration' in history) {
     try { history.scrollRestoration = 'manual'; } catch (e) {}
@@ -5288,7 +5502,7 @@ if (roomListEl) {
 
 function prefersCompactTuningLayout() {
     if (!window.matchMedia) return false;
-    return window.matchMedia('(max-width: 900px)').matches || window.matchMedia('(pointer: coarse)').matches;
+    return prefersCompactGameplayLayout() || window.matchMedia('(pointer: coarse)').matches;
 }
 function syncTuningBackdrop() {
     var bd = $('tuningBackdrop');
@@ -5409,6 +5623,8 @@ function showUI(st) {
     // yanlışlıkla tuning panelini açar (mobilde alt sayfa neredeyse tam ekran).
     if (st !== 'playing' && st !== 'paused') {
         closeTuningPanel();
+        hudMobilePanelMode = 'commands';
+        hudMobileExpanded = false;
     }
     var pauseVisible = st === 'paused' || (st === 'playing' && inGameMenuOpen);
     mainMenu.classList.toggle('hidden', st !== 'mainMenu'); pauseOv.classList.toggle('hidden', !pauseVisible); goOv.classList.toggle('hidden', st !== 'gameOver');
@@ -5432,6 +5648,7 @@ function showUI(st) {
     syncMatchHudControls();
     syncHudTelemetryVisibility();
     syncHudAssistiveText();
+    syncHudLayoutMode();
     refreshCampaignMissionPanels();
 }
 
@@ -6545,6 +6762,17 @@ if (themeBtn) themeBtn.addEventListener('click', function () {
 });
 syncThemeButton();
 bindHudActionHelp();
+if (hudMobileCommandsBtn) {
+    hudMobileCommandsBtn.addEventListener('click', function () {
+        setHudMobilePanel('commands');
+    });
+}
+if (hudMobileStatusBtn) {
+    hudMobileStatusBtn.addEventListener('click', function () {
+        setHudMobilePanel('status');
+    });
+}
+syncHudLayoutMode();
 var chatComposer = $('chatComposer'), chatInput = $('chatInput'), chatToggle = $('chatToggle'), menuChatToggle = $('menuChatToggle'), chatSendBtn = $('chatSendBtn');
 function openChatComposer() {
     if (!isRoomChatAvailable(net)) return;

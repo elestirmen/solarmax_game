@@ -28,7 +28,7 @@ function legacyUpgradeCost(node) {
 }
 
 test('upgrade costs are globally higher than the legacy baseline for every planet type', function () {
-    var planetKinds = ['core', 'forge', 'bulwark', 'relay', 'nexus', 'turret'];
+    var planetKinds = ['core', 'forge', 'bulwark', 'relay', 'nexus', 'gate', 'turret'];
     for (var i = 0; i < planetKinds.length; i++) {
         var kind = planetKinds[i];
         var node = { radius: 24, level: 1, kind: kind, supplied: false };

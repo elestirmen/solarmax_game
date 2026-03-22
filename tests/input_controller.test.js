@@ -7,6 +7,113 @@ function sortedSetValues(set) {
     return Array.from(set).sort(function (a, b) { return a - b; });
 }
 
+function createTouchHarness(config) {
+    config = config && typeof config === 'object' ? config : {};
+    var handlers = {};
+    var canvasHandlers = {};
+    var inputState = createInputState();
+    var gameState = {
+        state: 'playing',
+        human: 0,
+        nodes: config.nodes || [],
+        fleets: config.fleets || [],
+        cam: { x: 0, y: 0, zoom: 1 },
+    };
+    var selectedIds = [];
+    var pinchCalls = { begin: 0, update: 0 };
+
+    attachGameInputController({
+        canvas: {
+            addEventListener: function (name, handler) { canvasHandlers[name] = handler; },
+            getBoundingClientRect: function () { return { left: 0, top: 0, right: 200, bottom: 200, width: 200, height: 200 }; },
+            width: 200,
+            height: 200,
+        },
+        windowTarget: {
+            addEventListener: function (name, handler) { handlers[name] = handler; },
+        },
+        gameState: gameState,
+        inputState: inputState,
+        screenToWorld: function (x, y) { return { x: x, y: y }; },
+        touchScreenPos: function (touch) { return { x: touch.clientX, y: touch.clientY }; },
+        hitNodeTouch: function (worldPos) {
+            if (typeof config.hitNodeTouch === 'function') return config.hitNodeTouch(worldPos);
+            return null;
+        },
+        hitNode: function (worldPos) {
+            if (typeof config.hitNode === 'function') return config.hitNode(worldPos);
+            return null;
+        },
+        hitNodeAtScreen: function () { return null; },
+        hitHoldingFleet: function () { return null; },
+        shouldStartDragSend: function () { return false; },
+        beginDragSend: function () {},
+        sendFromSelectionTo: function () { return false; },
+        selectedSendOrder: function () { return { sources: [], fleetIds: [] }; },
+        centroidForSources: function () { return null; },
+        selectNodeIds: function (ids) {
+            selectedIds.push(ids.slice());
+            inputState.sel = new Set(ids);
+        },
+        selectFleetIds: function () {},
+        clearSelection: function () {
+            inputState.sel.clear();
+            inputState.selFleets.clear();
+        },
+        screenDistance: function () { return 0; },
+        nodesInRect: function () { return []; },
+        holdingFleetIdsInRect: function () { return []; },
+        selectEntityIds: function () {},
+        pruneSelectedFleetIds: function () {},
+        syncNodeSelectionFlags: function () {},
+        sendFromSourcesTo: function () {},
+        sendFromSourcesToPoint: function () {},
+        resetDragState: function () {},
+        applyCommandModeTarget: function () {},
+        clearCommandMode: function () {},
+        showGameToast: function () {},
+        isCoarsePointer: function () { return true; },
+        touchPanThresholdPx: 14,
+        touchTapThresholdPx: 11,
+        beginTouchPinch: function (a, b) {
+            pinchCalls.begin++;
+            inputState.pinchActive = true;
+            if (typeof config.beginTouchPinch === 'function') config.beginTouchPinch(a, b, gameState, inputState);
+        },
+        updateTouchPinch: function (a, b) {
+            pinchCalls.update++;
+            if (typeof config.updateTouchPinch === 'function') config.updateTouchPinch(a, b, gameState, inputState);
+        },
+        audioSelect: function () {},
+        clamp: function (value) { return value; },
+        zoomSpeed: 0.1,
+        zoomMin: 0.2,
+        zoomMax: 3,
+        resolveRightClickAction: function () { return 'defense'; },
+        issueOnlineCommand: function () { return false; },
+        toggleDefense: function () {},
+        applyPlayerCommand: function () {},
+        isHowToPlayVisible: function () { return false; },
+        closeHowToPlayModal: function () {},
+        togglePauseMenu: function () {},
+        isInGameMenuOpen: function () { return false; },
+        selectAllHumanNodes: function () {},
+        activateSelectionUpgrade: function () {},
+        triggerHumanDoctrine: function () { return false; },
+        setSendPct: function () {},
+        closePauseMenu: function () {},
+    });
+
+    return {
+        canvasHandlers: canvasHandlers,
+        handlers: handlers,
+        inputState: inputState,
+        gameState: gameState,
+        selectedIds: selectedIds,
+        pinchCalls: pinchCalls,
+    };
+}
+
 test('reconcileInputStateAfterAuthoritativeSync preserves valid online selection and drag sources', function () {
     var inputState = createInputState();
     inputState.sel.add(1);
@@ -139,4 +246,90 @@ test('attachGameInputController ignores game hotkeys while typing in an input', 
 
     assert.equal(selectAllCalls, 0);
     assert.equal(pauseCalls, 0);
+});
+
+test('touch tap on an owned node selects it on coarse pointers', function () {
+    var harness = createTouchHarness({
+        nodes: [{ id: 1, owner: 0, pos: { x: 12, y: 12 } }],
+        hitNodeTouch: function (worldPos) {
+            return worldPos.x <= 20 && worldPos.y <= 20 ? { id: 1, owner: 0, pos: { x: 12, y: 12 } } : null;
+        },
+    });
+
+    harness.canvasHandlers.touchstart({
+        touches: [{ clientX: 10, clientY: 10 }],
+        preventDefault: function () {},
+    });
+    harness.canvasHandlers.touchend({
+        touches: [],
+        changedTouches: [{ clientX: 10, clientY: 10 }],
+        preventDefault: function () {},
+    });
+
+    assert.deepEqual(harness.selectedIds, [[1]]);
+    assert.deepEqual(sortedSetValues(harness.inputState.sel), [1]);
+});
+
+test('single-finger swipe from empty space does not pan the camera on coarse pointers', function () {
+    var harness = createTouchHarness();
+
+    harness.canvasHandlers.touchstart({
+        touches: [{ clientX: 20, clientY: 20 }],
+        preventDefault: function () {},
+    });
+    harness.canvasHandlers.touchmove({
+        touches: [{ clientX: 40, clientY: 20 }],
+        preventDefault: function () {},
+    });
+
+    assert.equal(harness.inputState.panActive, false);
+    assert.equal(harness.gameState.cam.x, 0);
+});
+
+test('single-finger swipe from an owned node cancels tap-select instead of panning', function () {
+    var harness = createTouchHarness({
+        nodes: [{ id: 1, owner: 0, pos: { x: 12, y: 12 } }],
+        hitNodeTouch: function (worldPos) {
+            return worldPos.x <= 20 && worldPos.y <= 20 ? { id: 1, owner: 0, pos: { x: 12, y: 12 } } : null;
+        },
+    });
+
+    harness.canvasHandlers.touchstart({
+        touches: [{ clientX: 10, clientY: 10 }],
+        preventDefault: function () {},
+    });
+    harness.canvasHandlers.touchmove({
+        touches: [{ clientX: 32, clientY: 10 }],
+        preventDefault: function () {},
+    });
+    harness.canvasHandlers.touchend({
+        touches: [],
+        changedTouches: [{ clientX: 32, clientY: 10 }],
+        preventDefault: function () {},
+    });
+
+    assert.deepEqual(harness.selectedIds, []);
+    assert.deepEqual(sortedSetValues(harness.inputState.sel), []);
+    assert.equal(harness.gameState.cam.x, 0);
+});
+
+test('two-finger gesture drives pinch/drag camera updates on coarse pointers', function () {
+    var harness = createTouchHarness({
+        updateTouchPinch: function (a, b, gameState) {
+            gameState.cam.x = Math.round((a.x + b.x) * 0.5);
+        },
+    });
+
+    harness.canvasHandlers.touchstart({
+        touches: [{ clientX: 30, clientY: 30 }, { clientX: 70, clientY: 30 }],
+        preventDefault: function () {},
+    });
+    harness.canvasHandlers.touchmove({
+        touches: [{ clientX: 40, clientY: 30 }, { clientX: 80, clientY: 30 }],
+        preventDefault: function () {},
+    });
+
+    assert.equal(harness.pinchCalls.begin, 1);
+    assert.equal(harness.pinchCalls.update, 1);
+    assert.equal(harness.gameState.cam.x, 60);
 });

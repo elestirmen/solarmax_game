@@ -68,6 +68,7 @@ export var NODE_TYPE_DEFS = {
     bulwark: { label: 'Bulwark', prod: 0.66, def: 1.58, cap: 1.3, flow: 0.86, speed: 0.93, color: '#afb7c3' },
     relay: { label: 'Relay', prod: 0.86, def: 0.92, cap: 0.8, flow: 1.45, speed: 1.42, color: '#9bb6be' },
     nexus: { label: 'Nexus', prod: 1.17, def: 1.13, cap: 1.13, flow: 1.22, speed: 1.12, color: '#b5acc1' },
+    gate: { label: 'Gate', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#f0be6a' },
     turret: { label: 'Turret', prod: 0.0, def: 2.38, cap: 0.78, flow: 0.78, speed: 1.0, color: '#a4c0c4' },
 };
 

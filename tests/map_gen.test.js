@@ -71,3 +71,25 @@ test('buildInitialMatchSnapshot bakes encounter nodes into the generated map', f
     assert.equal(snapshot.nodes.some(function (node) { return node.encounterType === 'mega_turret'; }), true);
     assert.equal(snapshot.nodes.some(function (node) { return node.encounterType === 'relay_core'; }), true);
 });
+
+test('barrier maps place gate nodes on the barrier line as dedicated gate kind', function () {
+    var snapshot = buildInitialMatchSnapshot({
+        seed: 'barrier-gate-shape',
+        nodeCount: 18,
+        difficulty: 'normal',
+        rulesMode: 'advanced',
+        mapFeature: 'barrier',
+    }, [
+        { index: 0, name: 'Host', botControlled: false },
+        { index: 1, name: 'AI 1', botControlled: true },
+    ]);
+
+    var gateIds = snapshot.mapFeature.gateIds;
+    assert.equal(Array.isArray(gateIds) && gateIds.length > 0, true);
+    for (var i = 0; i < gateIds.length; i++) {
+        var gate = snapshot.nodes[gateIds[i]];
+        assert.equal(gate.kind, 'gate');
+        assert.equal(gate.gate, true);
+        assert.equal(gate.pos.x, snapshot.mapFeature.x);
+    }
+});

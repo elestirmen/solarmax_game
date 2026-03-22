@@ -411,7 +411,7 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             }
         }
 
-        var gateVisible = n.gate && (vis || n.owner === game.human || (game.mapFeature && game.mapFeature.type === 'barrier'));
+        var gateVisible = n.gate && n.kind !== 'gate' && (vis || n.owner === game.human || (game.mapFeature && game.mapFeature.type === 'barrier'));
         if (gateVisible) {
             var gatePulse = 0.55 + 0.45 * Math.sin(tick * 0.08 + n.id);
             var gateAlpha = (vis || n.owner === game.human) ? 0.95 : 0.62;
@@ -494,7 +494,7 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             ctx.fill();
         }
 
-        var hasOrbiters = (vis || n.owner === game.human) && n.owner >= 0 && n.kind !== 'turret';
+        var hasOrbiters = (vis || n.owner === game.human) && n.owner >= 0 && n.kind !== 'turret' && n.kind !== 'gate';
         var orbitalSquads = [];
         if (hasOrbiters) {
             orbitalSquads = helpers.getNodeOrbitalSquads(n);
@@ -507,6 +507,15 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
         var tdef = helpers.nodeTypeOf(n);
         if (n.kind === 'turret') {
             helpers.drawTurretStation(ctx, drawNode, col, tick);
+        } else if (n.kind === 'gate' && typeof helpers.drawGateStation === 'function') {
+            helpers.drawGateStation(ctx, drawNode, col, tick);
+            if ((vis || n.owner === game.human) && n.owner >= 0 && col && col.indexOf('#') === 0) {
+                ctx.beginPath();
+                ctx.arc(n.pos.x, n.pos.y, drawRadius + 2.6, 0, Math.PI * 2);
+                ctx.strokeStyle = helpers.hexToRgba(col, 0.88);
+                ctx.lineWidth = 2.3;
+                ctx.stroke();
+            }
         } else {
             var bodyCol = col;
             if ((vis || n.owner === game.human) && col.indexOf('#') === 0) {
@@ -679,10 +688,13 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
         } else if (n.kind === 'turret') {
             unitFill = '#f7fbff';
             unitStroke = 'rgba(4,8,14,0.96)';
+        } else if (n.kind === 'gate') {
+            unitFill = '#fff4dc';
+            unitStroke = 'rgba(7,10,16,0.94)';
         }
         ctx.lineJoin = 'round';
         ctx.miterLimit = 2;
-        ctx.lineWidth = n.kind === 'turret' ? 4.5 : 3.2;
+        ctx.lineWidth = n.kind === 'turret' ? 4.5 : (n.kind === 'gate' ? 3.8 : 3.2);
         ctx.strokeStyle = unitStroke;
         ctx.strokeText(dUnits, n.pos.x, n.pos.y);
         ctx.fillStyle = unitFill;
@@ -829,6 +841,7 @@ export function renderMinimapLayer(opts) {
         }
         var mr = 7.6;
         if (mn.kind === 'turret') mr = 10.2;
+        else if (mn.kind === 'gate') mr = 9.6;
         else if (mn.kind === 'forge' || mn.kind === 'bulwark' || mn.kind === 'nexus') mr = 8.9;
         else if (mn.kind === 'relay') mr = 8.35;
         ctx.fillStyle = mcol;
