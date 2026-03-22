@@ -3388,10 +3388,6 @@ function drawMapFeature(ctx, tick) {
         }
         cuts.sort(function (a, b) { return a.y0 - b.y0; });
         var segY = minY;
-        ctx.save();
-        ctx.setLineDash([8, 7]);
-        ctx.strokeStyle = 'rgba(255,120,120,' + barrierAlpha + ')';
-        ctx.lineWidth = barrierLineWidth;
         for (var ci = 0; ci < cuts.length; ci++) {
             var cut = cuts[ci];
             var y0 = clamp(cut.y0, minY, maxY);
@@ -3401,80 +3397,96 @@ function drawMapFeature(ctx, tick) {
         }
         if (segY < maxY) segments.push({ y0: segY, y1: maxY });
 
-        ctx.save();
-        ctx.globalCompositeOperation = 'screen';
-        for (var si = 0; si < segments.length; si++) {
-            var seg = segments[si];
-            var segPulse = 0.66 + 0.34 * Math.sin(tick * 0.05 + seg.y0 * 0.018);
-            var halfW = openForHuman ? 16 : 28;
-            var outerAlpha = openForHuman ? 0.035 : 0.17;
-            var coreAlpha = openForHuman ? 0.12 : 0.82;
-            var pulseAlpha = openForHuman ? 0.05 : 0.36;
-            var fillGrad = ctx.createLinearGradient(bx - halfW, 0, bx + halfW, 0);
-            fillGrad.addColorStop(0, 'rgba(255,80,60,0)');
-            fillGrad.addColorStop(0.24, 'rgba(255,98,78,' + (outerAlpha * 0.48 * segPulse) + ')');
-            fillGrad.addColorStop(0.5, 'rgba(255,220,190,' + (outerAlpha * segPulse) + ')');
-            fillGrad.addColorStop(0.76, 'rgba(255,98,78,' + (outerAlpha * 0.48 * segPulse) + ')');
-            fillGrad.addColorStop(1, 'rgba(255,80,60,0)');
-            ctx.fillStyle = fillGrad;
-            ctx.fillRect(bx - halfW, seg.y0, halfW * 2, seg.y1 - seg.y0);
+        try {
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            for (var si = 0; si < segments.length; si++) {
+                var seg = segments[si];
+                var segPulse = 0.66 + 0.34 * Math.sin(tick * 0.05 + seg.y0 * 0.018);
+                var halfW = openForHuman ? 16 : 28;
+                var outerAlpha = openForHuman ? 0.035 : 0.17;
+                var coreAlpha = openForHuman ? 0.12 : 0.82;
+                var pulseAlpha = openForHuman ? 0.05 : 0.36;
+                var fillGrad = ctx.createLinearGradient(bx - halfW, 0, bx + halfW, 0);
+                fillGrad.addColorStop(0, 'rgba(255,80,60,0)');
+                fillGrad.addColorStop(0.24, 'rgba(255,98,78,' + (outerAlpha * 0.48 * segPulse) + ')');
+                fillGrad.addColorStop(0.5, 'rgba(255,220,190,' + (outerAlpha * segPulse) + ')');
+                fillGrad.addColorStop(0.76, 'rgba(255,98,78,' + (outerAlpha * 0.48 * segPulse) + ')');
+                fillGrad.addColorStop(1, 'rgba(255,80,60,0)');
+                ctx.fillStyle = fillGrad;
+                ctx.fillRect(bx - halfW, seg.y0, halfW * 2, seg.y1 - seg.y0);
 
-            ctx.beginPath();
-            ctx.moveTo(bx, seg.y0);
-            ctx.lineTo(bx, seg.y1);
-            ctx.strokeStyle = 'rgba(255,110,90,' + (outerAlpha * 0.95) + ')';
-            ctx.lineWidth = openForHuman ? 5 : 14;
-            ctx.stroke();
-
-            ctx.beginPath();
-            ctx.moveTo(bx, seg.y0);
-            ctx.lineTo(bx, seg.y1);
-            ctx.strokeStyle = 'rgba(255,180,145,' + (openForHuman ? 0.08 : 0.32) + ')';
-            ctx.lineWidth = openForHuman ? 2.8 : 6.2;
-            ctx.stroke();
-
-            ctx.beginPath();
-            ctx.moveTo(bx, seg.y0);
-            ctx.lineTo(bx, seg.y1);
-            ctx.strokeStyle = 'rgba(255,248,232,' + coreAlpha + ')';
-            ctx.lineWidth = openForHuman ? 1 : 2.4;
-            ctx.stroke();
-
-            if (!openForHuman) {
-                ctx.setLineDash([18, 14]);
-                ctx.lineDashOffset = -tick * 1.1 - si * 9;
                 ctx.beginPath();
                 ctx.moveTo(bx, seg.y0);
                 ctx.lineTo(bx, seg.y1);
-                ctx.strokeStyle = 'rgba(255,246,220,' + pulseAlpha + ')';
-                ctx.lineWidth = 4.2;
+                ctx.strokeStyle = 'rgba(255,110,90,' + (outerAlpha * 0.95) + ')';
+                ctx.lineWidth = openForHuman ? 5 : 14;
                 ctx.stroke();
-                ctx.setLineDash([]);
 
                 ctx.beginPath();
-                ctx.moveTo(bx - 5.5, seg.y0);
-                ctx.lineTo(bx - 5.5, seg.y1);
-                ctx.moveTo(bx + 5.5, seg.y0);
-                ctx.lineTo(bx + 5.5, seg.y1);
-                ctx.strokeStyle = 'rgba(255,120,92,0.16)';
-                ctx.lineWidth = 1.25;
+                ctx.moveTo(bx, seg.y0);
+                ctx.lineTo(bx, seg.y1);
+                ctx.strokeStyle = 'rgba(255,180,145,' + (openForHuman ? 0.08 : 0.32) + ')';
+                ctx.lineWidth = openForHuman ? 2.8 : 6.2;
                 ctx.stroke();
-            }
-        }
-        ctx.restore();
 
-        for (var ci2 = 0; ci2 < cuts.length; ci2++) {
-            var gateNode = cuts[ci2].node;
-            var pulse = 0.55 + 0.45 * Math.sin(tick * 0.08 + gateNode.id);
+                ctx.beginPath();
+                ctx.moveTo(bx, seg.y0);
+                ctx.lineTo(bx, seg.y1);
+                ctx.strokeStyle = 'rgba(255,248,232,' + coreAlpha + ')';
+                ctx.lineWidth = openForHuman ? 1 : 2.4;
+                ctx.stroke();
+
+                if (!openForHuman) {
+                    ctx.setLineDash([18, 14]);
+                    ctx.lineDashOffset = -tick * 1.1 - si * 9;
+                    ctx.beginPath();
+                    ctx.moveTo(bx, seg.y0);
+                    ctx.lineTo(bx, seg.y1);
+                    ctx.strokeStyle = 'rgba(255,246,220,' + pulseAlpha + ')';
+                    ctx.lineWidth = 4.2;
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+
+                    ctx.beginPath();
+                    ctx.moveTo(bx - 5.5, seg.y0);
+                    ctx.lineTo(bx - 5.5, seg.y1);
+                    ctx.moveTo(bx + 5.5, seg.y0);
+                    ctx.lineTo(bx + 5.5, seg.y1);
+                    ctx.strokeStyle = 'rgba(255,120,92,0.16)';
+                    ctx.lineWidth = 1.25;
+                    ctx.stroke();
+                }
+            }
+            ctx.restore();
+
+            for (var ci2 = 0; ci2 < cuts.length; ci2++) {
+                var gateNode = cuts[ci2].node;
+                var pulse = 0.55 + 0.45 * Math.sin(tick * 0.08 + gateNode.id);
+                ctx.beginPath();
+                ctx.arc(gateNode.pos.x, gateNode.pos.y, gateNode.radius + 8, 0, Math.PI * 2);
+                ctx.strokeStyle = 'rgba(255,210,120,' + (openForHuman ? 0.12 + pulse * 0.14 : 0.28 + pulse * 0.34) + ')';
+                ctx.lineWidth = openForHuman ? 1.1 : 1.8;
+                ctx.stroke();
+                ctx.font = 'bold 10px Outfit,sans-serif';
+                ctx.fillStyle = 'rgba(255,225,160,0.92)';
+                ctx.textAlign = 'center';
+                ctx.fillText(openForHuman ? 'OPEN' : 'GATE', bx, gateNode.pos.y - gateNode.radius - 13);
+            }
+        } catch (err) {
+            if (typeof console !== 'undefined' && console.error) console.error('Barrier render failed', err);
+            ctx.restore();
+            ctx.save();
+            ctx.setLineDash(openForHuman ? [8, 10] : [18, 10]);
+            ctx.lineDashOffset = openForHuman ? 0 : -tick * 0.9;
             ctx.beginPath();
-            ctx.arc(gateNode.pos.x, gateNode.pos.y, gateNode.radius + 8, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255,210,120,' + (openForHuman ? 0.12 + pulse * 0.14 : 0.28 + pulse * 0.34) + ')';
-            ctx.lineWidth = openForHuman ? 1.1 : 1.8;
+            ctx.moveTo(bx, minY);
+            ctx.lineTo(bx, maxY);
+            ctx.strokeStyle = openForHuman ? 'rgba(255,225,180,0.18)' : 'rgba(255,118,92,0.56)';
+            ctx.lineWidth = openForHuman ? 2.2 : 4.6;
             ctx.stroke();
-            ctx.font = 'bold 10px Outfit,sans-serif';
-            ctx.fillStyle = 'rgba(255,225,160,0.92)';
-            ctx.textAlign = 'center';
-            ctx.fillText(openForHuman ? 'OPEN' : 'GATE', bx, gateNode.pos.y - gateNode.radius - 13);
+            ctx.setLineDash([]);
+            ctx.restore();
         }
     }
 

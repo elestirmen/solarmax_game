@@ -21,6 +21,25 @@ function traceRoundedPill(ctx, x, y, w, h) {
     ctx.closePath();
 }
 
+function drawGateFallback(ctx, node, col, helpers) {
+    var stroke = col && col.indexOf('#') === 0 ? col : '#f0be6a';
+    var rgba = typeof helpers.hexToRgba === 'function'
+        ? helpers.hexToRgba
+        : function (hex, alpha) { return hex === stroke ? 'rgba(240,190,106,' + alpha + ')' : 'rgba(255,255,255,' + alpha + ')'; };
+    var r = Math.max(8, Number(node.radius) || 12);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(node.pos.x, node.pos.y, r + 4, 0, Math.PI * 2);
+    ctx.strokeStyle = rgba(stroke, 0.9);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(node.pos.x, node.pos.y, r * 0.68, 0, Math.PI * 2);
+    ctx.fillStyle = rgba('#fff0c7', 0.9);
+    ctx.fill();
+    ctx.restore();
+}
+
 function drawSolarFlareCorona(ctx, game, tick, constants) {
     var cfg = constants.solarFlare;
     if (!cfg || !game || (game.state !== 'playing' && game.state !== 'paused')) return;
@@ -507,8 +526,14 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
         var tdef = helpers.nodeTypeOf(n);
         if (n.kind === 'turret') {
             helpers.drawTurretStation(ctx, drawNode, col, tick);
-        } else if (n.kind === 'gate' && typeof helpers.drawGateStation === 'function') {
-            helpers.drawGateStation(ctx, drawNode, col, tick);
+        } else if (n.kind === 'gate') {
+            try {
+                if (typeof helpers.drawGateStation === 'function') helpers.drawGateStation(ctx, drawNode, col, tick);
+                else drawGateFallback(ctx, drawNode, col, helpers);
+            } catch (err) {
+                if (typeof console !== 'undefined' && console.error) console.error('Gate render failed', err);
+                drawGateFallback(ctx, drawNode, col, helpers);
+            }
             if ((vis || n.owner === game.human) && n.owner >= 0 && col && col.indexOf('#') === 0) {
                 ctx.beginPath();
                 ctx.arc(n.pos.x, n.pos.y, drawRadius + 2.6, 0, Math.PI * 2);
