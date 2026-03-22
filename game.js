@@ -2522,6 +2522,7 @@ function drawGateStation(ctx, n, col, tick) {
     var armOffset = vertical ? r * 0.82 : r * 0.58;
     var armHalfH = r * 0.8;
     var coreR = Math.max(5, r * 0.38);
+    var spineHalfH = r + 26;
 
     ctx.save();
     ctx.globalCompositeOperation = 'screen';
@@ -2578,8 +2579,8 @@ function drawGateStation(ctx, n, col, tick) {
     ctx.fill();
 
     ctx.beginPath();
-    ctx.moveTo(cx, cy - r * 0.9);
-    ctx.lineTo(cx, cy + r * 0.9);
+    ctx.moveTo(cx, cy - spineHalfH);
+    ctx.lineTo(cx, cy + spineHalfH);
     ctx.strokeStyle = hexToRgba(shellColor, 0.42);
     ctx.lineWidth = 1.4;
     ctx.stroke();
@@ -3374,11 +3375,14 @@ function drawMapFeature(ctx, tick) {
     } else if (G.mapFeature.type === 'barrier') {
         var barrier = G.mapFeature;
         var bx = barrier.x;
-        var minY = MAP_PAD * 0.5;
-        var maxY = MAP_H - MAP_PAD * 0.5;
+        var zoom = Math.max(0.001, G.cam.zoom || 1);
+        var viewPad = 48 / zoom;
+        var halfViewH = (cv.height * 0.5) / zoom;
+        var minY = G.cam.y - halfViewH - viewPad;
+        var maxY = G.cam.y + halfViewH + viewPad;
         var openForHuman = controlsBarrierForOwner({ barrier: barrier, owner: G.human, nodes: G.nodes });
         var cuts = [];
-        var segments = [];
+        var segments = [{ y0: minY, y1: maxY }];
         var gateIds = Array.isArray(barrier.gateIds) ? barrier.gateIds : [];
         for (var gi = 0; gi < gateIds.length; gi++) {
             var gate = G.nodes[gateIds[gi]];
@@ -3387,15 +3391,6 @@ function drawMapFeature(ctx, tick) {
             cuts.push({ y0: gate.pos.y - gap, y1: gate.pos.y + gap, node: gate });
         }
         cuts.sort(function (a, b) { return a.y0 - b.y0; });
-        var segY = minY;
-        for (var ci = 0; ci < cuts.length; ci++) {
-            var cut = cuts[ci];
-            var y0 = clamp(cut.y0, minY, maxY);
-            var y1 = clamp(cut.y1, minY, maxY);
-            if (y0 > segY) segments.push({ y0: segY, y1: y0 });
-            segY = Math.max(segY, y1);
-        }
-        if (segY < maxY) segments.push({ y0: segY, y1: maxY });
 
         try {
             ctx.save();
@@ -3457,6 +3452,32 @@ function drawMapFeature(ctx, tick) {
                     ctx.lineWidth = 1.25;
                     ctx.stroke();
                 }
+            }
+
+            var spinePulse = 0.7 + 0.3 * Math.sin(tick * 0.05 + bx * 0.012);
+            ctx.beginPath();
+            ctx.moveTo(bx, minY);
+            ctx.lineTo(bx, maxY);
+            ctx.strokeStyle = 'rgba(255,110,90,' + (openForHuman ? 0.08 : 0.2 + spinePulse * 0.08) + ')';
+            ctx.lineWidth = openForHuman ? 5.4 : 11.5;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.moveTo(bx, minY);
+            ctx.lineTo(bx, maxY);
+            ctx.strokeStyle = 'rgba(255,248,232,' + (openForHuman ? 0.14 : 0.54) + ')';
+            ctx.lineWidth = openForHuman ? 1.25 : 2.2;
+            ctx.stroke();
+
+            if (!openForHuman) {
+                ctx.beginPath();
+                ctx.moveTo(bx - 5.5, minY);
+                ctx.lineTo(bx - 5.5, maxY);
+                ctx.moveTo(bx + 5.5, minY);
+                ctx.lineTo(bx + 5.5, maxY);
+                ctx.strokeStyle = 'rgba(255,120,92,0.1)';
+                ctx.lineWidth = 1.05;
+                ctx.stroke();
             }
             ctx.restore();
 

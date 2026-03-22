@@ -27,6 +27,7 @@ function drawGateFallback(ctx, node, col, helpers) {
         ? helpers.hexToRgba
         : function (hex, alpha) { return hex === stroke ? 'rgba(240,190,106,' + alpha + ')' : 'rgba(255,255,255,' + alpha + ')'; };
     var r = Math.max(8, Number(node.radius) || 12);
+    var spineHalfH = r + 26;
     ctx.save();
     ctx.beginPath();
     ctx.arc(node.pos.x, node.pos.y, r + 4, 0, Math.PI * 2);
@@ -37,6 +38,12 @@ function drawGateFallback(ctx, node, col, helpers) {
     ctx.arc(node.pos.x, node.pos.y, r * 0.68, 0, Math.PI * 2);
     ctx.fillStyle = rgba('#fff0c7', 0.9);
     ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(node.pos.x, node.pos.y - spineHalfH);
+    ctx.lineTo(node.pos.x, node.pos.y + spineHalfH);
+    ctx.strokeStyle = rgba(stroke, 0.42);
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
     ctx.restore();
 }
 
@@ -434,11 +441,20 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
         if (gateVisible) {
             var gatePulse = 0.55 + 0.45 * Math.sin(tick * 0.08 + n.id);
             var gateAlpha = (vis || n.owner === game.human) ? 0.95 : 0.62;
+            var barrierX = game.mapFeature && game.mapFeature.type === 'barrier' ? Number(game.mapFeature.x) : n.pos.x;
+            var gateSpineX = Number.isFinite(barrierX) ? barrierX : n.pos.x;
+            var gateSpineHalfH = drawRadius + 26;
             ctx.save();
             ctx.beginPath();
             ctx.arc(n.pos.x, n.pos.y, drawRadius + 9, 0, Math.PI * 2);
             ctx.strokeStyle = 'rgba(255,220,140,' + (0.28 + gatePulse * 0.24) * gateAlpha + ')';
             ctx.lineWidth = 1.8;
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(gateSpineX, n.pos.y - gateSpineHalfH);
+            ctx.lineTo(gateSpineX, n.pos.y + gateSpineHalfH);
+            ctx.strokeStyle = 'rgba(255,235,205,' + (0.22 + gatePulse * 0.16) * gateAlpha + ')';
+            ctx.lineWidth = 1.7;
             ctx.stroke();
             ctx.beginPath();
             ctx.moveTo(n.pos.x, n.pos.y - drawRadius - 8);
