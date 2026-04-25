@@ -20,7 +20,7 @@ test('daily room mode locks map and loadout controls', function () {
     assert.equal(state.disablePlaylist, true);
     assert.equal(state.disableDoctrine, true);
     assert.equal(state.nodeLabelOpacity, '0.45');
-    assert.match(state.hintText, /Gunluk oda/);
+    assert.match(state.hintText, /Günlük oda/);
 });
 
 test('custom room mode locks generated layout controls and explains dependency', function () {
@@ -29,5 +29,5 @@ test('custom room mode locks generated layout controls and explains dependency',
     assert.equal(state.disableDifficulty, true);
     assert.equal(state.disableRulesMode, true);
     assert.equal(state.disablePlaylist, true);
-    assert.match(state.hintText, /Araclar bolumunden map yukle/);
+    assert.match(state.hintText, /Araçlar bölümünden harita yükle/);
 });

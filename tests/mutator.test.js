@@ -50,6 +50,6 @@ test('blackout blocks territory bonuses inside its area', function () {
 });
 
 test('mapMutatorName returns localized labels for known mutators', function () {
-    assert.equal(mapMutatorName('ion_storm'), 'Iyon Firtinasi');
-    assert.equal(mapMutatorName('blackout'), 'Karartma Bolgesi');
+    assert.equal(mapMutatorName('ion_storm'), 'İyon Fırtınası');
+    assert.equal(mapMutatorName('blackout'), 'Karartma Bölgesi');
 });

@@ -12,7 +12,6 @@ var NODE_RMIN = 18;
 var NODE_RMAX = 36;
 var NODE_MINDIST = 100;
 var NEUTRAL_MAX = 20;
-var GRAVITY_RADIUS = 170;
 
 export function RNG(seed) {
     this.s = seed | 0;
@@ -143,7 +142,7 @@ function placeGravityFeature(state) {
         }
     }
     if (!bestNode) return false;
-    state.mapFeature = { type: 'gravity', nodeId: bestNode.id, x: bestNode.pos.x, y: bestNode.pos.y, r: GRAVITY_RADIUS };
+            state.mapFeature = { type: 'gravity', nodeId: bestNode.id, x: bestNode.pos.x, y: bestNode.pos.y, r: SIM_CONSTANTS.GRAVITY_RADIUS };
     bestNode.kind = 'core';
     bestNode.maxUnits = nodeCapacity(bestNode);
     if (bestNode.units > bestNode.maxUnits) bestNode.units = bestNode.maxUnits;

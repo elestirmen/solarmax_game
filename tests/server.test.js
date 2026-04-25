@@ -20,6 +20,8 @@ import {
     buildDailyChallengeLeaderboard,
     getRoomAuthoritativeTick,
     processRoomAuthoritativeTick,
+    buildCorsOriginOption,
+    parseAllowedOrigins,
     stopRoomSimulation,
     resumeStartedRoomPlayer,
 } from '../server.js';
@@ -84,6 +86,23 @@ test('recordMatchResult does not award a win to a disconnected AI takeover slot'
 
 test('sanitizePlayerName strips html brackets and collapses whitespace', function () {
     assert.equal(sanitizePlayerName('  <b> A  B \n\tC </b>  '), 'b A B C /b');
+});
+
+test('CORS origins are explicit in production and permissive only by config/dev default', function () {
+    assert.deepEqual(parseAllowedOrigins('https://a.test, https://b.test'), ['https://a.test', 'https://b.test']);
+    assert.equal(buildCorsOriginOption('', 'development'), true);
+    assert.equal(buildCorsOriginOption('', 'production'), false);
+    assert.equal(buildCorsOriginOption('*', 'production'), true);
+
+    var originOption = buildCorsOriginOption('https://game.example', 'production');
+    originOption('https://game.example', function (err, allowed) {
+        assert.equal(err, null);
+        assert.equal(allowed, true);
+    });
+    originOption('https://bad.example', function (err, allowed) {
+        assert.equal(err instanceof Error, true);
+        assert.equal(allowed, false);
+    });
 });
 
 test('recordStateHash reports a sync issue when active clients disagree', function () {

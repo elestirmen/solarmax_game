@@ -87,7 +87,7 @@ export function buildRoomStatusSummary(state, opts) {
         parts.push('Günlük: ' + ((preview.challengeTitle || '') + (preview.challengeKey ? (' (' + preview.challengeKey + ')') : '')).trim());
         if (preview.aiCount) parts.push('AI ' + preview.aiCount);
     } else if (preview && preview.mode === 'custom') {
-        parts.push('Custom: ' + (preview.customMapName || 'Harita'));
+        parts.push('Özel: ' + (preview.customMapName || 'Harita'));
         parts.push('Slot ' + (preview.playerCount || maxPlayers || playerCount));
         if (preview.aiCount) parts.push('AI ' + preview.aiCount);
     } else if (preview) {

@@ -1,0 +1,17 @@
+export {
+    AI_ARCHETYPES,
+    DIFFICULTY_PRESETS,
+    NODE_TYPE_DEFS,
+    PLAYER_COLORS,
+    SIM_CONSTANTS,
+    buildDefenseFieldConfig,
+    defaultTune,
+    difficultyConfig,
+    nodeCapacity,
+    nodeLevelCapMult,
+    nodeLevelDefMult,
+    nodeLevelProdMult,
+    nodeTypeOf,
+    pickAIProfile,
+    upgradeCost,
+} from '../sim/shared_config.js';

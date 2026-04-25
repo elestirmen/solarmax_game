@@ -18,7 +18,7 @@ export function renderRoomListUI(container, rooms, opts) {
     clearElement(container);
 
     if (!rooms || rooms.length === 0) {
-        var empty = createTextElement(doc, 'div', 'room-list-empty', opts.connected ? 'Henuz oda yok.' : 'Sunucuya baglaniliyor...');
+        var empty = createTextElement(doc, 'div', 'room-list-empty', opts.connected ? 'Henüz oda yok.' : 'Sunucuya bağlanılıyor...');
         container.appendChild(empty);
         return;
     }
@@ -34,17 +34,17 @@ export function renderRoomListUI(container, rooms, opts) {
         var main = createTextElement(doc, 'div', 'room-item-main');
         var badges = createTextElement(doc, 'div', 'room-item-badges');
         var code = createTextElement(doc, 'span', 'room-item-code', room.code || '-----');
-        var owner = createTextElement(doc, 'div', 'room-item-owner', 'Acan: ' + (room.hostName || 'Host'));
-        var featuredBadge = isFeatured ? createTextElement(doc, 'span', 'room-item-pill room-item-pill-featured', 'Acik Oda') : null;
+        var owner = createTextElement(doc, 'div', 'room-item-owner', 'Açan: ' + (room.hostName || 'Host'));
+        var featuredBadge = isFeatured ? createTextElement(doc, 'span', 'room-item-pill room-item-pill-featured', 'Açık Oda') : null;
         var slots = createTextElement(doc, 'span', 'room-item-pill', (room.players || 0) + '/' + (room.maxPlayers || 0) + ' oyuncu');
         var modeText = room.mode === 'daily'
-            ? ((room.modeLabel || 'Gunluk') + (room.challengeKey ? (' ' + room.challengeKey) : ''))
-            : (room.mode === 'custom' ? (room.modeLabel || 'Custom') : (room.modeLabel || 'Standart'));
+            ? ((room.modeLabel || 'Günlük') + (room.challengeKey ? (' ' + room.challengeKey) : ''))
+            : (room.mode === 'custom' ? (room.modeLabel || 'Özel') : (room.modeLabel || 'Standart'));
         var mode = createTextElement(doc, 'span', 'room-item-pill', modeText);
-        var noteLabel = room.mode === 'custom' ? 'Harita' : (room.mode === 'daily' ? 'Challenge' : '');
+        var noteLabel = room.mode === 'custom' ? 'Harita' : (room.mode === 'daily' ? 'Meydan okuma' : '');
         var noteText = room.challengeTitle ? (noteLabel + ': ' + room.challengeTitle) : '';
         var note = noteText ? createTextElement(doc, 'div', 'room-item-note', noteText) : null;
-        var joinBtn = createTextElement(doc, 'button', 'room-join-btn' + (isFeatured ? ' room-join-btn-featured' : ''), isFeatured ? 'Odaya Katil' : 'Katil');
+        var joinBtn = createTextElement(doc, 'button', 'room-join-btn' + (isFeatured ? ' room-join-btn-featured' : ''), isFeatured ? 'Odaya Katıl' : 'Katıl');
         joinBtn.type = 'button';
         joinBtn.setAttribute('data-room-code', room.code || '');
 
@@ -66,7 +66,7 @@ export function renderRoomListUI(container, rooms, opts) {
 
 function renderLeaderboardEntries(doc, container, entries, sectionId) {
     if (!entries || entries.length === 0) {
-        container.appendChild(createTextElement(doc, 'div', 'leaderboard-row', 'Henuz veri yok.'));
+        container.appendChild(createTextElement(doc, 'div', 'leaderboard-row', 'Henüz veri yok.'));
         return;
     }
 
@@ -75,9 +75,9 @@ function renderLeaderboardEntries(doc, container, entries, sectionId) {
         var row = createTextElement(doc, 'div', 'leaderboard-row');
         if (sectionId === 'daily') {
             row.textContent = (i + 1) + '. ' + (entry.name || '?') + ' - ' + (entry.bestTick || 0) + ' tick';
-            if (entry.clears) row.textContent += ' (' + entry.clears + ' clear)';
+            if (entry.clears) row.textContent += ' (' + entry.clears + ' tamamlandı)';
         } else {
-            row.textContent = (i + 1) + '. ' + (entry.name || '?') + ' - ' + (entry.wins || 0) + ' galibiyet (' + (entry.games || 0) + ' mac)';
+            row.textContent = (i + 1) + '. ' + (entry.name || '?') + ' - ' + (entry.wins || 0) + ' galibiyet (' + (entry.games || 0) + ' maç)';
         }
         container.appendChild(row);
     }
@@ -94,7 +94,7 @@ export function renderLeaderboardUI(container, payload) {
     else if (payload && Array.isArray(payload.list)) sections = [{ id: 'general', entries: payload.list }];
 
     if (!sections.length) {
-        container.textContent = 'Henuz veri yok.';
+        container.textContent = 'Henüz veri yok.';
         return;
     }
 

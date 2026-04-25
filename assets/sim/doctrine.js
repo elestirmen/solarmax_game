@@ -249,8 +249,8 @@ export function doctrineModifiers(doctrines, rawStates, playerIndex) {
 export function doctrineCooldownSummary(doctrines, rawStates, playerIndex) {
     var mods = doctrineModifiers(doctrines, rawStates, playerIndex);
     if (mods.active) return mods.activeLabel + ' aktif: ' + Math.max(1, Math.ceil(mods.activeTicks / 30)) + 's';
-    if (mods.cooldownTicks > 0) return 'Hazir degil: ' + Math.max(1, Math.ceil(mods.cooldownTicks / 30)) + 's';
-    return mods.activeLabel + ' hazir';
+    if (mods.cooldownTicks > 0) return 'Hazır değil: ' + Math.max(1, Math.ceil(mods.cooldownTicks / 30)) + 's';
+    return mods.activeLabel + ' hazır';
 }
 
 export function doctrineOptionList() {

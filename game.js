@@ -53,82 +53,91 @@ import { MENU_PANEL_META, buildMenuHeroSummary, buildMenuLobbyMeta, clampMenuNod
 import { buildMissionPanelSubtitle, buildMissionPanelTitle, pickPrimaryObjectiveRow, resolveMissionDefinition, resolveMissionMode } from './assets/ui/mission_state.js';
 import { applyRoomTypeUiState, getRoomTypeUiState } from './assets/ui/room_type_ui.js';
 import { renderLeaderboardUI, renderMissionPanel, renderRoomListUI, renderStatRows } from './assets/ui/renderers.js';
+import {
+    AI_ARCHETYPES as SHARED_AI_ARCHETYPES,
+    DIFFICULTY_PRESETS as SHARED_DIFFICULTY_PRESETS,
+    NODE_TYPE_DEFS as SHARED_NODE_TYPE_DEFS,
+    PLAYER_COLORS as SHARED_PLAYER_COLORS,
+    SIM_CONSTANTS,
+    buildDefenseFieldConfig,
+    defaultTune as sharedDefaultTune,
+    difficultyConfig as sharedDifficultyConfig,
+    nodeCapacity as sharedNodeCapacity,
+    nodeLevelCapMult as sharedNodeLevelCapMult,
+    nodeLevelDefMult as sharedNodeLevelDefMult,
+    nodeLevelProdMult as sharedNodeLevelProdMult,
+    nodeTypeOf as sharedNodeTypeOf,
+    pickAIProfile as sharedPickAIProfile,
+    upgradeCost as sharedUpgradeCost,
+} from './assets/app/client_rules.js';
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ CONSTANTS Ã¢â€â‚¬Ã¢â€â‚¬
-var TICK_DT = 1 / 30, BASE_PROD = 0.12, MAX_UNITS = 200,
+var TICK_DT = SIM_CONSTANTS.TICK_DT, BASE_PROD = SIM_CONSTANTS.BASE_PROD, MAX_UNITS = SIM_CONSTANTS.MAX_UNITS,
     NODE_RMIN = 18, NODE_RMAX = 36, NODE_MINDIST = 100, NEUTRAL_MAX = 20,
-    FLEET_SPEED = 80, POOL_SZ = 2000, FLOW_FRAC = 0.08,
-    DEF_FACTOR = 1.2, VISION_R = 180, SEL_BONUS = 1.2,
-    AI_INTERVAL = 30, AI_BUF = 5, AI_AGG = 1.0,
+    FLEET_SPEED = SIM_CONSTANTS.FLEET_SPEED, POOL_SZ = 2000, FLOW_FRAC = SIM_CONSTANTS.FLOW_FRAC,
+    DEF_FACTOR = SIM_CONSTANTS.DEF_FACTOR, VISION_R = SIM_CONSTANTS.VISION_R, SEL_BONUS = SIM_CONSTANTS.SEL_BONUS,
+    AI_INTERVAL = SIM_CONSTANTS.AI_INTERVAL, AI_BUF = SIM_CONSTANTS.AI_BUF, AI_AGG = SIM_CONSTANTS.AI_AGG,
     ZOOM_MIN = 0.3, ZOOM_MAX = 3.0, ZOOM_SPD = 0.1,
     MAP_W = 1600, MAP_H = 1000, MAP_PAD = 80,
-    BEZ_CURV = 0.15, BEZ_SEG = 20, PULSE_SPD = 0.6,
+    BEZ_CURV = SIM_CONSTANTS.BEZ_CURV, BEZ_SEG = SIM_CONSTANTS.BEZ_SEG, PULSE_SPD = 0.6,
     COLORS_BG = '#080c15', COL_NEUTRAL = '#5a6272', COL_FOG = '#2e3340',
     COL_GRID = 'rgba(255,255,255,0.025)', COL_GLOW = 'rgba(255,255,255,0.35)',
-    PLAYER_COLORS = ['#4a8eff', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'],
-    TRAIL_LEN = 12, MAX_ORBIT_SQUADS = 14, MAX_ORBIT_SHIPS_PER_SQUAD = 6, ORBIT_UNITS_PER_VISIBLE_SHIP = 2, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 14, ORBIT_MAX_RINGS = 4,
-    NODE_LEVEL_MAX = 3,
-    UPGRADE_DURATION_TICKS = 60,
-    UPGRADE_VISUAL_SCALE_PER_LEVEL = 0.18,
-    DDA_MAX_BOOST = 0.2,
-    GRAVITY_RADIUS = 170,
-    GRAVITY_SPEED_MULT = 1.35,
-    SUPPLY_DIST = 220,
-    TERRITORY_RADIUS_BASE = 88,
-    TERRITORY_RADIUS_NODE_RADIUS_MULT = 1.7,
-    TERRITORY_RADIUS_LEVEL_BONUS = 14,
-    TERRITORY_SPEED_MULT = 1.18,
-    HOLD_DECAY_GRACE_TICKS = 300,
-    HOLD_DECAY_INTERVAL_TICKS = 36,
-    ISOLATED_PROD_PENALTY = 0.6,
-    DEFENSE_PROD_PENALTY = 0.6,
-    DEFENSE_BONUS = 1.14,
-    ASSIM_BASE_RATE = 0.0012,
-    ASSIM_UNIT_BONUS = 0.00014,
-    ASSIM_GARRISON_FLOOR = 0.35,
-    ASSIM_LEVEL_RESIST = 0.35,
-    ASSIM_LOCK_TICKS = 180,
-    TURRET_RANGE = 220,
-    TURRET_DPS = 16,
-    TURRET_MIN_GARRISON = 8,
-    TURRET_CAPTURE_RESIST = 1.7,
-    DEFENSE_FIELD_RANGE_PAD = 24,
-    DEFENSE_FIELD_LEVEL_RANGE = 4,
-    DEFENSE_FIELD_DPS = 2.6,
-    DEFENSE_FIELD_LEVEL_DPS = 0.3,
-    DEFENSE_FIELD_DEFENSE_BONUS = 1.1,
-    DEFENSE_FIELD_BULWARK_BONUS = 1.18,
-    DEFENSE_FIELD_RELAY_RANGE = 6,
-    STRATEGIC_PULSE_CYCLE = 540,
-    STRATEGIC_PULSE_ACTIVE = 300,
-    STRATEGIC_PULSE_PROD = 1.35,
-    STRATEGIC_PULSE_SPEED = 1.18,
-    STRATEGIC_PULSE_ASSIM = 1.3,
-    STRATEGIC_PULSE_CAP = 18,
-    STRATEGIC_PULSE_AI_BONUS = 52,
-    SOLAR_FLARE_GAP_MIN_TICKS = 5400,
-    SOLAR_FLARE_GAP_MAX_TICKS = 9000,
-    SOLAR_FLARE_WARN_TICKS = 180,
-    CAP_SOFT_START = 0.82,
-    CAP_SOFT_FLOOR = 0.28,
-    DEFENSE_ASSIM_BONUS = 1.06,
+    PLAYER_COLORS = SHARED_PLAYER_COLORS,
+    TRAIL_LEN = SIM_CONSTANTS.TRAIL_LEN, MAX_ORBIT_SQUADS = 14, MAX_ORBIT_SHIPS_PER_SQUAD = 6, ORBIT_UNITS_PER_VISIBLE_SHIP = 2, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 14, ORBIT_MAX_RINGS = 4,
+    NODE_LEVEL_MAX = SIM_CONSTANTS.NODE_LEVEL_MAX,
+    UPGRADE_DURATION_TICKS = SIM_CONSTANTS.UPGRADE_DURATION_TICKS,
+    UPGRADE_VISUAL_SCALE_PER_LEVEL = SIM_CONSTANTS.UPGRADE_VISUAL_SCALE_PER_LEVEL,
+    DDA_MAX_BOOST = SIM_CONSTANTS.DDA_MAX_BOOST,
+    GRAVITY_RADIUS = SIM_CONSTANTS.GRAVITY_RADIUS,
+    GRAVITY_SPEED_MULT = SIM_CONSTANTS.GRAVITY_SPEED_MULT,
+    SUPPLY_DIST = SIM_CONSTANTS.SUPPLY_DIST,
+    TERRITORY_RADIUS_BASE = SIM_CONSTANTS.TERRITORY_RADIUS_BASE,
+    TERRITORY_RADIUS_NODE_RADIUS_MULT = SIM_CONSTANTS.TERRITORY_RADIUS_NODE_RADIUS_MULT,
+    TERRITORY_RADIUS_LEVEL_BONUS = SIM_CONSTANTS.TERRITORY_RADIUS_LEVEL_BONUS,
+    TERRITORY_SPEED_MULT = SIM_CONSTANTS.TERRITORY_SPEED_MULT,
+    HOLD_DECAY_GRACE_TICKS = SIM_CONSTANTS.HOLD_DECAY_GRACE_TICKS,
+    HOLD_DECAY_INTERVAL_TICKS = SIM_CONSTANTS.HOLD_DECAY_INTERVAL_TICKS,
+    ISOLATED_PROD_PENALTY = SIM_CONSTANTS.ISOLATED_PROD_PENALTY,
+    DEFENSE_PROD_PENALTY = SIM_CONSTANTS.DEFENSE_PROD_PENALTY,
+    DEFENSE_BONUS = SIM_CONSTANTS.DEFENSE_BONUS,
+    ASSIM_BASE_RATE = SIM_CONSTANTS.ASSIM_BASE_RATE,
+    ASSIM_UNIT_BONUS = SIM_CONSTANTS.ASSIM_UNIT_BONUS,
+    ASSIM_GARRISON_FLOOR = SIM_CONSTANTS.ASSIM_GARRISON_FLOOR,
+    ASSIM_LEVEL_RESIST = SIM_CONSTANTS.ASSIM_LEVEL_RESIST,
+    ASSIM_LOCK_TICKS = SIM_CONSTANTS.ASSIM_LOCK_TICKS,
+    TURRET_RANGE = SIM_CONSTANTS.TURRET_RANGE,
+    TURRET_DPS = SIM_CONSTANTS.TURRET_DPS,
+    TURRET_MIN_GARRISON = SIM_CONSTANTS.TURRET_MIN_GARRISON,
+    TURRET_CAPTURE_RESIST = SIM_CONSTANTS.TURRET_CAPTURE_RESIST,
+    DEFENSE_FIELD_RANGE_PAD = SIM_CONSTANTS.DEFENSE_FIELD_RANGE_PAD,
+    DEFENSE_FIELD_LEVEL_RANGE = SIM_CONSTANTS.DEFENSE_FIELD_LEVEL_RANGE,
+    DEFENSE_FIELD_DPS = SIM_CONSTANTS.DEFENSE_FIELD_DPS,
+    DEFENSE_FIELD_LEVEL_DPS = SIM_CONSTANTS.DEFENSE_FIELD_LEVEL_DPS,
+    DEFENSE_FIELD_DEFENSE_BONUS = SIM_CONSTANTS.DEFENSE_FIELD_DEFENSE_BONUS,
+    DEFENSE_FIELD_BULWARK_BONUS = SIM_CONSTANTS.DEFENSE_FIELD_BULWARK_BONUS,
+    DEFENSE_FIELD_RELAY_RANGE = SIM_CONSTANTS.DEFENSE_FIELD_RELAY_RANGE,
+    STRATEGIC_PULSE_CYCLE = SIM_CONSTANTS.STRATEGIC_PULSE_CYCLE,
+    STRATEGIC_PULSE_ACTIVE = SIM_CONSTANTS.STRATEGIC_PULSE_ACTIVE,
+    STRATEGIC_PULSE_PROD = SIM_CONSTANTS.STRATEGIC_PULSE_PROD,
+    STRATEGIC_PULSE_SPEED = SIM_CONSTANTS.STRATEGIC_PULSE_SPEED,
+    STRATEGIC_PULSE_ASSIM = SIM_CONSTANTS.STRATEGIC_PULSE_ASSIM,
+    STRATEGIC_PULSE_CAP = SIM_CONSTANTS.STRATEGIC_PULSE_CAP,
+    STRATEGIC_PULSE_AI_BONUS = SIM_CONSTANTS.STRATEGIC_PULSE_AI_BONUS,
+    SOLAR_FLARE_GAP_MIN_TICKS = SIM_CONSTANTS.SOLAR_FLARE_GAP_MIN_TICKS,
+    SOLAR_FLARE_GAP_MAX_TICKS = SIM_CONSTANTS.SOLAR_FLARE_GAP_MAX_TICKS,
+    SOLAR_FLARE_WARN_TICKS = SIM_CONSTANTS.SOLAR_FLARE_WARN_TICKS,
+    CAP_SOFT_START = SIM_CONSTANTS.CAP_SOFT_START,
+    CAP_SOFT_FLOOR = SIM_CONSTANTS.CAP_SOFT_FLOOR,
+    DEFENSE_ASSIM_BONUS = SIM_CONSTANTS.DEFENSE_ASSIM_BONUS,
     /** Defense açık kaynak düğümlerinden flow ile çıkan birim payı bu kadar çarpılır (<1 = zayıf hub). */
-    DEFENSE_FLOW_MULT = 0.72,
-    SUPPLIED_UPGRADE_DISCOUNT = 0.94,
+    DEFENSE_FLOW_MULT = SIM_CONSTANTS.DEFENSE_FLOW_MULT,
+    SUPPLIED_UPGRADE_DISCOUNT = SIM_CONSTANTS.SUPPLIED_UPGRADE_DISCOUNT,
     DAILY_CHALLENGE_TIMEZONE = 'Europe/Istanbul';
-var SYNC_HASH_INTERVAL_TICKS = 90, TICK_RATE = Math.round(1 / TICK_DT);
+var SYNC_HASH_INTERVAL_TICKS = SIM_CONSTANTS.SYNC_HASH_INTERVAL_TICKS, TICK_RATE = SIM_CONSTANTS.TICK_RATE;
 /** İmleç bir düğüm üzerinde bu kadar ms kalınca gezegen bilgi kartı açılır (0 = anında). */
 var NODE_HOVER_DWELL_MS = 420;
 
-var NODE_TYPE_DEFS = {
-    core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#9ca9bd' },
-    forge: { label: 'Forge', prod: 1.44, def: 0.84, cap: 0.87, flow: 1.08, speed: 1.0, color: '#c6a18c' },
-    bulwark: { label: 'Bulwark', prod: 0.66, def: 1.58, cap: 1.3, flow: 0.86, speed: 0.93, color: '#afb7c3' },
-    relay: { label: 'Relay', prod: 0.86, def: 0.92, cap: 0.8, flow: 1.45, speed: 1.42, color: '#9bb6be' },
-    nexus: { label: 'Nexus', prod: 1.17, def: 1.13, cap: 1.13, flow: 1.22, speed: 1.12, color: '#b5acc1' },
-    gate: { label: 'Gate', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#f0be6a' },
-    turret: { label: 'Turret', prod: 0.0, def: 2.38, cap: 0.78, flow: 0.78, speed: 1.0, color: '#a4c0c4' },
-};
+var NODE_TYPE_DEFS = SHARED_NODE_TYPE_DEFS;
 var NODE_KIND_TEXTURE_SEEDS = {
     core: 11,
     forge: 23,
@@ -139,41 +148,8 @@ var NODE_KIND_TEXTURE_SEEDS = {
     turret: 67,
 };
 
-var AI_ARCHETYPES = [
-    { name: 'Rusher', aggr: 1.2, flow: 0.9, reserve: 0.85, upg: 0.45 },
-    { name: 'Balancer', aggr: 1.0, flow: 1.0, reserve: 1.0, upg: 0.65 },
-    { name: 'Turtle', aggr: 0.8, flow: 0.7, reserve: 1.25, upg: 0.85 },
-];
-
-var DIFFICULTY_PRESETS = {
-    easy: {
-        aiAggBase: 0.82, aiBuffer: 8, aiInterval: 40, flowInterval: 18,
-        aiUsesFog: false, adaptiveAI: false,
-        humanStartBoost: 1.2, aiStartBoost: 0.88,
-        humanProdMult: 1.08, aiProdMult: 0.94,
-        featureChance: 0.35, maxAttackTargets: 1,
-        aiReserveScale: 1.0, aiCommitMax: 0.72, aiCriticalCommitMax: 0.8, aiOpportunityRatio: 0.62,
-        aiExtraSources: 0, aiTargetHumanBias: 4, aiTargetCapitalBias: 12, aiFlowPeriod: 13, aiUpgradePeriod: 19,
-    },
-    normal: {
-        aiAggBase: 1.08, aiBuffer: 4, aiInterval: 26, flowInterval: 15,
-        aiUsesFog: false, adaptiveAI: true,
-        humanStartBoost: 1.0, aiStartBoost: 1.0,
-        humanProdMult: 1.0, aiProdMult: 1.0,
-        featureChance: 0.62, maxAttackTargets: 2,
-        aiReserveScale: 0.9, aiCommitMax: 0.82, aiCriticalCommitMax: 0.9, aiOpportunityRatio: 0.52,
-        aiExtraSources: 1, aiTargetHumanBias: 12, aiTargetCapitalBias: 28, aiFlowPeriod: 9, aiUpgradePeriod: 15,
-    },
-    hard: {
-        aiAggBase: 1.38, aiBuffer: 3, aiInterval: 18, flowInterval: 12,
-        aiUsesFog: true, adaptiveAI: true,
-        humanStartBoost: 0.92, aiStartBoost: 1.1,
-        humanProdMult: 0.98, aiProdMult: 1.07,
-        featureChance: 0.78, maxAttackTargets: 3,
-        aiReserveScale: 0.78, aiCommitMax: 0.92, aiCriticalCommitMax: 1.0, aiOpportunityRatio: 0.45,
-        aiExtraSources: 2, aiTargetHumanBias: 24, aiTargetCapitalBias: 56, aiFlowPeriod: 6, aiUpgradePeriod: 11,
-    },
-};
+var AI_ARCHETYPES = SHARED_AI_ARCHETYPES;
+var DIFFICULTY_PRESETS = SHARED_DIFFICULTY_PRESETS;
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ SPACE BACKDROP (background) Ã¢â€â‚¬Ã¢â€â‚¬
 var stars = [];
@@ -436,6 +412,7 @@ var G = {
     powerByPlayer: {}, capByPlayer: {}, unitByPlayer: {},
     campaign: { active: false, levelIndex: -1, unlocked: 1, completed: 0, reminderShown: {} },
     daily: { active: false, challenge: null, reminderShown: {}, bestTick: 0, completed: false },
+    sandbox: false,
 };
 var orbitalVisualCache = {};
 var territoryLayerCanvas = null;
@@ -499,10 +476,10 @@ function holdingFleetState(fleet) {
 }
 
 var ACHIEVEMENTS = [
-    { id: 'first_win', name: 'Ilk Zafer', check: function () { return G.winner === G.human; } },
+    { id: 'first_win', name: 'İlk Zafer', check: function () { return G.winner === G.human; } },
     { id: 'capture_10', name: '10 Gezegen Fethet', check: function () { return G.stats.nodesCaptured >= 10; } },
-    { id: 'upgrade_master', name: 'Upgrade Ustasi', check: function () { return G.stats.upgrades >= 5; } },
-    { id: 'fleet_lord', name: 'Filo Komutani', check: function () { return G.stats.fleetsSent >= 50; } },
+    { id: 'upgrade_master', name: 'Yükseltme Ustası', check: function () { return G.stats.upgrades >= 5; } },
+    { id: 'fleet_lord', name: 'Filo Komutanı', check: function () { return G.stats.fleetsSent >= 50; } },
     { id: 'fast_win', name: 'Hızlı Zafer', check: function () { return G.winner === G.human && G.tick < 500; } },
 ];
 function checkAchievements() {
@@ -517,14 +494,14 @@ function checkAchievements() {
                 if (typeof AudioFX !== 'undefined') AudioFX.achievement();
                 var toast = document.createElement('div');
                 toast.className = 'achievement-toast';
-                toast.textContent = 'Basarim: ' + a.name;
+                toast.textContent = 'Başarım: ' + a.name;
                 document.body.appendChild(toast);
                 setTimeout(function () { toast.remove(); }, 3000);
             }
         }
     } catch (e) {}
 }
-function defaultTune() { return { prod: 1, fspeed: FLEET_SPEED, def: DEF_FACTOR, flowInt: 15, aiAgg: AI_AGG, aiBuf: AI_BUF, aiInt: AI_INTERVAL, fogEnabled: false, aiAssist: true }; }
+function defaultTune() { return sharedDefaultTune(); }
 var gameToastTimer = 0, activeGameToastKind = '';
 function hideGameToast(kind) {
     var toast = document.getElementById('gameToastMsg');
@@ -542,10 +519,7 @@ function showGameToast(message, opts) {
     if (!toast) {
         toast = document.createElement('div');
         toast.id = 'gameToastMsg';
-        toast.className = 'achievement-toast';
-        toast.style.bottom = '92px';
-        toast.style.padding = '8px 16px';
-        toast.style.fontSize = '0.86rem';
+        toast.className = 'achievement-toast game-toast';
         document.body.appendChild(toast);
     }
     activeGameToastKind = opts.kind || 'info';
@@ -623,17 +597,16 @@ function fleetVis(f, pi, nodes) {
     } return false;
 }
 
-function nodeTypeOf(node) { return NODE_TYPE_DEFS[node.kind] || NODE_TYPE_DEFS.core; }
-function nodeLevelProdMult(node) { return 1 + (node.level - 1) * 0.15; }
-function nodeLevelDefMult(node) { return 1 + (node.level - 1) * 0.2; }
-function nodeLevelCapMult(node) { return 1 + (node.level - 1) * 0.12; }
+function nodeTypeOf(node) { return sharedNodeTypeOf(node); }
+function nodeLevelProdMult(node) { return sharedNodeLevelProdMult(node); }
+function nodeLevelDefMult(node) { return sharedNodeLevelDefMult(node); }
+function nodeLevelCapMult(node) { return sharedNodeLevelCapMult(node); }
 function nodeVisualScale(node, tick) {
     var visualLevel = getNodeUpgradeVisualLevel(node, tick === undefined ? G.tick : tick);
     return 1 + Math.max(0, visualLevel - 1) * UPGRADE_VISUAL_SCALE_PER_LEVEL;
 }
 function nodeCapacity(node) {
-    var td = nodeTypeOf(node);
-    return Math.floor(MAX_UNITS * td.cap * nodeLevelCapMult(node));
+    return sharedNodeCapacity(node);
 }
 function applyRulesetNodeKinds() {
     if (!G.rules || !G.rules.simplifyNodeKinds) return;
@@ -660,13 +633,7 @@ function preferredCameraNodeForPlayer(playerIndex) {
     return G.nodes[0] || null;
 }
 function upgradeCost(node) {
-    var cost = (48 + node.radius * 2.15 + (node.level - 1) * 36) * 1.18;
-    if (node.kind === 'relay') cost *= 0.92;
-    else if (node.kind === 'forge') cost *= 0.95;
-    else if (node.kind === 'bulwark') cost *= 1.08;
-    else if (node.kind === 'turret') cost *= 1.12;
-    if (node.supplied === true) cost *= SUPPLIED_UPGRADE_DISCOUNT;
-    return Math.max(28, Math.floor(cost));
+    return sharedUpgradeCost(node);
 }
 function canUpgradeNodeForOwner(node, owner, tick) {
     if (!node || node.owner !== owner || !isNodeAssimilated(node)) return false;
@@ -729,10 +696,10 @@ function computePowerByPlayer() {
     });
 }
 function pickAIProfile(aiIndex) {
-    return AI_ARCHETYPES[(aiIndex - 1) % AI_ARCHETYPES.length];
+    return sharedPickAIProfile(aiIndex);
 }
 function difficultyConfig(diff) {
-    return DIFFICULTY_PRESETS[diff] || DIFFICULTY_PRESETS.normal;
+    return sharedDifficultyConfig(diff);
 }
 function currentStrategicPulse(tick) {
     return getStrategicPulseState({
@@ -793,7 +760,7 @@ function replayAuthoritativeSolarFlareFeedback(previousTick, nextTick) {
     }
     if (transitions.blastTick >= 0) {
         triggerSolarFlareBlastFeedback({
-            message: 'Güneş patlaması vurdu. Sunucu state güncellendi; uzaydaki filolar temizlendi.',
+            message: 'Güneş patlaması vurdu. Sunucu durumu güncellendi; uzaydaki filolar temizlendi.',
         });
     }
 }
@@ -814,7 +781,7 @@ function strategicPulseToast() {
     if (G.state !== 'playing' || !G.strategicPulse.active) return;
     if (G.strategicPulse.announcedCycle === G.strategicPulse.cycle) return;
     G.strategicPulse.announcedCycle = G.strategicPulse.cycle;
-    showHintToast('Strategic pulse aktif: PULSE hubi +35% uretim, +18% filo hizi, +30% asimilasyon ve +18 cap verir.');
+    showHintToast('Strategic pulse aktif: PULSE hubı +35% üretim, +18% filo hızı, +30% asimilasyon ve +18 cap verir.');
 }
 function isLinkedWormhole(srcId, tgtId) {
     for (var i = 0; i < G.wormholes.length; i++) {
@@ -1070,6 +1037,7 @@ function initGame(seedStr, nc, diff, opts) {
     G.tick = 0;
     G.speed = 1;
     G.winner = -1;
+    G.sandbox = opts.sandbox === true;
     G.diffCfg = difficultyConfig(diff);
     G.rulesMode = rulesMode;
     G.rules = getRulesetConfig(rulesMode);
@@ -1471,7 +1439,7 @@ function dispatch(owner, srcIds, tgtId, pct) {
     if (blockedByBarrier && owner === G.human) {
         showGameToast('Geçit kilitli: ' + barrierGateObjectiveText() + ', sonra asimilasyon tamamlanana kadar bekle.');
     } else if (!didSend && friendlyRoom !== null && owner === G.human) {
-        showGameToast('Hedef dolu: dost takviye sigmiyor. Birlik cikar veya baska hedefe yonlendir.');
+        showGameToast('Hedef dolu: dost takviye sığmıyor. Birlik çıkar veya başka hedefe yönlendir.');
     }
 }
 
@@ -4291,17 +4259,17 @@ function syncMatchHudControls() {
     }
     if (upgradeHudBtn) {
         upgradeHudBtn.disabled = G.state !== 'playing' || !selectedUpgradeableNodeIds().length || !(G.rules && G.rules.allowUpgrade);
-        upgradeHudBtn.title = G.rules && G.rules.allowUpgrade ? 'Seçili gezegenleri yükselt' : 'Bu modda upgrade kapalı';
-        upgradeHudBtn.setAttribute('data-help', 'Seçili kendi node\'larını upgrade eder. Kısayol: U.');
+        upgradeHudBtn.title = G.rules && G.rules.allowUpgrade ? 'Seçili gezegenleri yükselt' : 'Bu modda yükseltme kapalı';
+        upgradeHudBtn.setAttribute('data-help', 'Seçili kendi gezegenlerini yükseltir. Kısayol: U.');
         upgradeHudBtn.setAttribute('data-help-disabled', G.rules && G.rules.allowUpgrade
-            ? 'Önce uygun bir kendi node seç. Upgrade yalnızca asimile, beklemede olmayan ve yeterli garnizonlu node\'larda çalışır.'
-            : 'Bu modda upgrade kapalı.');
+            ? 'Önce uygun bir kendi gezegenini seç. Yükseltme yalnızca asimile olmuş, beklemede olmayan ve yeterli garnizonlu gezegenlerde çalışır.'
+            : 'Bu modda yükseltme kapalı.');
     }
     if (defenseHudBtn) {
         defenseHudBtn.disabled = G.state !== 'playing' || !selectedOwnedNodeIds().length;
         defenseHudBtn.title = 'Seçili gezegenlerde savunmayı aç veya kapat';
-        defenseHudBtn.setAttribute('data-help', 'Defense: cephede daha dayanıklı ve alan hasarı güçlü; üretim, asimilasyon ve flow çıkışı düşer.');
-        defenseHudBtn.setAttribute('data-help-disabled', 'Defense için önce kendi bir node seç.');
+        defenseHudBtn.setAttribute('data-help', 'Savunma: cephede daha dayanıklı ve alan hasarı güçlü; üretim, asimilasyon ve flow çıkışı düşer.');
+        defenseHudBtn.setAttribute('data-help-disabled', 'Savunma için önce kendi gezegenlerinden birini seç.');
     }
     if (flowHudBtn) {
         var hasOwnedSelection = selectedOwnedNodeIds().length > 0;
@@ -4311,9 +4279,9 @@ function syncMatchHudControls() {
         flowHudBtn.title = inp.commandMode === 'flow' ? 'Flow hedefi seç' : 'Seçili kaynaklar için flow hedefi seç';
         flowHudBtn.classList.toggle('active', inp.commandMode === 'flow');
         flowHudBtn.setAttribute('data-help', inp.commandMode === 'flow'
-            ? 'Flow modu aktif: hedef node\'a tıkla, boş alana tıklarsan iptal olur.'
+            ? 'Flow modu aktif: hedef gezegene tıkla, boş alana tıklarsan iptal olur.'
             : 'Seçili kaynaklardan otomatik transfer hattı kurmak için hedef modu açar.');
-        flowHudBtn.setAttribute('data-help-disabled', 'Flow için önce bir veya daha fazla kendi node seç.');
+        flowHudBtn.setAttribute('data-help-disabled', 'Flow için önce bir veya daha fazla kendi gezegenini seç.');
     }
     if (chatToggle) {
         var chatAvailable = isRoomChatAvailable(net);
@@ -4327,7 +4295,7 @@ function syncMatchHudControls() {
         chatToggle.setAttribute('aria-expanded', chatAvailable && isChatComposerOpen() ? 'true' : 'false');
     }
     if (exportMapHudBtn) {
-        exportMapHudBtn.setAttribute('data-help', 'Geçerli maçı JSON custom map olarak dışa aktarır.');
+        exportMapHudBtn.setAttribute('data-help', 'Geçerli maçı özel harita JSON’u olarak dışa aktarır.');
     }
 }
 function setAudioEnabled(enabled) {
@@ -4396,7 +4364,7 @@ function labelForPlayer(idx) {
         }
     }
     if (!label) {
-        if (idx === G.human) label = 'You';
+        if (idx === G.human) label = 'Sen';
         else if (G.players[idx] && G.players[idx].isAI) {
             var aiN = 0;
             for (var p = 0; p <= idx; p++) if (G.players[p] && G.players[p].isAI) aiN++;
@@ -4405,7 +4373,7 @@ function labelForPlayer(idx) {
             label = 'Oyuncu ' + (idx + 1);
         }
     }
-    if (idx === G.human && label.indexOf('You') === -1) label += ' (You)';
+    if (idx === G.human && label.indexOf('Sen') === -1) label += ' (Sen)';
     return label;
 }
 
@@ -4414,21 +4382,13 @@ function pulseBonusSummary() {
 }
 
 function defenseFieldCfg() {
-    return {
-        baseRangePad: DEFENSE_FIELD_RANGE_PAD,
-        levelRangeBonus: DEFENSE_FIELD_LEVEL_RANGE,
-        baseDps: DEFENSE_FIELD_DPS,
-        levelDpsBonus: DEFENSE_FIELD_LEVEL_DPS,
-        defenseDpsBonus: DEFENSE_FIELD_DEFENSE_BONUS,
-        bulwarkDpsBonus: DEFENSE_FIELD_BULWARK_BONUS,
-        relayRangeBonus: DEFENSE_FIELD_RELAY_RANGE,
-    };
+    return buildDefenseFieldConfig();
 }
 
 function defenseFieldSummary(node) {
     var stats = getDefenseFieldStats(node, defenseFieldCfg());
-    if (!stats.active) return 'Field OFF: asimilasyon tamamlanınca açılır';
-    return 'Field: r' + Math.round(stats.range) + ' | düşman filo ' + stats.dps.toFixed(1) + '/s erir';
+    if (!stats.active) return 'Savunma alanı kapalı: asimilasyon tamamlanınca açılır';
+    return 'Savunma alanı: r' + Math.round(stats.range) + ' | düşman filo ' + stats.dps.toFixed(1) + '/s erir';
 }
 
 function barrierGateNodes() {
@@ -4528,7 +4488,7 @@ function selectionMetaText() {
         if (hoveredNodeForTip()) return '';
         var idleParts = [];
         if (G.mapFeature && G.mapFeature.type === 'barrier') idleParts.push(barrierGateStatusText());
-        if (G.mapMutator && G.mapMutator.type !== 'none') idleParts.push('Mutator: ' + mapMutatorName(G.mapMutator));
+        if (G.mapMutator && G.mapMutator.type !== 'none') idleParts.push('Mutatör: ' + mapMutatorName(G.mapMutator));
         if (G.encounters && G.encounters.length) idleParts.push(encounterStatusText());
         if (humanDoctrineId()) idleParts.push(humanDoctrineStatusText());
         if (G.strategicPulse && G.strategicPulse.active) idleParts.push(pulseBonusSummary());
@@ -4542,23 +4502,23 @@ function selectionMetaText() {
         var parts = [nodeTypeOf(node).label + ' L' + node.level, ownerLabel];
         if (node.owner === G.human) {
             if (G.rules && G.rules.allowUpgrade) {
-                if (isNodeUpgradePending(node, G.tick)) parts.push('Upgrade: Yükseliyor %' + Math.round(getNodeUpgradeProgress(node, G.tick) * 100) + ' -> L' + node.upgradeTargetLevel);
-                else if (node.level >= NODE_LEVEL_MAX) parts.push('Upgrade: MAX');
-                else parts.push('Upgrade: ' + upgradeCost(node));
+                if (isNodeUpgradePending(node, G.tick)) parts.push('Yükseltme: Yükseliyor %' + Math.round(getNodeUpgradeProgress(node, G.tick) * 100) + ' -> L' + node.upgradeTargetLevel);
+                else if (node.level >= NODE_LEVEL_MAX) parts.push('Yükseltme: MAX');
+                else parts.push('Yükseltme: ' + upgradeCost(node));
             } else {
-                parts.push('Upgrade OFF');
+                parts.push('Yükseltme kapalı');
             }
-            parts.push(node.defense ? ('Defense ON | Assim +' + Math.round((DEFENSE_ASSIM_BONUS - 1) * 100) + '% | Prod -' + Math.round((1 - DEFENSE_PROD_PENALTY) * 100) + '% | Flow çıkış -' + Math.round((1 - DEFENSE_FLOW_MULT) * 100) + '%') : 'Defense OFF');
+            parts.push(node.defense ? ('Savunma açık | Asimilasyon +' + Math.round((DEFENSE_ASSIM_BONUS - 1) * 100) + '% | Üretim -' + Math.round((1 - DEFENSE_PROD_PENALTY) * 100) + '% | Flow çıkış -' + Math.round((1 - DEFENSE_FLOW_MULT) * 100) + '%') : 'Savunma kapalı');
             if (node.kind !== 'turret') parts.push(defenseFieldSummary(node));
-            if (node.supplied === true) parts.push('Supply upgrade -' + Math.round((1 - SUPPLIED_UPGRADE_DISCOUNT) * 100) + '%');
-            if (!isNodeAssimilated(node)) parts.push('Assim ' + Math.round(clamp(node.assimilationProgress || 0, 0, 1) * 100) + '%');
+            if (node.supplied === true) parts.push('Tedarikli yükseltme -' + Math.round((1 - SUPPLIED_UPGRADE_DISCOUNT) * 100) + '%');
+            if (!isNodeAssimilated(node)) parts.push('Asimilasyon ' + Math.round(clamp(node.assimilationProgress || 0, 0, 1) * 100) + '%');
         } else if (node.strategic) {
-            parts.push('Strategic hub');
+            parts.push('Stratejik merkez');
         }
         if (node.gate) parts.push(node.owner === G.human && isNodeAssimilated(node) ? 'GATE ready: geçit açık' : 'GATE: bariyeri aşıp diğer tarafa geçişi açar');
         if (node.encounterType) parts.push(encounterName(node.encounterType));
         if (strategicPulseAppliesToNode(node.id)) parts.push(pulseBonusSummary());
-        else if (node.strategic) parts.push('Strategic hub: pulse buraya döndüğünde üretim, hız, asimilasyon ve cap bonusu gelir');
+        else if (node.strategic) parts.push('Stratejik merkez: pulse buraya döndüğünde üretim, hız, asimilasyon ve kapasite bonusu gelir');
         if (G.mapMutator && G.mapMutator.type !== 'none' && isPointInsideMapMutator({ point: node.pos, mapMutator: G.mapMutator })) {
             parts.push(mapMutatorName(G.mapMutator));
         }
@@ -4580,12 +4540,12 @@ function selectionMetaText() {
                 if (cost < minCost) minCost = cost;
                 if (cost > maxCost) maxCost = cost;
             }
-            summary.push('Upgrade ' + minCost + (maxCost !== minCost ? ('-' + maxCost) : ''));
+            summary.push('Yükseltme ' + minCost + (maxCost !== minCost ? ('-' + maxCost) : ''));
         } else {
-            summary.push('Upgrade MAX');
+            summary.push('Yükseltme MAX');
         }
     } else {
-        summary.push('Upgrade OFF');
+        summary.push('Yükseltme kapalı');
     }
     var suppliedCount = owned.filter(function (node) { return node.supplied === true; }).length;
     var gateCount = owned.filter(function (node) { return node.gate && isNodeAssimilated(node); }).length;
@@ -4804,11 +4764,11 @@ function currentCampaignObjectiveRows() {
 }
 
 function currentMissionPanelTitle(level) {
-    var title = buildMissionPanelTitle(level, currentMissionMode());
+    var title = polishTurkishText(buildMissionPanelTitle(level, currentMissionMode()));
     if (level && level.phaseTitle) {
         var phaseIndex = G.missionState ? (Number(G.missionState.phaseIndex) || 0) + 1 : 1;
         var phaseCount = G.missionScript && Array.isArray(G.missionScript.phases) ? G.missionScript.phases.length : phaseIndex;
-        title += ' | Faz ' + phaseIndex + '/' + phaseCount + ': ' + level.phaseTitle;
+        title += ' | Faz ' + phaseIndex + '/' + phaseCount + ': ' + polishTurkishText(level.phaseTitle);
     }
     return title;
 }
@@ -4820,7 +4780,8 @@ function currentMissionPanelSubtitle(level) {
         dailyCompleted: G.daily.completed,
         dailyBestTick: G.daily.bestTick,
     });
-    if (level && level.phaseBlurb) return [level.phaseBlurb, subtitle].filter(Boolean).join(' | ');
+    subtitle = polishTurkishText(subtitle);
+    if (level && level.phaseBlurb) return [polishTurkishText(level.phaseBlurb), subtitle].filter(Boolean).join(' | ');
     return subtitle;
 }
 
@@ -4837,7 +4798,7 @@ function refreshCampaignMissionPanels() {
                 title: currentMissionPanelTitle(level),
                 subtitle: currentMissionPanelSubtitle(level),
                 items: rows.map(function (row) {
-                    return { label: row.label, progressText: row.progressText, complete: row.complete, failed: row.failed, optional: row.optional };
+                    return { label: polishTurkishText(row.label), progressText: row.progressText, complete: row.complete, failed: row.failed, optional: row.optional };
                 }),
             });
         }
@@ -4871,7 +4832,7 @@ function maybeShowCampaignObjectiveReminder() {
         if (!row.remindAt || G.tick < row.remindAt) continue;
         if (reminderShown[row.id]) continue;
         reminderShown[row.id] = true;
-        if (row.coach) showHintToast((mode === 'daily' ? 'Challenge' : 'Misyon') + ' ipucu: ' + row.coach);
+        if (row.coach) showHintToast((mode === 'daily' ? 'Meydan okuma' : 'Misyon') + ' ipucu: ' + row.coach);
         break;
     }
 }
@@ -4898,14 +4859,14 @@ function humanGameOverStatRows() {
     var rows = [
         { label: 'Fethedilen', value: G.stats.nodesCaptured },
         { label: 'Filo emri', value: G.stats.fleetsSent },
-        { label: 'Upgrade', value: G.stats.upgrades },
-        { label: 'Uretim', value: G.stats.unitsProduced },
+        { label: 'Yükseltme', value: G.stats.upgrades },
+        { label: 'Üretim', value: G.stats.unitsProduced },
         { label: 'Flow kurulum', value: G.stats.flowLinksCreated },
         { label: 'Savunma aktivasyonu', value: G.stats.defenseActivations },
         { label: 'Pulse kontrol', value: (Math.round((G.stats.pulseControlTicks / TICK_RATE) * 10) / 10) + 's' },
         { label: 'Wormhole sevkiyat', value: G.stats.wormholeDispatches },
-        { label: 'Peak power', value: Math.round(G.stats.peakPower || 0) },
-        { label: 'Peak strain', value: Math.round((G.stats.peakCapPressure || 0) * 100) + '%' },
+        { label: 'Tepe güç', value: Math.round(G.stats.peakPower || 0) },
+        { label: 'Tepe kapasite baskısı', value: Math.round((G.stats.peakCapPressure || 0) * 100) + '%' },
         { label: 'Doktrin aktivasyonu', value: G.stats.doctrineActivations || 0 },
     ];
     if (G.stats.gateCaptures > 0) rows.push({ label: 'GATE fetih', value: G.stats.gateCaptures });
@@ -4914,7 +4875,7 @@ function humanGameOverStatRows() {
     for (var i = 0; i < missionRows.length; i++) {
         rows.push({
             label: (missionRows[i].optional ? 'Bonus' : 'Görev') + ' ' + (i + 1),
-            value: missionRows[i].complete ? 'Tamam' : (missionRows[i].failed ? 'Kacirildi' : missionRows[i].progressText),
+            value: missionRows[i].complete ? 'Tamam' : (missionRows[i].failed ? 'Kaçırıldı' : missionRows[i].progressText),
             emphasis: missionRows[i].complete && !missionRows[i].optional,
         });
     }
@@ -5183,7 +5144,7 @@ function handleAuthoritativeState(payload) {
     net.syncWarningText = '';
     if (typeof payload.hash === 'string' && payload.hash) rememberSyncSnapshot(payload.tick, payload.hash);
     if (firstAuthoritativeFrame) {
-        setRoomStatus('Online maç sunucu state ile senkronize edildi.', 'success');
+        setRoomStatus('Çevrimiçi maç sunucu durumuyla senkronize edildi.', 'success');
     }
 }
 
@@ -5440,7 +5401,7 @@ function syncHudLayoutMode() {
         hudMobileStatusBtn.setAttribute('aria-pressed', statusActive ? 'true' : 'false');
     }
     if (hudCommandHintBadge) {
-        hudCommandHintBadge.textContent = compact ? 'Dokunmatik HUD' : 'Mouse + kısayol';
+        hudCommandHintBadge.textContent = compact ? 'Dokunmatik HUD' : 'Fare + kısayol';
     }
     if (docEl && docEl.style) {
         docEl.style.setProperty('--mobile-chat-hud-offset', expanded ? '224px' : '112px');
@@ -5537,17 +5498,20 @@ function prefersCompactTuningLayout() {
     if (!window.matchMedia) return false;
     return prefersCompactGameplayLayout() || window.matchMedia('(pointer: coarse)').matches;
 }
+function isTuningAvailable() {
+    return G && G.sandbox === true && !net.online;
+}
 function syncTuningBackdrop() {
     var bd = $('tuningBackdrop');
     if (!bd) return;
-    var on = G.state === 'playing' && tuningOpen;
+    var on = G.state === 'playing' && tuningOpen && isTuningAvailable();
     bd.classList.toggle('hidden', !on);
     bd.setAttribute('aria-hidden', on ? 'false' : 'true');
 }
 function closeTuningPanel() {
     tuningOpen = false;
     if (tunePanel) tunePanel.classList.add('hidden');
-    if (tuneOpen) tuneOpen.classList.remove('hidden');
+    if (tuneOpen) tuneOpen.classList.toggle('hidden', !(G.state === 'playing' && isTuningAvailable()));
     if (tunePanel) {
         tunePanel.scrollTop = 0;
         tunePanel.scrollLeft = 0;
@@ -5555,6 +5519,10 @@ function closeTuningPanel() {
     syncTuningBackdrop();
 }
 function openTuningPanel() {
+    if (!isTuningAvailable()) {
+        closeTuningPanel();
+        return;
+    }
     tuningOpen = true;
     if (tunePanel) tunePanel.classList.remove('hidden');
     if (tuneOpen) tuneOpen.classList.add('hidden');
@@ -5673,8 +5641,10 @@ function showUI(st) {
         refreshCustomMapStatus();
     }
     closeScenarioMenu();
-    if (st === 'playing' && tuningOpen) { tunePanel.classList.remove('hidden'); tuneOpen.classList.add('hidden'); }
-    else if (st === 'playing') { tunePanel.classList.add('hidden'); tuneOpen.classList.remove('hidden'); }
+    var tuningAvailable = st === 'playing' && isTuningAvailable();
+    if (!tuningAvailable) tuningOpen = false;
+    if (tuningAvailable && tuningOpen) { tunePanel.classList.remove('hidden'); tuneOpen.classList.add('hidden'); }
+    else if (tuningAvailable) { tunePanel.classList.add('hidden'); tuneOpen.classList.remove('hidden'); }
     else { tunePanel.classList.add('hidden'); tuneOpen.classList.add('hidden'); }
     syncTuningBackdrop();
     syncPauseOverlayContent();
@@ -5822,7 +5792,7 @@ function doCreateRoom() {
     refreshAutoOnlineSeed();
     var sk = menuState.skirmish;
     if (roomMode === 'custom' && !currentCustomMapConfig) {
-        setRoomStatus('Custom oda açmak için önce bir custom map yükle.', true);
+        setRoomStatus('Özel oda açmak için önce bir özel harita yükle.', true);
         return;
     }
     net.socket.emit('createRoom', buildCreateRoomRequest({
@@ -6026,7 +5996,7 @@ function ensureSocket() {
         setRoomStatus(buildOnlineMatchStatusText(payload, net.localPlayerIndex, net.authoritativeEnabled), false);
         applyAudioPreference();
         showUI('playing');
-        showHintToast('Ana menü için sağ üstteki CIKIS butonunu kullan.');
+        showHintToast('Ana menü için sağ üstteki ÇIKIŞ butonunu kullan.');
         flushPendingAuthoritativeStateIfNeeded();
     });
 
@@ -6284,6 +6254,81 @@ function syncDailyChallengeState(challenge) {
 function todayDailyChallenge() {
     return serverDailyChallenge || buildDailyChallenge(todayDateKey(DAILY_CHALLENGE_TIMEZONE));
 }
+function polishTurkishText(value) {
+    if (value === undefined || value === null) return '';
+    var text = String(value);
+    var replacements = [
+        ['node\'larini', 'gezegenlerini'],
+        ['node\'larina', 'gezegenlerine'],
+        ['node\'lara', 'gezegenlere'],
+        ['node\'larda', 'gezegenlerde'],
+        ['node\'u', 'gezegeni'],
+        ['node\'da', 'gezegende'],
+        ['node', 'gezegen'],
+        ['Node', 'Gezegen'],
+        ['Acilis', 'Açılış'],
+        ['acilis', 'açılış'],
+        ['Hatti', 'Hattı'],
+        ['Cizgisi', 'Çizgisi'],
+        ['Yildiz', 'Yıldız'],
+        ['Koprusu', 'Köprüsü'],
+        ['Cift', 'Çift'],
+        ['Cekim', 'Çekim'],
+        ['Cukuru', 'Çukuru'],
+        ['Gecis', 'Geçiş'],
+        ['Uc', 'Üç'],
+        ['Dort', 'Dört'],
+        ['Ilk', 'İlk'],
+        ['Iki', 'İki'],
+        ['Fog', 'Sis'],
+        ['Gorev', 'Görev'],
+        ['Gunluk', 'Günlük'],
+        ['Mutator', 'Mutatör'],
+        ['kontrolunu', 'kontrolünü'],
+        ['kontrolu', 'kontrolü'],
+        ['baslangic', 'başlangıç'],
+        ['genisliyor', 'genişliyor'],
+        ['genisleme', 'genişleme'],
+        ['genislemeyi', 'genişlemeyi'],
+        ['Hizli', 'Hızlı'],
+        ['hizli', 'hızlı'],
+        ['Hiz', 'Hız'],
+        ['hiz', 'hız'],
+        ['yonde', 'yönde'],
+        ['acik', 'açık'],
+        ['acildiginda', 'açıldığında'],
+        ['acarsan', 'açarsan'],
+        ['savunmayi', 'savunmayı'],
+        ['savunma alani', 'savunma alanı'],
+        ['aldigin', 'aldığın'],
+        ['aldiginda', 'aldığında'],
+        ['dondugunde', 'döndüğünde'],
+        ['yakin', 'yakın'],
+        ['farki', 'farkı'],
+        ['baglayip', 'bağlayıp'],
+        ['bagla', 'bağla'],
+        ['zayif', 'zayıf'],
+        ['uretmez', 'üretmez'],
+        ['uret', 'üret'],
+        ['pahaliya', 'pahalıya'],
+        ['dusurulur', 'düşürülür'],
+        ['once', 'önce'],
+        ['ele gecir', 'ele geçir'],
+        ['altinda', 'altında'],
+        ['gorunurluk', 'görünürlük'],
+        ['kopru', 'köprü'],
+        ['ayni', 'aynı'],
+        ['sikistirir', 'sıkıştırır'],
+        ['Gorus', 'Görüş'],
+        ['gorus', 'görüş'],
+        ['saldiri', 'saldırı'],
+        ['pahali', 'pahalı'],
+    ];
+    for (var i = 0; i < replacements.length; i++) {
+        text = text.split(replacements[i][0]).join(replacements[i][1]);
+    }
+    return text;
+}
 function campaignFeatureName(feature) {
     if (!feature) return 'Standart';
     if (typeof feature === 'string') {
@@ -6303,7 +6348,7 @@ function campaignMutatorName(mutator) {
     return mapMutatorName(mutator);
 }
 function campaignLayoutName(level) {
-    return level && level.customMap ? 'El Yapimi' : 'Prosedurel';
+    return level && level.customMap ? 'El Yapımı' : 'Prosedürel';
 }
 function campaignSystemsSummary(level) {
     var parts = [
@@ -6314,9 +6359,9 @@ function campaignSystemsSummary(level) {
         'Turretler artık daha sert kuşatma hedefidir',
     ];
     var rulesMode = (level && level.rulesMode) || 'advanced';
-    if (level && level.customMap) parts.unshift('El yapimi sektor acilis rotalarini ve ilk cepheyi sabitler');
-    if (rulesMode === 'advanced') parts.push('Supply altındaki node daha ucuza upgrade olur');
-    if (level && level.encounters && level.encounters.length) parts.push('Encounterlar objective akışını değiştirir');
+    if (level && level.customMap) parts.unshift('El yapımı sektör açılış rotalarını ve ilk cepheyi sabitler');
+    if (rulesMode === 'advanced') parts.push('Supply altındaki gezegen daha ucuza upgrade olur');
+    if (level && level.encounters && level.encounters.length) parts.push('Encounterlar hedef akışını değiştirir');
     if (level && level.doctrineId) parts.push('Doktrin açılışta oyunun temposunu belirler');
     return parts.join(' | ');
 }
@@ -6330,21 +6375,21 @@ function campaignFeatureHint(level) {
     return 'Standart harita: supply zinciri, pulse zamanı ve savunma alanı kullanımı maçın temposunu belirler.';
 }
 function campaignLevelSummary(level) {
-    return 'Bölüm ' + level.id + ': ' + level.name + '\n' +
-        level.blurb + '\n' +
-        'Node: ' + level.nc + ' | AI: ' + level.aiCount + ' | Zorluk: ' + menuDifficultyLabel(level.diff) +
-        ' | Duzen: ' + campaignLayoutName(level) +
+    return 'Bölüm ' + level.id + ': ' + polishTurkishText(level.name) + '\n' +
+        polishTurkishText(level.blurb) + '\n' +
+        'Gezegen: ' + level.nc + ' | AI: ' + level.aiCount + ' | Zorluk: ' + menuDifficultyLabel(level.diff) +
+        ' | Düzen: ' + campaignLayoutName(level) +
         ' | Özellik: ' + campaignFeatureName(level.mapFeature) +
-        ' | Mutator: ' + campaignMutatorName(level.mapMutator || 'none') +
+        ' | Mutatör: ' + campaignMutatorName(level.mapMutator || 'none') +
         ' | Oyun Listesi: ' + playlistName(level.playlist || 'standard') +
         (level.doctrineId ? (' | Doktrin: ' + doctrineName(level.doctrineId)) : '') +
         (level.fog ? ' | Sis Açık' : ' | Sis Kapalı') + '\n' +
-        'Harita Dersi: ' + campaignFeatureHint(level) + '\n' +
-        'Mutator: ' + mapMutatorHint(level.mapMutator || 'none') + '\n' +
+        'Harita Dersi: ' + polishTurkishText(campaignFeatureHint(level)) + '\n' +
+        'Mutatör: ' + polishTurkishText(mapMutatorHint(level.mapMutator || 'none')) + '\n' +
         'Encounter: ' + encounterSummary(level.encounters || []) + '\n' +
         'Sistemler: ' + campaignSystemsSummary(level) + '\n' +
-        'Hedefler: ' + describeCampaignObjectives(level, { tickRate: TICK_RATE }) + '\n' +
-        'Plan: ' + (level.hint || 'Map temposunu pulse, supply ve savunma alanı ile yönet.');
+        'Hedefler: ' + polishTurkishText(describeCampaignObjectives(level, { tickRate: TICK_RATE })) + '\n' +
+        'Plan: ' + polishTurkishText(level.hint || 'Harita temposunu pulse, supply ve savunma alanı ile yönet.');
 }
 function refreshDailyChallengeCard() {
     var challenge = todayDailyChallenge();
@@ -6359,34 +6404,34 @@ function refreshDailyChallengeCard() {
         encounters: challenge.encounters || [],
         humanIndex: 0,
     }, { tickRate: TICK_RATE }).map(function (row) {
-        return { label: row.label, progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
+        return { label: polishTurkishText(row.label), progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
     });
     if (dailyChallengeCard) {
         renderMissionPanel(dailyChallengeCard, {
-            title: 'Bugünün Challenge\'ı',
+            title: 'Bugünün Meydan Okuması',
             subtitle: subtitle,
             items: items,
         });
     }
-    if (menuDailySpotlightTitle) menuDailySpotlightTitle.textContent = challenge.title || 'Günlük challenge hazır';
+    if (menuDailySpotlightTitle) menuDailySpotlightTitle.textContent = challenge.title || 'Günlük meydan okuma hazır';
     if (menuDailySpotlightCopy) menuDailySpotlightCopy.textContent = challenge.blurb + (progress.completed ? ' | Temizlendi' : (progress.bestTick > 0 ? ' | En iyi: ' + progress.bestTick + ' tick' : ' | İlk temizliği yap'));
-    if (menuHubDailyBtn) menuHubDailyBtn.textContent = progress.completed ? 'Challenge\'ı Tekrar Oyna' : 'Günlük Challenge';
+    if (menuHubDailyBtn) menuHubDailyBtn.textContent = progress.completed ? 'Meydan Okumayı Tekrar Oyna' : 'Günlük Meydan Okuma';
 }
 function refreshCustomMapStatus() {
     if (!customMapStatusEl) return;
     if (!currentCustomMapConfig) {
-        customMapStatusEl.textContent = 'Custom map yükleyip başlangıç düzenini, anomalileri ve açılış node sahipliklerini sabitleyebilirsin.';
+        customMapStatusEl.textContent = 'Özel harita yükleyip başlangıç düzenini, anomalileri ve açılış gezegen sahipliklerini sabitleyebilirsin.';
         return;
     }
     customMapStatusEl.textContent =
-        'Hazır custom map: ' + currentCustomMapConfig.name +
-        ' | ' + currentCustomMapConfig.nodes.length + ' node' +
+        'Hazır özel harita: ' + currentCustomMapConfig.name +
+        ' | ' + currentCustomMapConfig.nodes.length + ' gezegen' +
         ' | ' + currentCustomMapConfig.playerCount + ' oyuncu' +
         ' | ' + campaignFeatureName(currentCustomMapConfig.mapFeature) +
-        ' | Mutator: ' + campaignMutatorName(currentCustomMapConfig.mapMutator || 'none') +
-        ' | Playlist: ' + playlistName(currentCustomMapConfig.playlist || 'standard') +
+        ' | Mutatör: ' + campaignMutatorName(currentCustomMapConfig.mapMutator || 'none') +
+        ' | Oyun listesi: ' + playlistName(currentCustomMapConfig.playlist || 'standard') +
         (currentCustomMapConfig.doctrineId ? (' | Doktrin: ' + doctrineName(currentCustomMapConfig.doctrineId)) : '') +
-        (currentCustomMapConfig.encounters && currentCustomMapConfig.encounters.length ? (' | Encounter: ' + encounterSummary(currentCustomMapConfig.encounters)) : '');
+        (currentCustomMapConfig.encounters && currentCustomMapConfig.encounters.length ? (' | Karşılaşma: ' + encounterSummary(currentCustomMapConfig.encounters)) : '');
 }
 function applyCampaignLevelSelection(levelIndex) {
     var unlocked = G.campaign.unlocked || 1;
@@ -6423,7 +6468,7 @@ function refreshCampaignUI() {
             if (i < completed) bubble.classList.add('done');
             if (i === campaignSelectedLevel) bubble.classList.add('selected');
             var status = i < completed ? 'Geçildi' : (i < unlocked ? 'Açık' : 'Kilitli');
-            bubble.title = 'Bölüm ' + lvl.id + ' - ' + lvl.name + ' (' + status + ')';
+            bubble.title = 'Bölüm ' + lvl.id + ' - ' + polishTurkishText(lvl.name) + ' (' + status + ')';
             if (i < unlocked) {
                 (function (idx) {
                     bubble.addEventListener('click', function () {
@@ -6440,8 +6485,8 @@ function refreshCampaignUI() {
     var selected = CAMPAIGN_LEVELS[campaignSelectedLevel];
     var selectedDone = campaignSelectedLevel < completed;
     var missionData = {
-        title: 'Bölüm ' + selected.id + ': ' + selected.name,
-        subtitle: selected.blurb + ' | AI ' + selected.aiCount + ' | ' + menuDifficultyLabel(selected.diff) + ' | ' + campaignLayoutName(selected) + ' | ' + campaignFeatureName(selected.mapFeature) + ' | Mutator: ' + campaignMutatorName(selected.mapMutator || 'none') + ' | Oyun Listesi: ' + playlistName(selected.playlist || 'standard') + (selected.doctrineId ? (' | Doktrin: ' + doctrineName(selected.doctrineId)) : '') + ' | ' + (selectedDone ? 'Durum: Geçildi' : 'Durum: Hazır'),
+        title: 'Bölüm ' + selected.id + ': ' + polishTurkishText(selected.name),
+        subtitle: polishTurkishText(selected.blurb) + ' | AI ' + selected.aiCount + ' | ' + menuDifficultyLabel(selected.diff) + ' | ' + campaignLayoutName(selected) + ' | ' + campaignFeatureName(selected.mapFeature) + ' | Mutatör: ' + campaignMutatorName(selected.mapMutator || 'none') + ' | Oyun Listesi: ' + playlistName(selected.playlist || 'standard') + (selected.doctrineId ? (' | Doktrin: ' + doctrineName(selected.doctrineId)) : '') + ' | ' + (selectedDone ? 'Durum: Geçildi' : 'Durum: Hazır'),
         items: evaluateCampaignObjectives(selected, {
             tick: 0,
             didWin: false,
@@ -6451,7 +6496,7 @@ function refreshCampaignUI() {
             encounters: selected.encounters || [],
             humanIndex: 0,
         }, { tickRate: TICK_RATE }).map(function (row) {
-            return { label: row.label, progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
+            return { label: polishTurkishText(row.label), progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
         }),
     };
     if (scenarioMissionEl) renderMissionPanel(scenarioMissionEl, missionData);
@@ -6459,9 +6504,9 @@ function refreshCampaignUI() {
     if (contentCampaignProgressEl) {
         contentCampaignProgressEl.textContent = 'Geçilen: ' + completed + ' / ' + CAMPAIGN_LEVELS.length + ' | Açılan: ' + unlocked + ' / ' + CAMPAIGN_LEVELS.length + ' | Seçili: Bölüm ' + selected.id;
     }
-    if (menuCampaignSpotlightTitle) menuCampaignSpotlightTitle.textContent = 'Bölüm ' + selected.id + ': ' + selected.name;
+    if (menuCampaignSpotlightTitle) menuCampaignSpotlightTitle.textContent = 'Bölüm ' + selected.id + ': ' + polishTurkishText(selected.name);
     if (menuCampaignSpotlightCopy) {
-        menuCampaignSpotlightCopy.textContent = selected.blurb + ' | ' + (selectedDone ? 'Geçildi' : 'Hazır') + ' | AI ' + selected.aiCount + ' | ' + playlistName(selected.playlist || 'standard');
+        menuCampaignSpotlightCopy.textContent = polishTurkishText(selected.blurb) + ' | ' + (selectedDone ? 'Geçildi' : 'Hazır') + ' | AI ' + selected.aiCount + ' | ' + playlistName(selected.playlist || 'standard');
     }
     if (menuContentCardMeta) {
         menuContentCardMeta.textContent = 'Seçili görev // Bölüm ' + selected.id + ' | ' + (selectedDone ? 'Geçildi' : 'Hazır');
@@ -6484,17 +6529,19 @@ function finalizeLocalGameStart(fogOn) {
     applyAudioPreference();
     showUI('playing');
 }
-function startSinglePlayerGame() {
+function startSinglePlayerGame(opts) {
+    opts = opts || {};
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
     clearRoomState('');
     var startConfig = buildSkirmishStartConfig(menuState.skirmish);
     currentCustomMapConfig = startConfig.customMapConfig;
+    startConfig.initOptions.sandbox = opts.sandbox === true;
     initGame(startConfig.seed, startConfig.nodeCount, startConfig.difficulty, startConfig.initOptions);
     finalizeLocalGameStart(startConfig.fogEnabled);
     refreshCustomMapStatus();
 }
 function startSandboxGame() {
-    startSinglePlayerGame();
+    startSinglePlayerGame({ sandbox: true });
     if (prefersCompactTuningLayout()) {
         tuningOpen = false;
         showUI('playing');
@@ -6546,7 +6593,7 @@ function exportCurrentMapState() {
             presetLink.download = (currentCustomMapConfig.name || 'stellar-map').replace(/[^a-z0-9_-]+/gi, '-').toLowerCase() + '.json';
             presetLink.click();
             URL.revokeObjectURL(presetUrl);
-            showGameToast('Hazır custom map dışa aktarıldı.');
+            showGameToast('Hazır özel harita dışa aktarıldı.');
             return;
         }
         showGameToast('Dışa aktarmak için önce bir maç aç.');
@@ -7054,15 +7101,15 @@ function loop(ts) {
                 G.daily.completed = dailyProgress.completed;
                 refreshDailyChallengeCard();
                 if (G.winner === G.human) {
-                    goTitle.textContent = 'Günlük Challenge Tamamlandı';
+                    goTitle.textContent = 'Günlük Meydan Okuma Tamamlandı';
                     goMsg.textContent = dailyProgress.bestTick === G.tick ?
                         ('Yeni en iyi süre: ' + G.tick + ' tick.') :
-                        ('Challenge temizlendi. En iyi süre: ' + dailyProgress.bestTick + ' tick.');
+                        ('Meydan okuma temizlendi. En iyi süre: ' + dailyProgress.bestTick + ' tick.');
                 } else {
-                    goTitle.textContent = 'Günlük Challenge Kaçırıldı';
+                    goTitle.textContent = 'Günlük Meydan Okuma Kaçırıldı';
                     goMsg.textContent = G.missionFailureText || (dailyProgress.bestTick > 0 ?
                         ('Bugünün en iyi sonucun: ' + dailyProgress.bestTick + ' tick. Bir tur daha dene.') :
-                        'Bugünün challengei henüz temizlenmedi. Açılışı daha agresif kur.');
+                        'Bugünün meydan okuması henüz temizlenmedi. Açılışı daha agresif kur.');
                 }
             }
             if (goStatsEl) renderStatRows(goStatsEl, humanGameOverStatRows());

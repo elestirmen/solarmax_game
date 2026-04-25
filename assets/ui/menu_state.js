@@ -5,9 +5,9 @@ import { normalizeRulesetMode } from '../sim/ruleset.js';
 export var MENU_PANEL_META = {
     hub: { title: '', copy: '' },
     single_customize: { title: 'Oyunu Özelleştir', copy: 'Serbest maç ayarları ikinci katmanda durur; hızlı başlat akışından ayrıdır.' },
-    content: { title: 'Senaryo ve Challenge', copy: 'Kampanya ve günlük challenge aynı panelde toplanır; serbest maç ayarlarından ayrıdır.' },
+    content: { title: 'Senaryo ve Meydan Okuma', copy: 'Kampanya ve günlük meydan okuma aynı panelde toplanır; serbest maç ayarlarından ayrıdır.' },
     multiplayer: { title: 'Çok Oyunculu', copy: 'İlk ekranda yalnızca nick, oda listesi, oda kur ve koda katıl akışı görünür.' },
-    host_setup: { title: 'Oda Kurulumu', copy: 'Host ayarları ayrı açılır; standard room varsayımları shared menu state üzerinden korunur.' },
+    host_setup: { title: 'Oda Kurulumu', copy: 'Host ayarları ayrı açılır; standart oda varsayımları ortak menü durumu üzerinden korunur.' },
     tools: { title: 'Araçlar', copy: 'Özel harita, liderlik ve yardım ana oyun başlatma akışından ayrıldı.' },
 };
 
@@ -78,14 +78,14 @@ export function buildMenuHeroSummary(skirmish) {
     var fogLabel = state.fogEnabled ? 'Sis Açık' : 'Sis Kapalı';
 
     return {
-        seedChip: 'Seed ' + seed,
+        seedChip: 'Tohum ' + seed,
         playlistChip: playlist,
         doctrineChip: doctrine,
         modeChip: rulesMode,
         fogChip: fogLabel,
-        quickStatus: 'Hızlı başlat | ' + clampMenuNodeCount(state.nodeCount) + ' node | ' + menuDifficultyLabel(difficulty) + ' | ' + playlist + ' | ' + doctrine,
-        stagePlaylistLabel: 'OYUN LISTESI // ' + String(playlist).toUpperCase(),
-        stageDoctrineLabel: 'DOKTRIN // ' + String(doctrine).toUpperCase(),
+        quickStatus: 'Hızlı başlat | ' + clampMenuNodeCount(state.nodeCount) + ' gezegen | ' + menuDifficultyLabel(difficulty) + ' | ' + playlist + ' | ' + doctrine,
+        stagePlaylistLabel: 'OYUN LİSTESİ // ' + String(playlist).toUpperCase(),
+        stageDoctrineLabel: 'DOKTRİN // ' + String(doctrine).toUpperCase(),
     };
 }
 

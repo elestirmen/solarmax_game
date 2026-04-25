@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { pickNodeKindForRadius, upgradeCost } from '../assets/sim/shared_config.js';
+import { SIM_CONSTANTS, buildDefenseFieldConfig, pickNodeKindForRadius, upgradeCost } from '../assets/sim/shared_config.js';
 
 function TestRNG(seed) {
     this.s = seed | 0;
@@ -53,4 +53,16 @@ test('pickNodeKindForRadius keeps nexus comparatively rare even among large plan
     assert.equal(counts.nexus < counts.bulwark, true);
     assert.equal(counts.nexus < counts.core, true);
     assert.equal(counts.nexus < 240, true);
+});
+
+test('defense field config is sourced from shared constants', function () {
+    assert.deepEqual(buildDefenseFieldConfig(), {
+        baseRangePad: SIM_CONSTANTS.DEFENSE_FIELD_RANGE_PAD,
+        baseDps: SIM_CONSTANTS.DEFENSE_FIELD_DPS,
+        levelRangeBonus: SIM_CONSTANTS.DEFENSE_FIELD_LEVEL_RANGE,
+        levelDpsBonus: SIM_CONSTANTS.DEFENSE_FIELD_LEVEL_DPS,
+        defenseDpsBonus: SIM_CONSTANTS.DEFENSE_FIELD_DEFENSE_BONUS,
+        bulwarkDpsBonus: SIM_CONSTANTS.DEFENSE_FIELD_BULWARK_BONUS,
+        relayRangeBonus: SIM_CONSTANTS.DEFENSE_FIELD_RELAY_RANGE,
+    });
 });

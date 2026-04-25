@@ -50,9 +50,9 @@ test('buildMenuHeroSummary returns readable landing labels', function () {
         fogEnabled: true,
     });
 
-    assert.equal(summary.seedChip, 'Seed 77');
+    assert.equal(summary.seedChip, 'Tohum 77');
     assert.equal(summary.playlistChip, 'Frontier');
-    assert.match(summary.quickStatus, /18 node/);
+    assert.match(summary.quickStatus, /18 gezegen/);
     assert.match(summary.quickStatus, /Zor/);
     assert.equal(summary.modeChip, 'Gelişmiş');
     assert.equal(summary.fogChip, 'Sis Açık');

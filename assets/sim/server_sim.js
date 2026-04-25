@@ -22,6 +22,7 @@ import { syncBarrierGateNodes } from './barrier.js';
 import {
     PLAYER_COLORS,
     SIM_CONSTANTS,
+    buildDefenseFieldConfig,
     defaultTune,
     difficultyConfig,
     hashSeed,
@@ -620,15 +621,7 @@ export function simulateAuthoritativeTick(state) {
         nodes: state.nodes,
         fleets: state.fleets,
         dt: SIM_CONSTANTS.TICK_DT,
-        cfg: {
-            baseRangePad: 24,
-            baseDps: 2.6,
-            levelRangeBonus: 4,
-            levelDpsBonus: 0.3,
-            defenseDpsBonus: SIM_CONSTANTS.DEFENSE_FIELD_DEFENSE_BONUS,
-            bulwarkDpsBonus: 1.18,
-            relayRangeBonus: 6,
-        },
+        cfg: buildDefenseFieldConfig(),
     });
     pushTransientBeams(state.fieldBeams, fieldReport && fieldReport.arcs, {
         life: 0.1,

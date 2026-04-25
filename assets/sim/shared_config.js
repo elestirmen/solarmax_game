@@ -16,6 +16,7 @@ export var SIM_CONSTANTS = {
     UPGRADE_DURATION_TICKS: 60,
     UPGRADE_VISUAL_SCALE_PER_LEVEL: 0.18,
     DDA_MAX_BOOST: 0.2,
+    GRAVITY_RADIUS: 170,
     GRAVITY_SPEED_MULT: 1.35,
     SUPPLY_DIST: 220,
     TERRITORY_RADIUS_BASE: 88,
@@ -36,7 +37,13 @@ export var SIM_CONSTANTS = {
     TURRET_DPS: 16,
     TURRET_MIN_GARRISON: 8,
     TURRET_CAPTURE_RESIST: 1.7,
+    DEFENSE_FIELD_RANGE_PAD: 24,
+    DEFENSE_FIELD_LEVEL_RANGE: 4,
+    DEFENSE_FIELD_DPS: 2.6,
+    DEFENSE_FIELD_LEVEL_DPS: 0.3,
     DEFENSE_FIELD_DEFENSE_BONUS: 1.1,
+    DEFENSE_FIELD_BULWARK_BONUS: 1.18,
+    DEFENSE_FIELD_RELAY_RANGE: 6,
     STRATEGIC_PULSE_CYCLE: 540,
     STRATEGIC_PULSE_ACTIVE: 300,
     STRATEGIC_PULSE_PROD: 1.35,
@@ -310,6 +317,32 @@ export function upgradeCost(node) {
     else if (node && node.kind === 'turret') cost *= 1.12;
     if (node && node.supplied === true) cost *= SIM_CONSTANTS.SUPPLIED_UPGRADE_DISCOUNT;
     return Math.max(28, Math.floor(cost));
+}
+
+function overrideFiniteNumber(target, key, value) {
+    var next = Number(value);
+    if (Number.isFinite(next)) target[key] = next;
+}
+
+export function buildDefenseFieldConfig(overrides) {
+    var cfg = {
+        baseRangePad: SIM_CONSTANTS.DEFENSE_FIELD_RANGE_PAD,
+        baseDps: SIM_CONSTANTS.DEFENSE_FIELD_DPS,
+        levelRangeBonus: SIM_CONSTANTS.DEFENSE_FIELD_LEVEL_RANGE,
+        levelDpsBonus: SIM_CONSTANTS.DEFENSE_FIELD_LEVEL_DPS,
+        defenseDpsBonus: SIM_CONSTANTS.DEFENSE_FIELD_DEFENSE_BONUS,
+        bulwarkDpsBonus: SIM_CONSTANTS.DEFENSE_FIELD_BULWARK_BONUS,
+        relayRangeBonus: SIM_CONSTANTS.DEFENSE_FIELD_RELAY_RANGE,
+    };
+    overrides = overrides && typeof overrides === 'object' ? overrides : {};
+    overrideFiniteNumber(cfg, 'baseRangePad', overrides.baseRangePad);
+    overrideFiniteNumber(cfg, 'baseDps', overrides.baseDps);
+    overrideFiniteNumber(cfg, 'levelRangeBonus', overrides.levelRangeBonus);
+    overrideFiniteNumber(cfg, 'levelDpsBonus', overrides.levelDpsBonus);
+    overrideFiniteNumber(cfg, 'defenseDpsBonus', overrides.defenseDpsBonus);
+    overrideFiniteNumber(cfg, 'bulwarkDpsBonus', overrides.bulwarkDpsBonus);
+    overrideFiniteNumber(cfg, 'relayRangeBonus', overrides.relayRangeBonus);
+    return cfg;
 }
 
 export function pickAIProfile(aiIndex) {

@@ -4,12 +4,12 @@ export var ENCOUNTER_DEFS = {
     mega_turret: {
         id: 'mega_turret',
         label: 'Mega Turret',
-        blurb: 'Genis menzilli sabit savunma. Dusurulurse hat acilir.',
+        blurb: 'Geniş menzilli sabit savunma. Düşürülürse hat açılır.',
     },
     relay_core: {
         id: 'relay_core',
         label: 'Relay Core',
-        blurb: 'Ele gecirilirse supply omurgasina tempo ve uretim kazandirir.',
+        blurb: 'Ele geçirilirse supply omurgasına tempo ve üretim kazandırır.',
     },
 };
 

@@ -28,23 +28,23 @@ test('resolveMissionDefinition prefers daily, then campaign, then objective matc
 
     assert.equal(daily.title, 'Daily');
     assert.equal(campaign.title, 'Campaign');
-    assert.equal(objective.title, 'Hedef Maci');
+    assert.equal(objective.title, 'Hedef Maçı');
 });
 
 test('resolveMissionMode and panel title/subtitle reflect mission type', function () {
     var mode = resolveMissionMode({
         dailyActive: true,
-        dailyChallenge: { title: 'Gunluk' },
+        dailyChallenge: { title: 'Günlük' },
     });
     var title = buildMissionPanelTitle({ id: 3, name: 'Relay' }, 'campaign');
     var subtitle = buildMissionPanelSubtitle({
         mode: 'daily',
-        level: { title: 'Gunluk', blurb: 'Aciklama', playlist: 'zen', doctrineId: 'logistics' },
+        level: { title: 'Günlük', blurb: 'Açıklama', playlist: 'zen', doctrineId: 'logistics' },
         dailyBestTick: 420,
     });
 
     assert.equal(mode, 'daily');
-    assert.equal(title, 'Bolum 3: Relay');
+    assert.equal(title, 'Bölüm 3: Relay');
     assert.match(subtitle, /En iyi: 420 tick/);
 });
 

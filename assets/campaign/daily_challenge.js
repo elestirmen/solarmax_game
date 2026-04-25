@@ -27,9 +27,15 @@ function featureLabel(type) {
     return 'Standart';
 }
 
+function difficultyLabel(diff) {
+    if (diff === 'easy') return 'Kolay';
+    if (diff === 'hard') return 'Zor';
+    return 'Normal';
+}
+
 function titleParts(hash) {
-    var prefixes = ['Nova', 'Solar', 'Zenith', 'Apex', 'Iron', 'Silent', 'Crimson', 'Vector'];
-    var suffixes = ['Drift', 'Front', 'Pulse', 'Siege', 'Relay', 'Breach', 'Orbit', 'Signal'];
+    var prefixes = ['Nova', 'Solar', 'Zirve', 'Doruk', 'Demir', 'Sessiz', 'Kızıl', 'Vektör'];
+    var suffixes = ['Sürüklenme', 'Cephe', 'Nabız', 'Kuşatma', 'Röle', 'Yarık', 'Yörünge', 'Sinyal'];
     return {
         prefix: prefixes[hash % prefixes.length],
         suffix: suffixes[(hash >>> 3) % suffixes.length],
@@ -42,9 +48,9 @@ function objectiveForFeature(feature, nodeCount, aiCount, hash) {
             id: 'daily-wormhole',
             type: 'wormhole_dispatches',
             target: 3 + (hash % 3),
-            label: 'Wormhole ile hiz baskisi kur',
+            label: 'Wormhole ile hız baskısı kur',
             remindAt: 240,
-            coach: 'Wormhole cikisini alip ritmik kucuk dalgalar gonder; uzun rota oynama.',
+            coach: 'Wormhole çıkışını alıp ritmik küçük dalgalar gönder; uzun rota oynama.',
         };
     }
     if (feature === 'barrier') {
@@ -52,9 +58,9 @@ function objectiveForFeature(feature, nodeCount, aiCount, hash) {
             id: 'daily-gate',
             type: 'gate_captures',
             target: 1,
-            label: 'En az 1 GATE ele gecir',
+            label: 'En az 1 GATE ele geçir',
             remindAt: 300,
-            coach: 'GATE alinmadan haritanin yari gucu kapali kalir; ilk buyuk hedefi dagitma.',
+            coach: 'GATE alınmadan haritanın yarı gücü kapalı kalır; ilk büyük hedefi dağıtma.',
         };
     }
     if (feature === 'gravity') {
@@ -62,18 +68,18 @@ function objectiveForFeature(feature, nodeCount, aiCount, hash) {
             id: 'daily-pulse',
             type: 'pulse_control_ticks',
             target: 180 + ((hash % 4) * 30),
-            label: 'Merkez pulse hattini tut',
+            label: 'Merkez pulse hattını tut',
             remindAt: 270,
-            coach: 'Gravity alanini kestirme gibi kullan; pulse hub etrafinda hizli donus kur.',
+            coach: 'Gravity alanını kestirme gibi kullan; pulse hub etrafında hızlı dönüş kur.',
         };
     }
     return {
         id: 'daily-owned',
         type: 'owned_nodes',
         target: Math.max(4, Math.min(nodeCount - 2, 4 + aiCount + (hash % 3))),
-        label: 'Harita kontrolunu erkenden kur',
+        label: 'Harita kontrolünü erkenden kur',
         remindAt: 210,
-        coach: 'Ekonomi node\'larini baglayip supply zincirini koparma; ilk 2 genisleme tempoyu belirler.',
+        coach: 'Ekonomi gezegenlerini bağlayıp supply zincirini koparma; ilk 2 genişleme tempoyu belirler.',
     };
 }
 
@@ -84,7 +90,7 @@ function secondaryObjective(nodeCount, aiCount, hash) {
             id: 'daily-flow',
             type: 'flow_links_created',
             target: Math.max(1, Math.min(3, 1 + (aiCount > 2 ? 1 : 0))),
-            label: 'Arka ekonomi ile cepheyi flow ile bagla',
+            label: 'Arka ekonomi ile cepheyi flow ile bağla',
             optional: true,
         };
     }
@@ -93,7 +99,7 @@ function secondaryObjective(nodeCount, aiCount, hash) {
             id: 'daily-upgrade',
             type: 'upgrades',
             target: Math.max(2, Math.min(4, 2 + ((nodeCount + aiCount) % 2))),
-            label: 'Ekonomini upgrade ile buyut',
+            label: 'Ekonomini upgrade ile büyüt',
             optional: true,
         };
     }
@@ -101,7 +107,7 @@ function secondaryObjective(nodeCount, aiCount, hash) {
         id: 'daily-cap',
         type: 'peak_cap_pressure_below',
         target: aiCount >= 4 ? 1.08 : 1.03,
-        label: aiCount >= 4 ? 'Strain zirvesini %108 altinda tut' : 'Straini %103 altinda tut',
+        label: aiCount >= 4 ? 'Strain zirvesini %108 altında tut' : 'Straini %103 altında tut',
         optional: true,
     };
 }
@@ -131,7 +137,7 @@ export function buildDailyChallenge(inputDate) {
             id: 'daily-win',
             type: 'win_before_tick',
             target: timingBase + ((hash >>> 22) % 4) * 90,
-            label: 'Gunluk challengei tempolu bitir',
+            label: 'Günlük meydan okumayı tempolu bitir',
             optional: true,
         },
     ];
@@ -139,7 +145,7 @@ export function buildDailyChallenge(inputDate) {
     return {
         key: key,
         title: parts.prefix + ' ' + parts.suffix,
-        blurb: nodeCount + ' node | ' + aiCount + ' AI | ' + diff.toUpperCase() + ' | ' + featureLabel(feature) + (mapMutator !== 'none' ? (' | ' + mapMutatorName(mapMutator)) : '') + (fog ? ' | Fog' : ''),
+        blurb: nodeCount + ' gezegen | ' + aiCount + ' AI | ' + difficultyLabel(diff) + ' | ' + featureLabel(feature) + (mapMutator !== 'none' ? (' | ' + mapMutatorName(mapMutator)) : '') + (fog ? ' | Sis' : ''),
         seed: 'daily-' + key,
         nc: nodeCount,
         diff: diff,
@@ -148,7 +154,7 @@ export function buildDailyChallenge(inputDate) {
         mapFeature: feature,
         mapMutator: mapMutator,
         rulesMode: 'advanced',
-        hint: 'Bugunun haritasinda tempo degisimi anomali, pulse ve mutator etrafinda kuruluyor. ' + mapMutatorHint(mapMutator),
+        hint: 'Bugünün haritasında tempo değişimi anomali, pulse ve mutatör etrafında kuruluyor. ' + mapMutatorHint(mapMutator),
         objectives: objectives,
     };
 }

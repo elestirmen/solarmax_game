@@ -123,7 +123,7 @@ export function buildDailyMatchManifest(dateKey, options) {
     var challenge = buildDailyChallenge(normalizeChallengeDate(dateKey, options));
     return {
         mode: 'daily',
-        modeLabel: 'Gunluk Challenge',
+        modeLabel: 'Günlük Meydan Okuma',
         challengeKey: challenge.key,
         challengeTitle: challenge.title,
         challengeBlurb: challenge.blurb,
@@ -157,7 +157,7 @@ export function buildCustomMatchManifest(config, options) {
     var humanCount = Math.max(1, Math.min(customMap.playerCount, requestedHumans));
     return {
         mode: 'custom',
-        modeLabel: 'Custom Harita',
+        modeLabel: 'Özel Harita',
         challengeKey: '',
         challengeTitle: '',
         challengeBlurb: '',

@@ -27,7 +27,7 @@ export function buildDailyChallengeStartConfig(challenge) {
         difficulty: challenge.diff,
         fogEnabled: !!challenge.fog,
         customMapConfig: null,
-        toastText: challenge.title ? 'Günlük challenge açıldı: ' + challenge.title : '',
+        toastText: challenge.title ? 'Günlük meydan okuma açıldı: ' + challenge.title : '',
         initOptions: {
             fogEnabled: !!challenge.fog,
             aiCount: challenge.aiCount,

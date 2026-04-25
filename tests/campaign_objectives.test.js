@@ -6,8 +6,8 @@ import { describeCampaignObjectives, evaluateCampaignObjectives, formatObjective
 test('evaluateCampaignObjectives completes numeric progress goals', function () {
     var level = {
         objectives: [
-            { type: 'owned_nodes', target: 4, label: '4 node kontrol et' },
-            { type: 'pulse_control_ticks', target: 180, label: 'Pulse kontrolunu 6s tut' },
+            { type: 'owned_nodes', target: 4, label: '4 gezegen kontrol et' },
+            { type: 'pulse_control_ticks', target: 180, label: 'Pulse kontrolünü 6s tut' },
         ],
     };
     var snapshot = {
@@ -47,7 +47,7 @@ test('evaluateCampaignObjectives marks cap pressure goal as failed once exceeded
 
 test('evaluateCampaignObjectives resolves win-before-tick on game over', function () {
     var level = {
-        objectives: [{ type: 'win_before_tick', target: 500, label: '500 tickten once kazan' }],
+        objectives: [{ type: 'win_before_tick', target: 500, label: '500 tickten önce kazan' }],
     };
 
     var success = evaluateCampaignObjectives(level, {
@@ -72,12 +72,12 @@ test('evaluateCampaignObjectives resolves win-before-tick on game over', functio
 test('describeCampaignObjectives includes goal prefixes', function () {
     var summary = describeCampaignObjectives({
         objectives: [
-            { type: 'owned_nodes', target: 4, label: '4 node kontrol et' },
-            { type: 'win_before_tick', target: 600, label: '600 tickten once kazan', optional: true },
+            { type: 'owned_nodes', target: 4, label: '4 gezegen kontrol et' },
+            { type: 'win_before_tick', target: 600, label: '600 tickten önce kazan', optional: true },
         ],
     }, { tickRate: 30 });
 
-    assert.equal(summary, 'Gorev: 4 node kontrol et | Bonus: 600 tickten once kazan');
+    assert.equal(summary, 'Görev: 4 gezegen kontrol et | Bonus: 600 tickten önce kazan');
 });
 
 test('evaluateCampaignObjectives resolves encounter and survival goals', function () {
@@ -108,6 +108,6 @@ test('evaluateCampaignObjectives resolves encounter and survival goals', functio
 test('formatObjectiveLabel clarifies that encounter capture requires assimilation', function () {
     assert.equal(
         formatObjectiveLabel({ type: 'encounter_captured', encounterType: 'mega_turret' }, 30),
-        'Mega Turret\'i ele gecir ve asimilasyonu tamamla'
+        'Mega Turret\'i ele geçir ve asimilasyonu tamamla'
     );
 });

@@ -13,8 +13,8 @@ export function resolveMissionDefinition(opts) {
 
     if (Array.isArray(opts.objectives) && opts.objectives.length) {
         return {
-            name: 'Hedef Maci',
-            title: 'Hedef Maci',
+            name: 'Hedef Maçı',
+            title: 'Hedef Maçı',
             blurb: '',
             playlist: opts.playlist || 'standard',
             doctrineId: opts.humanDoctrineId || opts.doctrineId || '',
@@ -36,8 +36,8 @@ export function resolveMissionMode(opts) {
 
 export function buildMissionPanelTitle(level, mode) {
     if (!level) return 'Misyon';
-    if (mode === 'daily') return 'Gunluk Challenge';
-    if (mode === 'campaign') return 'Bolum ' + level.id + ': ' + level.name;
+    if (mode === 'daily') return 'Günlük Meydan Okuma';
+    if (mode === 'campaign') return 'Bölüm ' + level.id + ': ' + level.name;
     return level.title || level.name || 'Misyon';
 }
 
@@ -49,17 +49,17 @@ export function buildMissionPanelSubtitle(opts) {
 
     if (mode === 'daily') {
         var dailyBits = [];
-        dailyBits.push(level.title || 'Gunluk');
+        dailyBits.push(level.title || 'Günlük');
         dailyBits.push(level.blurb || '');
-        if (level.playlist) dailyBits.push('Playlist: ' + playlistName(level.playlist));
+        if (level.playlist) dailyBits.push('Oyun listesi: ' + playlistName(level.playlist));
         if (level.doctrineId) dailyBits.push('Doktrin: ' + doctrineName(level.doctrineId));
-        if (opts.dailyCompleted) dailyBits.push('Durum: Tamamlandi');
+        if (opts.dailyCompleted) dailyBits.push('Durum: Tamamlandı');
         else if ((Number(opts.dailyBestTick) || 0) > 0) dailyBits.push('En iyi: ' + opts.dailyBestTick + ' tick');
         return dailyBits.filter(Boolean).join(' | ');
     }
 
     var subtitleParts = [level.blurb || ''];
-    if (level.playlist) subtitleParts.push('Playlist: ' + playlistName(level.playlist));
+    if (level.playlist) subtitleParts.push('Oyun listesi: ' + playlistName(level.playlist));
     if (level.doctrineId) subtitleParts.push('Doktrin: ' + doctrineName(level.doctrineId));
     return subtitleParts.filter(Boolean).join(' | ');
 }

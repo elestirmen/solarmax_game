@@ -54,6 +54,6 @@ test('buildRoomStatusSummary reflects preview type and readiness', function () {
 
     assert.match(daily, /Günlük: Signal Break \(2026-03-17\)/);
     assert.match(daily, /Hostun başlatması bekleniyor/);
-    assert.match(custom, /Custom: Nebula Run/);
+    assert.match(custom, /Özel: Nebula Run/);
     assert.match(custom, /En az 2 oyuncu gerekli/);
 });

@@ -1,3 +1,5 @@
+import { buildDefenseFieldConfig } from './shared_config.js';
+
 function isAssimilated(node) {
     if (!node) return false;
     if ((node.assimilationLock || 0) > 0) return false;
@@ -5,7 +7,7 @@ function isAssimilated(node) {
 }
 
 export function getDefenseFieldStats(node, cfg) {
-    cfg = cfg || {};
+    cfg = buildDefenseFieldConfig(cfg);
     if (!node) return { active: false, range: 0, dps: 0 };
 
     var baseRangePad = Number(cfg.baseRangePad);
@@ -15,14 +17,6 @@ export function getDefenseFieldStats(node, cfg) {
     var defenseDpsBonus = Number(cfg.defenseDpsBonus);
     var bulwarkDpsBonus = Number(cfg.bulwarkDpsBonus);
     var relayRangeBonus = Number(cfg.relayRangeBonus);
-
-    if (!Number.isFinite(baseRangePad)) baseRangePad = 24;
-    if (!Number.isFinite(baseDps)) baseDps = 2.6;
-    if (!Number.isFinite(levelRangeBonus)) levelRangeBonus = 4;
-    if (!Number.isFinite(levelDpsBonus)) levelDpsBonus = 0.3;
-    if (!Number.isFinite(defenseDpsBonus)) defenseDpsBonus = 1.25;
-    if (!Number.isFinite(bulwarkDpsBonus)) bulwarkDpsBonus = 1.18;
-    if (!Number.isFinite(relayRangeBonus)) relayRangeBonus = 6;
 
     if (node.owner < 0 || node.kind === 'turret' || !isAssimilated(node) || (node.units || 0) <= 0) {
         return { active: false, range: 0, dps: 0 };

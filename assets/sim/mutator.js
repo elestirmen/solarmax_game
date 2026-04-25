@@ -159,15 +159,15 @@ export function isTerritoryBonusBlockedAtPoint(params) {
 
 export function mapMutatorName(mutator) {
     var type = canonicalMutatorType(mutator && mutator.type !== undefined ? mutator.type : mutator);
-    if (type === 'ion_storm') return 'Iyon Firtinasi';
-    if (type === 'blackout') return 'Karartma Bolgesi';
+    if (type === 'ion_storm') return 'İyon Fırtınası';
+    if (type === 'blackout') return 'Karartma Bölgesi';
     if (type === 'auto') return 'Rastgele';
     return 'Yok';
 }
 
 export function mapMutatorHint(mutator) {
     var type = canonicalMutatorType(mutator && mutator.type !== undefined ? mutator.type : mutator);
-    if (type === 'ion_storm') return 'Iyon Firtinasi: alan icinde filolar yavaslar; uzun rotayi degil guvenli aciyi sec.';
-    if (type === 'blackout') return 'Karartma Bolgesi: alan icinde territory hizi ve park filo korumasi calismaz.';
-    return 'Ek mutator yok.';
+    if (type === 'ion_storm') return 'İyon Fırtınası: alan içinde filolar yavaşlar; uzun rotayı değil güvenli açıyı seç.';
+    if (type === 'blackout') return 'Karartma Bölgesi: alan içinde territory hızı ve park filo koruması çalışmaz.';
+    return 'Ek mutatör yok.';
 }

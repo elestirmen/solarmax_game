@@ -1,11 +1,11 @@
 function roomModeHint(roomMode) {
     if (roomMode === 'daily') {
-        return 'Gunluk oda: harita, playlist ve doktrin gunun challenge ayarlarina kilitlenir.';
+        return 'Günlük oda: harita, oyun listesi ve doktrin günün meydan okuma ayarlarına kilitlenir.';
     }
     if (roomMode === 'custom') {
-        return 'Custom oda: yuklenen harita slot, seed ve encounter duzenini belirler. Once Araclar bolumunden map yukle.';
+        return 'Özel oda: yüklenen harita slot, tohum ve karşılaşma düzenini belirler. Önce Araçlar bölümünden harita yükle.';
     }
-    return 'Standart oda: seed, node, zorluk, playlist ve doktrin host tarafinda ortak belirlenir.';
+    return 'Standart oda: tohum, gezegen sayısı, zorluk, oyun listesi ve doktrin host tarafında ortak belirlenir.';
 }
 
 export function getRoomTypeUiState(roomMode) {

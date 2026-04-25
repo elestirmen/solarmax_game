@@ -30,9 +30,30 @@ const isMainModule = process.argv[1] && path.resolve(process.argv[1]) === __file
 
 const app = express();
 const server = http.createServer(app);
+
+export function parseAllowedOrigins(value) {
+    return String(value || '')
+        .split(',')
+        .map(origin => origin.trim())
+        .filter(Boolean);
+}
+
+export function buildCorsOriginOption(rawOrigins, nodeEnv = process.env.NODE_ENV) {
+    const allowedOrigins = parseAllowedOrigins(rawOrigins);
+    if (allowedOrigins.includes('*')) return true;
+    if (allowedOrigins.length === 0) return nodeEnv === 'production' ? false : true;
+    return (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+            return;
+        }
+        callback(new Error('Origin not allowed by CORS'), false);
+    };
+}
+
 const io = new Server(server, {
     cors: {
-        origin: '*',
+        origin: buildCorsOriginOption(process.env.SOLARMAX_ALLOWED_ORIGINS || process.env.CORS_ORIGIN || ''),
     },
 });
 

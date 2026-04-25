@@ -59,21 +59,21 @@ export function formatObjectiveLabel(objective, tickRate) {
 
     var target = objectiveTarget(objective);
     switch (objective.type) {
-        case 'owned_nodes': return 'En az ' + target + ' node tut';
-        case 'control_node_ids': return 'Belirlenen ' + target + ' kritik node\'u ele gecir';
+        case 'owned_nodes': return 'En az ' + target + ' gezegen tut';
+        case 'control_node_ids': return 'Belirlenen ' + target + ' kritik gezegeni ele geçir';
         case 'upgrades': return target + ' upgrade yap';
-        case 'defense_activations': return 'Savunmayi ' + target + ' kez ac';
-        case 'flow_links_created': return target + ' flow hatti kur';
-        case 'wormhole_dispatches': return 'Wormhole uzerinden ' + target + ' sevkiyat yap';
-        case 'gate_captures': return target + ' GATE ele gecir';
-        case 'pulse_control_ticks': return 'Pulse kontrolunu ' + secondsFromTicks(target, tickRate) + 's tut';
-        case 'units_produced': return target + ' birlik uret';
-        case 'peak_cap_pressure_below': return 'Strain zirvesini %' + Math.round(target * 100) + ' altinda tut';
-        case 'win_before_tick': return target + ' tickten once kazan';
+        case 'defense_activations': return 'Savunmayı ' + target + ' kez aç';
+        case 'flow_links_created': return target + ' flow hattı kur';
+        case 'wormhole_dispatches': return 'Wormhole üzerinden ' + target + ' sevkiyat yap';
+        case 'gate_captures': return target + ' GATE ele geçir';
+        case 'pulse_control_ticks': return 'Pulse kontrolünü ' + secondsFromTicks(target, tickRate) + 's tut';
+        case 'units_produced': return target + ' birlik üret';
+        case 'peak_cap_pressure_below': return 'Strain zirvesini %' + Math.round(target * 100) + ' altında tut';
+        case 'win_before_tick': return target + ' tickten önce kazan';
         case 'survive_until_tick': return target + ' tick hayatta kal';
-        case 'encounter_captured': return encounterLabelAccusative(objective) + ' ele gecir ve asimilasyonu tamamla';
-        case 'encounter_control_ticks': return encounterLabelBase(objective) + ' kontrolunu ' + secondsFromTicks(target, tickRate) + 's tut';
-        default: return 'Gorev';
+        case 'encounter_captured': return encounterLabelAccusative(objective) + ' ele geçir ve asimilasyonu tamamla';
+        case 'encounter_control_ticks': return encounterLabelBase(objective) + ' kontrolünü ' + secondsFromTicks(target, tickRate) + 's tut';
+        default: return 'Görev';
     }
 }
 
@@ -146,7 +146,7 @@ export function evaluateCampaignObjectives(level, snapshot, opts) {
             complete = didWin && currentValue <= target;
             failed = gameOver && !complete;
             if (complete) progressText = currentValue + '/' + target + ' tick';
-            else if (gameOver) progressText = 'Kacti: ' + currentValue + '/' + target;
+            else if (gameOver) progressText = 'Kaçtı: ' + currentValue + '/' + target;
             else progressText = 'Kalan ' + Math.max(0, target - currentValue) + ' tick';
         } else if (type === 'survive_until_tick') {
             complete = currentValue >= target;
@@ -187,9 +187,9 @@ export function describeCampaignObjectives(level, opts) {
     opts = opts || {};
     var tickRate = opts.tickRate || 30;
     var objectives = level && Array.isArray(level.objectives) ? level.objectives : [];
-    if (!objectives.length) return 'Gorev yok.';
+    if (!objectives.length) return 'Görev yok.';
     return objectives.map(function (objective) {
-        var prefix = objective.optional ? 'Bonus' : 'Gorev';
+        var prefix = objective.optional ? 'Bonus' : 'Görev';
         return prefix + ': ' + formatObjectiveLabel(objective, tickRate);
     }).join(' | ');
 }

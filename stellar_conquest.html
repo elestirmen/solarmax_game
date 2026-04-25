@@ -3159,7 +3159,8 @@
             from { opacity: 0; transform: translateX(-6px); }
             to { opacity: 1; transform: translateX(0); }
         }
-        .achievement-toast { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); padding: 12px 24px; background: linear-gradient(135deg, #4a8eff, #6366f1); border-radius: var(--radius); color: #fff; font-weight: 600; z-index: 200; animation: fadeIn .3s ease; }
+        .achievement-toast { position: fixed; bottom: 60px; left: 50%; transform: translateX(-50%); max-width: min(520px, calc(100vw - 32px)); padding: 12px 24px; background: linear-gradient(135deg, #4a8eff, #6366f1); border-radius: var(--radius); color: #fff; font-weight: 600; text-align: center; z-index: 200; pointer-events: none; animation: fadeIn .3s ease; }
+        .game-toast { bottom: calc(196px + env(safe-area-inset-bottom)); max-width: min(460px, calc(100vw - 32px)); padding: 8px 16px; border-radius: 10px; font-size: .86rem; line-height: 1.35; box-shadow: 0 12px 30px rgba(4, 8, 18, 0.32); }
         #campaignMissionHud { position: fixed; top: 12px; left: 12px; width: 320px; max-width: calc(100vw - 180px); padding: 10px; background: rgba(12, 18, 34, 0.9); border: 1px solid var(--panel-border); border-radius: 12px; z-index: 46; backdrop-filter: blur(8px); }
         #campaignMissionHud.hidden { display: none; }
         @media (max-width: 900px) {
@@ -3348,7 +3349,7 @@
             #campaignMissionHud {
                 top: max(8px, env(safe-area-inset-top));
                 left: 8px;
-                /* Üst sağda Tuning (Ayar) düğmesi — üst üste binmesin */
+                /* Üst sağdaki ayar düğmesi üst üste binmesin */
                 right: max(8px, calc(92px + env(safe-area-inset-right)));
                 bottom: auto;
                 width: auto;
@@ -3406,6 +3407,13 @@
                 max-width: 420px;
                 text-align: center;
                 padding: 10px 14px;
+            }
+
+            .game-toast {
+                bottom: calc(var(--mobile-toast-hud-offset, 214px) + env(safe-area-inset-bottom));
+                max-width: calc(100vw - 28px);
+                padding: 8px 12px;
+                font-size: 0.78rem;
             }
 
             .minimap {
@@ -3893,6 +3901,10 @@
                 bottom: calc(var(--mobile-toast-hud-offset, 214px) + env(safe-area-inset-bottom));
             }
 
+            .game-toast {
+                bottom: calc(var(--mobile-toast-hud-offset, 214px) + env(safe-area-inset-bottom));
+            }
+
             .minimap {
                 bottom: calc(var(--mobile-minimap-hud-offset, 198px) + env(safe-area-inset-bottom));
                 width: 84px;
@@ -3921,7 +3933,7 @@
         </div>
         <div class="menu-panel menu-panel-wide">
             <h1 class="game-title">Stellar Conquest</h1>
-            <p class="tagline">Conquer the stars. Command the flow.</p>
+            <p class="tagline">Yıldızları fethet. Akışı yönet.</p>
             <div id="menuHubView" class="menu-panel-content">
                 <div class="menu-hub">
                     <div class="menu-landing">
@@ -3935,23 +3947,23 @@
                             <button id="startBtn" class="menu-play-btn">Operasyona Başla</button>
                             <button id="menuCustomizeBtn" class="menu-customize-btn">Oyunu Özelleştir</button>
                             <div class="menu-landing-chips">
-                                <span id="menuSeedChip" class="menu-hero-chip">Seed 42</span>
+                                <span id="menuSeedChip" class="menu-hero-chip">Tohum 42</span>
                                 <span id="menuPlaylistChip" class="menu-hero-chip">Standart</span>
                                 <span id="menuDoctrineChip" class="menu-hero-chip">Doktrin Otomatik</span>
                                 <span id="menuModeChip" class="menu-hero-chip">Gelişmiş</span>
                                 <span id="menuFogChip" class="menu-hero-chip">Sis Kapalı</span>
                             </div>
-                            <div id="menuQuickStatus" class="menu-landing-status">16 node | Normal | Standart akışı hazır</div>
+                            <div id="menuQuickStatus" class="menu-landing-status">16 gezegen | Normal | Standart akış hazır</div>
                         </div>
                     </div>
-                    <div id="menuStagePlaylistLabel" style="display:none">OYUN LISTESI // STANDART</div>
-                    <div id="menuStageDoctrineLabel" style="display:none">DOKTRIN // OTOMATIK</div>
+                    <div id="menuStagePlaylistLabel" style="display:none">OYUN LİSTESİ // STANDART</div>
+                    <div id="menuStageDoctrineLabel" style="display:none">DOKTRİN // OTOMATİK</div>
                     <div class="menu-command-strip">
                         <div class="menu-spotlight-card menu-spotlight-daily">
                             <div class="menu-spotlight-kicker">Bugünün Operasyonu</div>
-                            <strong id="menuDailySpotlightTitle">Günlük Challenge</strong>
+                            <strong id="menuDailySpotlightTitle">Günlük Meydan Okuma</strong>
                             <p id="menuDailySpotlightCopy">Her gün yeni kurallar, yeni sektör.</p>
-                            <button id="menuHubDailyBtn" class="secondary-btn">Challenge'a Gir</button>
+                            <button id="menuHubDailyBtn" class="secondary-btn">Meydan Okumaya Gir</button>
                         </div>
                         <div class="menu-spotlight-card menu-spotlight-campaign">
                             <div class="menu-spotlight-kicker">Kampanya</div>
@@ -3962,22 +3974,22 @@
                     </div>
                     <div class="menu-overview-grid">
                         <button id="menuOpenContentBtn" class="menu-overview-card" type="button">
-                            <div class="menu-overview-kicker">CONTENT</div>
-                            <strong>Senaryo & Challenge</strong>
-                            <span>Kampanya ve günlük challenge.</span>
+                            <div class="menu-overview-kicker">İÇERİK</div>
+                            <strong>Senaryo & Meydan Okuma</strong>
+                            <span>Kampanya ve günlük görevler.</span>
                             <span id="menuContentCardMeta" class="menu-overview-meta">Kampanya ve günlük akış hazır</span>
                         </button>
                         <button id="menuOpenMultiplayerBtn" class="menu-overview-card menu-overview-card-live" type="button">
-                            <div class="menu-overview-kicker">LIVE</div>
+                            <div class="menu-overview-kicker">CANLI</div>
                             <strong>Çok Oyunculu</strong>
                             <span>Oda kur veya maça katıl.</span>
                             <span id="menuMultiCardMeta" class="menu-overview-meta">Lobi taraması bekleniyor</span>
                         </button>
                         <button id="menuOpenToolsBtn" class="menu-overview-card" type="button">
-                            <div class="menu-overview-kicker">ARCHIVE</div>
+                            <div class="menu-overview-kicker">ARAÇLAR</div>
                             <strong>Araçlar</strong>
                             <span>Harita, liderlik, rehber.</span>
-                            <span class="menu-overview-meta">Custom map, liderlik, yardım</span>
+                            <span class="menu-overview-meta">Özel harita, liderlik, yardım</span>
                         </button>
                     </div>
                 </div>
@@ -4000,7 +4012,7 @@
                             <span class="menu-flow-step-index">1</span>
                             <div class="menu-flow-step-copy">
                                 <strong>Sektörü kur</strong>
-                                <span>Seed ve node sayısıyla harita ritmini belirle.</span>
+                                <span>Tohum ve gezegen sayısıyla harita ritmini belirle.</span>
                             </div>
                         </div>
                         <div class="menu-flow-step">
@@ -4020,14 +4032,14 @@
                     </div>
                     <div class="menu-form-grid">
                         <div id="menuSeedField" class="menu-field menu-field-span-2">
-                            <label for="seedInput">Seed</label>
+                            <label for="seedInput">Harita Tohumu</label>
                             <div class="seed-row">
                                 <input type="text" id="seedInput" value="42" />
-                                <button id="randomSeedBtn" title="Random seed">RND</button>
+                                <button id="randomSeedBtn" title="Rastgele tohum">Rastgele</button>
                             </div>
                         </div>
                         <div id="menuNodesField" class="menu-field menu-field-span-2">
-                            <label for="nodeCountInput">Nodes</label>
+                            <label for="nodeCountInput">Gezegenler</label>
                             <div class="menu-compact-range">
                                 <input type="range" id="nodeCountInput" min="8" max="30" value="16" />
                                 <span id="nodeCountLabel">16</span>
@@ -4052,9 +4064,9 @@
                             <label for="playlistSelect">Oyun Listesi</label>
                             <select id="playlistSelect">
                                 <option value="standard" selected>Standart</option>
-                                <option value="chaos">Chaos</option>
+                                <option value="chaos">Kaos</option>
                                 <option value="ironman">Ironman</option>
-                                <option value="puzzle">Puzzle Sector</option>
+                                <option value="puzzle">Bulmaca Sektörü</option>
                                 <option value="zen">Zen</option>
                                 <option value="frontier">Frontier</option>
                             </select>
@@ -4069,7 +4081,7 @@
                             </select>
                         </div>
                     </div>
-                    <div id="menuFogField" class="tune-toggle" style="margin-top:10px"><label>Fog of War</label><label class="switch"><input
+                    <div id="menuFogField" class="tune-toggle" style="margin-top:10px"><label>Savaş Sisi</label><label class="switch"><input
                                 type="checkbox" id="menuFogOfWar" /><span class="slider"></span></label></div>
                     <div class="menu-card-actions">
                         <button id="customStartBtn" class="primary-btn">Bu Ayarlarla Başlat</button>
@@ -4090,11 +4102,11 @@
                         </div>
                     </div>
                     <div class="menu-card">
-                        <h3>Günlük Challenge</h3>
+                        <h3>Günlük Meydan Okuma</h3>
                         <p class="menu-card-copy">Bugünün kurallı maçını ayrı bir akışta aç. Bu bölüm serbest maç ayarlarından bağımsızdır.</p>
                         <div id="dailyChallengeCard" class="scenario-mission"></div>
                         <div class="menu-card-actions">
-                            <button id="dailyChallengeBtn" class="primary-btn">Günlük Challenge'ı Başlat</button>
+                            <button id="dailyChallengeBtn" class="primary-btn">Günlük Meydan Okumayı Başlat</button>
                         </div>
                     </div>
                 </div>
@@ -4145,7 +4157,7 @@
                         <div id="hostControls" class="room-row room-row-spaced hidden">
                             <button id="startRoomBtn" class="primary-btn" style="margin:0; flex:1">Oyunu Başlat (Host)</button>
                         </div>
-                        <button id="menuChatToggle" class="secondary-btn room-inline-spaced hidden" type="button">CHAT</button>
+                        <button id="menuChatToggle" class="secondary-btn room-inline-spaced hidden" type="button">SOHBET</button>
                         <button id="leaveRoomBtn" class="secondary-btn room-inline-spaced hidden">Odadan Ayrıl</button>
                         <p id="roomStatus" class="room-status info" aria-live="polite"></p>
                         <div id="roomPlayers" class="room-players"></div>
@@ -4164,20 +4176,20 @@
             <div id="panelHostSetup" class="menu-panel-content hidden">
                 <div class="menu-card">
                     <h3>Oda Kurulumu</h3>
-                    <p class="menu-card-copy">Host ayarları standart odalarda ortaktır. Günlük ve custom oda seçildiğinde uygun alanlar kilitlenir.</p>
+                    <p class="menu-card-copy">Host ayarları standart odalarda ortaktır. Günlük ve özel oda seçildiğinde uygun alanlar kilitlenir.</p>
                     <div class="menu-flow-steps menu-flow-steps-compact" aria-label="Host kurulum akışı">
                         <div class="menu-flow-step">
                             <span class="menu-flow-step-index">1</span>
                             <div class="menu-flow-step-copy">
                                 <strong>Oda tipini seç</strong>
-                                <span>Standart, günlük veya custom akışına göre alanlar değişir.</span>
+                                <span>Standart, günlük veya özel akışa göre alanlar değişir.</span>
                             </div>
                         </div>
                         <div class="menu-flow-step">
                             <span class="menu-flow-step-index">2</span>
                             <div class="menu-flow-step-copy">
                                 <strong>Paylaşılan ayarları netleştir</strong>
-                                <span>Seed, node, zorluk ve playlist tüm oyuncular için ortak olur.</span>
+                                <span>Tohum, gezegen sayısı, zorluk ve oyun listesi tüm oyuncular için ortak olur.</span>
                             </div>
                         </div>
                         <div class="menu-flow-step">
@@ -4194,7 +4206,7 @@
                             <select id="multiRoomTypeSelect">
                                 <option value="standard" selected>Standart</option>
                                 <option value="daily">Günlük</option>
-                                <option value="custom">Custom</option>
+                                <option value="custom">Özel</option>
                             </select>
                         </div>
                         <div class="menu-field">
@@ -4208,7 +4220,7 @@
                             <label for="multiPlaylistSelect">Oyun Listesi</label>
                             <select id="multiPlaylistSelect">
                                 <option value="standard" selected>Standart</option>
-                                <option value="chaos">Chaos</option>
+                                <option value="chaos">Kaos</option>
                                 <option value="ironman">Ironman</option>
                                 <option value="puzzle">Puzzle</option>
                                 <option value="zen">Zen</option>
@@ -4225,8 +4237,8 @@
                             </select>
                         </div>
                         <div class="menu-field">
-                            <label for="multiSeedInput">Seed</label>
-                            <input type="text" id="multiSeedInput" value="42" placeholder="Seed" />
+                            <label for="multiSeedInput">Harita Tohumu</label>
+                            <input type="text" id="multiSeedInput" value="42" placeholder="Tohum" />
                         </div>
                         <div class="menu-field">
                             <label for="multiDiffSelect">Zorluk</label>
@@ -4237,7 +4249,7 @@
                             </select>
                         </div>
                         <div class="menu-field menu-field-span-2">
-                            <label for="multiNodeInput">Nodes</label>
+                            <label for="multiNodeInput">Gezegenler</label>
                             <div class="menu-compact-range">
                                 <input type="range" id="multiNodeInput" min="8" max="30" value="16" />
                                 <span id="multiNodeLabel">16</span>
@@ -4248,8 +4260,8 @@
                         <button id="hostSetupCreateRoomBtn" class="primary-btn">Bu Ayarlarla Oda Kur</button>
                         <button id="hostSetupBackBtn" class="secondary-btn">Çok Oyunculuya Dön</button>
                     </div>
-                    <div id="hostSetupModeHint" class="menu-status-note">Standart oda: seed, node, zorluk, playlist ve doktrin host tarafında ortak belirlenir.</div>
-                    <div class="menu-status-note">Custom oda açmak için önce Araçlar bölümünden bir harita yükle. Günlük oda seçildiğinde playlist, doctrine ve harita alanları günün challenge'ına kilitlenir.</div>
+                    <div id="hostSetupModeHint" class="menu-status-note">Standart oda: tohum, gezegen sayısı, zorluk, oyun listesi ve doktrin host tarafında ortak belirlenir.</div>
+                    <div class="menu-status-note">Özel oda açmak için önce Araçlar bölümünden bir harita yükle. Günlük oda seçildiğinde oyun listesi, doktrin ve harita alanları günün meydan okumasına kilitlenir.</div>
                 </div>
             </div>
 
@@ -4257,16 +4269,16 @@
                 <div class="menu-grid-2">
                     <div class="menu-card">
                         <h3>Özel Harita</h3>
-                        <p class="menu-card-copy">Hazır düzenler, açılış sahiplikleri ve encounter tanımları içeren custom map dosyalarını buradan aç.</p>
+                        <p class="menu-card-copy">Hazır düzenler, açılış sahiplikleri ve karşılaşma tanımları içeren özel harita dosyalarını buradan aç.</p>
                         <div class="menu-card-actions">
                             <button id="importMapBtn" class="primary-btn">Özel Harita Yükle</button>
                             <button id="exportMapBtn" class="secondary-btn">Haritayı Dışa Aktar</button>
                         </div>
-                        <div id="customMapStatus" class="menu-status-note">Custom map yükleyip başlangıç düzenini, anomalileri ve açılış node sahipliklerini sabitleyebilirsin. Yüklenen haritayı online oda olarak da açabilirsin.</div>
+                        <div id="customMapStatus" class="menu-status-note">Özel harita yükleyip başlangıç düzenini, anomalileri ve açılış gezegen sahipliklerini sabitleyebilirsin. Yüklenen haritayı çevrimiçi oda olarak da açabilirsin.</div>
                     </div>
                     <div class="menu-card">
                         <h3>Liderlik</h3>
-                        <p class="menu-card-copy">Günlük challenge ve genel skor tablosunu buradan kontrol et.</p>
+                        <p class="menu-card-copy">Günlük meydan okuma ve genel skor tablosunu buradan kontrol et.</p>
                         <div class="menu-card-actions">
                             <button id="leaderboardBtn" class="secondary-btn">Liderlik</button>
                         </div>
@@ -4483,11 +4495,11 @@
                         <li><b>Wormhole:</b> Bağlı iki uç arasında birimler anında ışınlanır; halkası olan gezegenler köprü ucudur. Haritanın en hızlı baskın ve yardım koridorudur.</li>
                         <li><b>Gravity alan:</b> Merkezdeki ~170 birim yarıçaptaki alandan geçen filolar 1.35x hız kazanır. Uzun yolu kısaltmak için rotayı içinden geçir.</li>
                         <li><b>Barrier:</b> Haritayı ikiye ayırır. Karşı tarafa geçmek için <b>GATE</b> etiketli gezegeni alıp asimilasyonun bitmesini beklersin.</li>
-                        <li><b>Stratejik noktalar:</b> Altın çerçeveli gezegenler pulse adayıdır. Pulse aktifken o node geçici üretim, hız, asimilasyon ve cap bonusu verir.</li>
+                        <li><b>Stratejik noktalar:</b> Altın çerçeveli gezegenler pulse adayıdır. Pulse aktifken o gezegen geçici üretim, hız, asimilasyon ve kapasite bonusu verir.</li>
                         <li><b>İyon Fırtınası:</b> Alan içindeki filoları yavaşlatır. Uzun, açık rota yerine güvenli açı ve staging daha değerlidir.</li>
                         <li><b>Karartma Bölgesi:</b> Alan içinde territory bonusu ve park filo koruması çalışmaz. Güvenli sandığın bölge bir anda nötrleşebilir.</li>
-                        <li><b>CORE işareti:</b> Bu node genelde <b>Relay Core</b>'dur. Ele geçirilip asimile edilirse supply omurgasına tempo kazandırır.</li>
-                        <li><b>BOSS işareti:</b> Bu node genelde <b>Mega Turret</b>'tir. Geniş menzilli, ağır savunmalı bir objective olarak düşün.</li>
+                        <li><b>CORE işareti:</b> Bu gezegen genelde <b>Relay Core</b>'dur. Ele geçirilip asimile edilirse tedarik omurgasına tempo kazandırır.</li>
+                        <li><b>BOSS işareti:</b> Bu gezegen genelde <b>Mega Turret</b>'tir. Geniş menzilli, ağır savunmalı bir hedef olarak düşün.</li>
                     </ul>
                     <div class="tutorial-tip"><strong>Strateji:</strong> Harita özelliği neyse ilk planını onun etrafında kur. Wormhole, GATE, CORE ve pulse çoğu maçta ilk büyük karar alanını belirler.</div>
                 </div>
@@ -4502,7 +4514,7 @@
                         <li><b>Görev kartı:</b> Kampanya ve meydan okumada zorunlu ve bonus hedefler; zafer koşulunu karıştırmaz.</li>
                         <li><b>Üst meta satır:</b> Seçili dünyada yükseltme maliyeti, asimilasyon, savunma alanı, kapı, mutatör, pulse.</li>
                         <li><b>Durum rozeti + ipucu:</b> Çoklu seçim, park filosu veya flow hedef modunda ne yapacağını söyler. Mod takılırsa boş alana tek dokunuş.</li>
-                        <li><b>DOK / TEMA / CHAT:</b> Doktrin yeteneği; arayüz teması; çok oyunculu sohbet.</li>
+                        <li><b>DOK / TEMA / SOHBET:</b> Doktrin yeteneği; arayüz teması; çok oyunculu sohbet.</li>
                         <li><b>Minimap:</b> Cepheyi tek bakışta oku.</li>
                     </ul>
                 </div>
@@ -4571,7 +4583,7 @@
     </div>
     <div id="chatComposer" class="chat-composer hidden" aria-hidden="true">
         <input id="chatInput" type="text" placeholder="Mesaj..." maxlength="120" />
-        <button id="chatSendBtn" type="button">GONDER</button>
+        <button id="chatSendBtn" type="button">GÖNDER</button>
     </div>
     <div id="nodeHoverTip" class="node-hover-tip hidden" aria-hidden="true">
         <div id="nodeHoverTipTitle" class="node-hover-tip-title">Core</div>
@@ -4607,7 +4619,7 @@
             </div>
         </div>
         <div id="hudRight">
-            <div class="hud-block-heading"><span class="hud-block-title">Komutlar</span><span id="hudCommandHintBadge" class="hud-context-badge hud-context-badge-muted">Mouse + kısayol</span></div>
+            <div class="hud-block-heading"><span class="hud-block-title">Komutlar</span><span id="hudCommandHintBadge" class="hud-context-badge hud-context-badge-muted">Fare + kısayol</span></div>
             <div class="hud-actions-wrap">
                 <div class="hud-action-group">
                     <button id="pauseBtn" title="Duraklat" data-importance="primary" data-help="Yerel oyunda duraklatır; çevrim içinde maç menüsü ve bağlantı seçenekleri.">MENÜ</button>
@@ -4619,7 +4631,7 @@
                 </div>
                 <div class="hud-action-group">
                     <button id="themeBtn" title="Tema" data-importance="meta" data-help="Açık / koyu arayüz. Tercih yerelde saklanır.">TEMA</button>
-                    <button id="chatToggle" title="Sohbet" data-importance="meta" data-help="Çok oyunculu maçta sohbet paneli. Tek oyuncuda gizlenebilir.">CHAT</button>
+                    <button id="chatToggle" title="Sohbet" data-importance="meta" data-help="Çok oyunculu maçta sohbet paneli. Tek oyuncuda gizlenebilir.">SOHBET</button>
                     <button id="exportMapHudBtn" title="Haritayı dışa aktar" data-importance="meta" data-help="Anlık haritayı özel harita JSON’u olarak indirir (düzenleme ve paylaşım).">HARİTA</button>
                 </div>
             </div>
@@ -4629,30 +4641,30 @@
     </div>
     <div id="tuningBackdrop" class="hidden" aria-hidden="true"></div>
     <div id="tuningPanel" class="hidden">
-        <button type="button" id="tuneMobileClose" class="tune-mobile-close" aria-label="Tuning panelini kapat">Kapat</button>
-        <h3>Tuning</h3>
-        <div class="tune-field"><label>Production x</label><input type="range" id="tuneProduction" min="0.1" max="5"
+        <button type="button" id="tuneMobileClose" class="tune-mobile-close" aria-label="Geliştirici ayarlarını kapat">Kapat</button>
+        <h3>Geliştirici Ayarları</h3>
+        <div class="tune-field"><label>Üretim x</label><input type="range" id="tuneProduction" min="0.1" max="5"
                 step="0.1" value="1" /><span id="tuneProductionVal">1.0</span></div>
-        <div class="tune-field"><label>Fleet Speed</label><input type="range" id="tuneFleetSpeed" min="20" max="300"
+        <div class="tune-field"><label>Filo Hızı</label><input type="range" id="tuneFleetSpeed" min="20" max="300"
                 step="10" value="80" /><span id="tuneFleetSpeedVal">80</span></div>
-        <div class="tune-field"><label>Defense Factor</label><input type="range" id="tuneDefense" min="0.5" max="3"
+        <div class="tune-field"><label>Savunma Çarpanı</label><input type="range" id="tuneDefense" min="0.5" max="3"
                 step="0.1" value="1.2" /><span id="tuneDefenseVal">1.2</span></div>
-        <div class="tune-field"><label>Flow Interval</label><input type="range" id="tuneFlowInterval" min="5" max="60"
+        <div class="tune-field"><label>Akış Aralığı</label><input type="range" id="tuneFlowInterval" min="5" max="60"
                 step="1" value="15" /><span id="tuneFlowIntervalVal">15</span></div>
-        <div class="tune-field"><label>AI Aggression</label><input type="range" id="tuneAIAggression" min="0.1" max="3"
+        <div class="tune-field"><label>AI Saldırganlığı</label><input type="range" id="tuneAIAggression" min="0.1" max="3"
                 step="0.1" value="1" /><span id="tuneAIAggressionVal">1.0</span></div>
-        <div class="tune-field"><label>AI Buffer</label><input type="range" id="tuneAIBuffer" min="0" max="20" step="1"
+        <div class="tune-field"><label>AI Tamponu</label><input type="range" id="tuneAIBuffer" min="0" max="20" step="1"
                 value="5" /><span id="tuneAIBufferVal">5</span></div>
-        <div class="tune-field"><label>AI Decision</label><input type="range" id="tuneAIDecision" min="10" max="120"
+        <div class="tune-field"><label>AI Karar Aralığı</label><input type="range" id="tuneAIDecision" min="10" max="120"
                 step="5" value="30" /><span id="tuneAIDecisionVal">30</span></div>
-        <div class="tune-toggle"><label>Adaptive AI</label><label class="switch"><input type="checkbox"
+        <div class="tune-toggle"><label>Uyarlanan AI</label><label class="switch"><input type="checkbox"
                     id="tuneAiAssist" checked /><span class="slider"></span></label></div>
-        <div class="tune-toggle"><label>Fog of War</label><label class="switch"><input type="checkbox"
+        <div class="tune-toggle"><label>Savaş Sisi</label><label class="switch"><input type="checkbox"
                     id="tuneFogOfWar" /><span class="slider"></span></label></div>
-        <button id="tuneResetBtn" class="secondary-btn">Reset Defaults</button>
+        <button id="tuneResetBtn" class="secondary-btn">Varsayılana Dön</button>
         <button id="tuneToggleBtn" class="toggle-btn">-</button>
     </div>
-    <button id="tuneOpenBtn" class="toggle-btn hidden">Tuning</button>
+    <button id="tuneOpenBtn" class="toggle-btn hidden">Ayar</button>
     <script src="https://cdn.socket.io/4.8.1/socket.io.min.js" crossorigin="anonymous"></script>
     <script type="module" src="./assets/audio.js"></script>
     <script type="module" src="./game.js"></script>
