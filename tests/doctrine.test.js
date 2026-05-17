@@ -19,6 +19,26 @@ test('buildDoctrineLoadout applies chosen human doctrine and auto-assigns AI doc
     assert.deepEqual(doctrines, ['siege', 'siege', 'logistics']);
 });
 
+test('buildDoctrineLoadout with a seed can diverge from the archetype default for AIs', function () {
+    var players = [{ isAI: false }, { isAI: true }];
+    var sawDifferent = false;
+    for (var s = 1; s <= 64; s++) {
+        var d = buildDoctrineLoadout(players, { doctrineId: 'logistics', seed: s });
+        assert.equal(d[0], 'logistics');
+        if (d[1] !== 'siege') sawDifferent = true;
+    }
+    assert.equal(sawDifferent, true);
+});
+
+test('buildDoctrineLoadout preserves explicit doctrine for AIs', function () {
+    var d = buildDoctrineLoadout(
+        [{ isAI: false }, { isAI: true }, { isAI: true }],
+        { doctrineId: 'logistics', doctrines: [null, 'assimilation', 'siege'], seed: 12345 },
+    );
+    assert.equal(d[1], 'assimilation');
+    assert.equal(d[2], 'siege');
+});
+
 test('activateDoctrine starts active window and cooldown', function () {
     var doctrines = ['logistics'];
     var states = ensureDoctrineStates(doctrines, []);

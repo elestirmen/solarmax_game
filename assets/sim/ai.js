@@ -698,8 +698,8 @@ export function decideAiCommands(state, playerIndex) {
         if (node.kind === 'forge') score += 20;
         if (node.kind === 'relay') score += 12;
         if (node.kind === 'turret') score -= 18;
-        if (node.encounterType === 'relay_core') score += doctrineId === 'logistics' ? 72 : 46;
-        if (node.encounterType === 'mega_turret') score += doctrineId === 'siege' ? 86 : 28;
+        if (node.encounterType === 'relay_core') score += doctrineId === 'logistics' ? 58 : 44;
+        if (node.encounterType === 'mega_turret') score += doctrineId === 'siege' ? 62 : 38;
         if (node.gate && node.owner !== playerIndex) score += ownsGate ? 10 : 64;
         if (strategicPulseAppliesToNode(state, node.id)) score += SIM_CONSTANTS.STRATEGIC_PULSE_AI_BONUS;
         if ((Number(node.level) || 1) > 1) score += ((Number(node.level) || 1) - 1) * 11;

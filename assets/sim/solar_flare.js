@@ -1,7 +1,8 @@
 /**
  * Global solar flare: deterministic schedule from tick + seed.
  * Each gap between blasts is a pseudo-random duration in [gapMin, gapMax] ticks (same seed => same sequence).
- * Warning window precedes each blast; blast tick wipes all active fleets (space units).
+ * Warning window precedes each blast; blast tick damages fleets in transit (partial loss).
+ * `firstGraceTicks` defers the very first blast so the opener cannot be derailed by a flare.
  */
 
 function solarGapTicks(seed, index, minG, maxG) {
@@ -23,9 +24,10 @@ export function smallestBlastTickAtOrAfter(tick, seed, cfg) {
     cfg = cfg || {};
     var minG = Math.max(30, Math.floor(Number(cfg.gapMinTicks) || 5400));
     var maxG = Math.max(minG, Math.floor(Number(cfg.gapMaxTicks) || 9000));
+    var firstGrace = Math.max(0, Math.floor(Number(cfg.firstGraceTicks) || 0));
     var t = Math.max(0, Math.floor(Number(tick) || 0));
 
-    var acc = solarGapTicks(seed, 0, minG, maxG);
+    var acc = firstGrace + solarGapTicks(seed, 0, minG, maxG);
     var idx = 1;
     var guard = 0;
     while (acc < t && guard < 200000) {
@@ -41,8 +43,10 @@ export function getSolarFlareFrame(tick, seed, cfg) {
     tick = Math.max(0, Math.floor(Number(tick) || 0));
     var minG = Math.max(30, Math.floor(Number(cfg.gapMinTicks) || 5400));
     var maxG = Math.max(minG, Math.floor(Number(cfg.gapMaxTicks) || 9000));
+    var firstGrace = Math.max(0, Math.floor(Number(cfg.firstGraceTicks) || 0));
+    var firstWindow = minG + firstGrace;
     var W = Math.max(1, Math.floor(Number(cfg.warnTicks) || 180));
-    if (W >= minG) W = Math.max(1, minG - 1);
+    if (W >= firstWindow) W = Math.max(1, firstWindow - 1);
 
     var upcoming = smallestBlastTickAtOrAfter(tick, seed, cfg);
     var dist = upcoming - tick;
@@ -70,8 +74,10 @@ export function getSolarFlareTransitions(previousTick, nextTick, seed, cfg) {
     if (next <= prev) return { warnStartTick: -1, blastTick: -1 };
 
     var minG = Math.max(30, Math.floor(Number(cfg.gapMinTicks) || 5400));
+    var firstGrace = Math.max(0, Math.floor(Number(cfg.firstGraceTicks) || 0));
+    var firstWindow = minG + firstGrace;
     var W = Math.max(1, Math.floor(Number(cfg.warnTicks) || 180));
-    if (W >= minG) W = Math.max(1, minG - 1);
+    if (W >= firstWindow) W = Math.max(1, firstWindow - 1);
 
     var blastTick = smallestBlastTickAtOrAfter(Math.max(0, prev + 1), seed, cfg);
     var warnStartTick = blastTick - W;
@@ -95,4 +101,45 @@ export function applySolarFlareFleetWipe(fleets) {
         n++;
     }
     return n;
+}
+
+/**
+ * Apply partial fleet damage instead of a full wipe.
+ * `survivalFrac` is the fraction of count that survives (e.g. 0.4 → 60% loss).
+ * Fleets that drop below 1 unit are deactivated like the legacy wipe.
+ * Returns { hit, lost, collapsed } where hit = number of fleets affected.
+ */
+export function applySolarFlareFleetDamage(fleets, survivalFrac) {
+    if (!Array.isArray(fleets)) return { hit: 0, lost: 0, collapsed: 0 };
+    var keep = Number(survivalFrac);
+    if (!Number.isFinite(keep)) keep = 0.4;
+    if (keep < 0) keep = 0;
+    if (keep > 1) keep = 1;
+
+    var hit = 0;
+    var lost = 0;
+    var collapsed = 0;
+    for (var i = 0; i < fleets.length; i++) {
+        var f = fleets[i];
+        if (!f || !f.active) continue;
+        var before = Math.max(0, Math.floor(Number(f.count) || 0));
+        if (before <= 0) continue;
+        // Rounding (rather than floor) keeps 2-unit fleets alive at 1 instead of one-shotting them,
+        // while a single-unit fleet still collapses when survival < 0.5.
+        var after = Math.max(0, Math.round(before * keep));
+        if (after === before) continue;
+        f.count = after;
+        f.hitFlash = Math.max(Number(f.hitFlash) || 0, 0.6);
+        f.hitJitter = Math.max(Number(f.hitJitter) || 0, 0.45);
+        hit++;
+        lost += before - after;
+        if (after <= 0) {
+            f.active = false;
+            f.holding = false;
+            f.count = 0;
+            if (Array.isArray(f.trail)) f.trail.length = 0;
+            collapsed++;
+        }
+    }
+    return { hit: hit, lost: lost, collapsed: collapsed };
 }

@@ -20,7 +20,7 @@ import { computeFriendlyReinforcementRoom } from './assets/sim/reinforcement.js'
 import { buildFleetSpawnProfile, getFleetUnitSpacingT, hashMix, pickNodeKindForRadius, tunedNodeRadiusForKind } from './assets/sim/shared_config.js';
 import { beginNodeUpgrade, getNodeUpgradeProgress, getNodeUpgradeVisualLevel, isNodeUpgradePending, normalizeNodeUpgradeState, resolvePendingNodeUpgrades } from './assets/sim/node_upgrade.js';
 import { getStrategicPulseState, isStrategicPulseActiveForNode } from './assets/sim/strategic_pulse.js';
-import { applySolarFlareFleetWipe, getSolarFlareFrame, getSolarFlareTransitions } from './assets/sim/solar_flare.js';
+import { applySolarFlareFleetDamage, getSolarFlareFrame, getSolarFlareTransitions } from './assets/sim/solar_flare.js';
 import { computeSyncHash } from './assets/sim/state_hash.js';
 import { applyPlayerCommandWithOps } from './assets/sim/command_apply.js';
 import { sanitizeCommandData } from './assets/sim/command_schema.js';
@@ -126,6 +126,8 @@ var TICK_DT = SIM_CONSTANTS.TICK_DT, BASE_PROD = SIM_CONSTANTS.BASE_PROD, MAX_UN
     SOLAR_FLARE_GAP_MIN_TICKS = SIM_CONSTANTS.SOLAR_FLARE_GAP_MIN_TICKS,
     SOLAR_FLARE_GAP_MAX_TICKS = SIM_CONSTANTS.SOLAR_FLARE_GAP_MAX_TICKS,
     SOLAR_FLARE_WARN_TICKS = SIM_CONSTANTS.SOLAR_FLARE_WARN_TICKS,
+    SOLAR_FLARE_FIRST_GRACE_TICKS = SIM_CONSTANTS.SOLAR_FLARE_FIRST_GRACE_TICKS,
+    SOLAR_FLARE_FLEET_SURVIVAL = SIM_CONSTANTS.SOLAR_FLARE_FLEET_SURVIVAL,
     CAP_SOFT_START = SIM_CONSTANTS.CAP_SOFT_START,
     CAP_SOFT_FLOOR = SIM_CONSTANTS.CAP_SOFT_FLOOR,
     DEFENSE_ASSIM_BONUS = SIM_CONSTANTS.DEFENSE_ASSIM_BONUS,
@@ -718,6 +720,7 @@ function solarFlareCfg() {
         gapMinTicks: SOLAR_FLARE_GAP_MIN_TICKS,
         gapMaxTicks: SOLAR_FLARE_GAP_MAX_TICKS,
         warnTicks: SOLAR_FLARE_WARN_TICKS,
+        firstGraceTicks: SOLAR_FLARE_FIRST_GRACE_TICKS,
     };
 }
 function triggerSolarFlareWarningFeedback() {
@@ -726,7 +729,8 @@ function triggerSolarFlareWarningFeedback() {
 }
 function triggerSolarFlareBlastFeedback(opts) {
     opts = opts || {};
-    var wiped = Number.isFinite(opts.wiped) ? Math.max(0, Math.floor(opts.wiped)) : null;
+    var hit = Number.isFinite(opts.hit) ? Math.max(0, Math.floor(opts.hit)) : null;
+    var lost = Number.isFinite(opts.lost) ? Math.max(0, Math.floor(opts.lost)) : null;
     G.solarFlareFx.blastFlash = 1.05;
     enqueueShockwave(MAP_W * 0.5, MAP_H * 0.5, {
         radius: 120,
@@ -737,7 +741,8 @@ function triggerSolarFlareBlastFeedback(opts) {
         fillAlpha: 0.08,
         lineWidth: 2.4,
     });
-    spawnParticles(MAP_W * 0.5, MAP_H * 0.5, wiped === null ? 40 : Math.min(56, 32 + wiped * 2), '#ff9a4a', false, {
+    var particleCount = hit === null ? 40 : Math.min(56, 32 + hit * 2);
+    spawnParticles(MAP_W * 0.5, MAP_H * 0.5, particleCount, '#ff9a4a', false, {
         spread: Math.PI * 2,
         speedMin: 3,
         speedMax: 14,
@@ -746,11 +751,17 @@ function triggerSolarFlareBlastFeedback(opts) {
         lifeMax: 0.9,
         glow: 1.2,
     });
-    showHintToast(opts.message || (wiped !== null
-        ? (wiped > 0
-            ? ('Güneş patlaması: ' + wiped + ' filo buharlaştı. Gezegenlerdeki birlikler güvende.')
-            : 'Güneş patlaması: uzaydaki filolar yok oldu (şu an yolda filo yoktu).')
-        : 'Güneş patlaması vurdu. Uzaydaki filolar güvende değil; birlikleri gezegenlerde tut.'));
+    var defaultMessage;
+    if (hit !== null) {
+        if (hit > 0) {
+            defaultMessage = 'Güneş patlaması: ' + hit + ' filo yıprandı, ' + (lost || 0) + ' birim kayıp. Gezegenlerdeki birlikler güvende.';
+        } else {
+            defaultMessage = 'Güneş patlaması: uzayda filo yoktu, hasar yok.';
+        }
+    } else {
+        defaultMessage = 'Güneş patlaması vurdu. Uzaydaki filolar hasar aldı; birlikleri gezegenlerde tut.';
+    }
+    showHintToast(opts.message || defaultMessage);
     if (typeof AudioFX !== 'undefined' && typeof AudioFX.solarFlareBlast === 'function') AudioFX.solarFlareBlast();
 }
 function replayAuthoritativeSolarFlareFeedback(previousTick, nextTick) {
@@ -760,7 +771,7 @@ function replayAuthoritativeSolarFlareFeedback(previousTick, nextTick) {
     }
     if (transitions.blastTick >= 0) {
         triggerSolarFlareBlastFeedback({
-            message: 'Güneş patlaması vurdu. Sunucu durumu güncellendi; uzaydaki filolar temizlendi.',
+            message: 'Güneş patlaması vurdu. Sunucu durumu güncellendi; uzaydaki filolar yıprandı.',
         });
     }
 }
@@ -773,8 +784,8 @@ function maybeApplySolarFlareCombat() {
         triggerSolarFlareWarningFeedback();
     }
     if (cur.phase === 'blast') {
-        var wiped = applySolarFlareFleetWipe(G.fleets);
-        triggerSolarFlareBlastFeedback({ wiped: wiped });
+        var report = applySolarFlareFleetDamage(G.fleets, SOLAR_FLARE_FLEET_SURVIVAL);
+        triggerSolarFlareBlastFeedback({ hit: report.hit, lost: report.lost });
     }
 }
 function strategicPulseToast() {
@@ -1123,6 +1134,7 @@ function initGame(seedStr, nc, diff, opts) {
     G.doctrines = buildDoctrineLoadout(G.players, {
         doctrineId: G.doctrineId || playlistConfig.doctrineId || 'logistics',
         doctrines: opts.doctrines || [],
+        seed: G.seed,
     });
     G.doctrineStates = ensureDoctrineStates(G.doctrines, opts.doctrineStates || []);
     G.encounters = buildEncounterState(customMapCfg ? customMapCfg.encounters : playlistConfig.encounters, G.nodes, G.seed);

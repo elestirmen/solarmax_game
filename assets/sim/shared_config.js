@@ -23,7 +23,7 @@ export var SIM_CONSTANTS = {
     TERRITORY_RADIUS_NODE_RADIUS_MULT: 1.7,
     TERRITORY_RADIUS_LEVEL_BONUS: 14,
     TERRITORY_SPEED_MULT: 1.18,
-    HOLD_DECAY_GRACE_TICKS: 300,
+    HOLD_DECAY_GRACE_TICKS: 600,
     HOLD_DECAY_INTERVAL_TICKS: 36,
     ISOLATED_PROD_PENALTY: 0.6,
     DEFENSE_PROD_PENALTY: 0.6,
@@ -55,10 +55,14 @@ export var SIM_CONSTANTS = {
     SOLAR_FLARE_GAP_MIN_TICKS: 5400,
     /** Güneş patlaması: iki olay arası maksimum süre (~5 dk). */
     SOLAR_FLARE_GAP_MAX_TICKS: 9000,
-    /** Patlamadan önce uyarı süresi (tick, ~6 sn). */
-    SOLAR_FLARE_WARN_TICKS: 180,
-    CAP_SOFT_START: 0.82,
-    CAP_SOFT_FLOOR: 0.28,
+    /** Patlamadan önce uyarı süresi (tick, ~10 sn). */
+    SOLAR_FLARE_WARN_TICKS: 300,
+    /** Maç açılışı sırasında patlamaların bloke edildiği grace süresi (~90 sn). */
+    SOLAR_FLARE_FIRST_GRACE_TICKS: 2700,
+    /** Patlamada filo gücünün korunan oranı; kalan kısmı kaybedilir (0.4 → %60 yok olur). */
+    SOLAR_FLARE_FLEET_SURVIVAL: 0.4,
+    CAP_SOFT_START: 0.9,
+    CAP_SOFT_FLOOR: 0.35,
     DEFENSE_ASSIM_BONUS: 1.06,
     DEFENSE_FLOW_MULT: 0.72,
     SUPPLIED_UPGRADE_DISCOUNT: 0.94,
@@ -72,11 +76,11 @@ export var PLAYER_COLORS = ['#4a8eff', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6
 export var NODE_TYPE_DEFS = {
     core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#9ca9bd' },
     forge: { label: 'Forge', prod: 1.44, def: 0.84, cap: 0.87, flow: 1.08, speed: 1.0, color: '#c6a18c' },
-    bulwark: { label: 'Bulwark', prod: 0.66, def: 1.58, cap: 1.3, flow: 0.86, speed: 0.93, color: '#afb7c3' },
+    bulwark: { label: 'Bulwark', prod: 0.72, def: 1.4, cap: 1.18, flow: 0.86, speed: 0.93, color: '#afb7c3' },
     relay: { label: 'Relay', prod: 0.86, def: 0.92, cap: 0.8, flow: 1.45, speed: 1.42, color: '#9bb6be' },
     nexus: { label: 'Nexus', prod: 1.17, def: 1.13, cap: 1.13, flow: 1.22, speed: 1.12, color: '#b5acc1' },
     gate: { label: 'Gate', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#f0be6a' },
-    turret: { label: 'Turret', prod: 0.0, def: 2.38, cap: 0.78, flow: 0.78, speed: 1.0, color: '#a4c0c4' },
+    turret: { label: 'Turret', prod: 0.0, def: 2.1, cap: 0.78, flow: 0.78, speed: 1.0, color: '#a4c0c4' },
 };
 
 export var NODE_KIND_SIZE_PROFILES = {
@@ -158,7 +162,7 @@ export var AI_ARCHETYPES = [
 export var DIFFICULTY_PRESETS = {
     easy: {
         aiAggBase: 0.85, aiBuffer: 7, aiInterval: 36, flowInterval: 17,
-        aiUsesFog: false, adaptiveAI: false,
+        aiUsesFog: false, adaptiveAI: true,
         humanStartBoost: 1.2, aiStartBoost: 0.9,
         humanProdMult: 1.08, aiProdMult: 0.96,
         featureChance: 0.35, maxAttackTargets: 1,
@@ -177,8 +181,8 @@ export var DIFFICULTY_PRESETS = {
     hard: {
         aiAggBase: 1.45, aiBuffer: 2, aiInterval: 14, flowInterval: 10,
         aiUsesFog: true, adaptiveAI: true,
-        humanStartBoost: 0.9, aiStartBoost: 1.15,
-        humanProdMult: 0.96, aiProdMult: 1.1,
+        humanStartBoost: 1.0, aiStartBoost: 1.15,
+        humanProdMult: 1.0, aiProdMult: 1.1,
         featureChance: 0.78, maxAttackTargets: 3,
         aiReserveScale: 0.68, aiCommitMax: 0.95, aiCriticalCommitMax: 1.0, aiOpportunityRatio: 0.38,
         aiExtraSources: 3, aiTargetHumanBias: 32, aiTargetCapitalBias: 72, aiFlowPeriod: 5, aiUpgradePeriod: 9,

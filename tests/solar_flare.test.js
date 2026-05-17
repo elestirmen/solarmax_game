@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { applySolarFlareFleetWipe, getSolarFlareFrame, getSolarFlareTransitions, smallestBlastTickAtOrAfter } from '../assets/sim/solar_flare.js';
+import { applySolarFlareFleetDamage, applySolarFlareFleetWipe, getSolarFlareFrame, getSolarFlareTransitions, smallestBlastTickAtOrAfter } from '../assets/sim/solar_flare.js';
 
 var cfg = {
     gapMinTicks: 100,
@@ -37,6 +37,40 @@ test('applySolarFlareFleetWipe clears active fleets only', function () {
     assert.equal(fleets[0].count, 0);
     assert.equal(fleets[0].trail.length, 0);
     assert.equal(fleets[1].active, false);
+});
+
+test('applySolarFlareFleetDamage reduces count by survival fraction without deactivating viable fleets', function () {
+    var fleets = [
+        { active: true, holding: true, count: 10, trail: [1, 2] },
+        { active: true, count: 2, trail: [9] },
+        { active: false, count: 5, trail: [] },
+    ];
+    var report = applySolarFlareFleetDamage(fleets, 0.4);
+    assert.equal(report.hit, 2);
+    assert.equal(report.lost, 6 + 1);
+    assert.equal(fleets[0].active, true);
+    assert.equal(fleets[0].count, 4);
+    assert.equal(fleets[1].active, true);
+    assert.equal(fleets[1].count, 1);
+    assert.equal(fleets[2].active, false);
+});
+
+test('applySolarFlareFleetDamage collapses fleets that drop below 1 unit', function () {
+    var fleets = [
+        { active: true, count: 1, trail: [1] },
+    ];
+    var report = applySolarFlareFleetDamage(fleets, 0.4);
+    assert.equal(report.collapsed, 1);
+    assert.equal(fleets[0].active, false);
+    assert.equal(fleets[0].count, 0);
+});
+
+test('firstGraceTicks defers the first blast by the given amount', function () {
+    var graced = { gapMinTicks: 100, gapMaxTicks: 100, warnTicks: 20, firstGraceTicks: 200 };
+    assert.equal(smallestBlastTickAtOrAfter(0, 0, graced), 300);
+    assert.equal(getSolarFlareFrame(199, 0, graced).phase, 'idle');
+    assert.equal(getSolarFlareFrame(280, 0, graced).phase, 'warn');
+    assert.equal(getSolarFlareFrame(300, 0, graced).phase, 'blast');
 });
 
 test('getSolarFlareTransitions detects warning entry and blast across snapshot gaps', function () {

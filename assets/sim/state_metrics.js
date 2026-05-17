@@ -41,9 +41,14 @@ export function computeSupplyConnected(params) {
     if (capital === null || capital === undefined) return new Set();
 
     var connected = new Set([capital]);
+    // Each iteration must add at least one node, so iterations are bounded by node count.
+    // We add a hard cap as a defensive guard against future bugs or pathological inputs.
+    var maxIterations = nodes.length + 1;
     var changed = true;
-    while (changed) {
+    var iterations = 0;
+    while (changed && iterations < maxIterations) {
         changed = false;
+        iterations++;
         for (var i = 0; i < nodes.length; i++) {
             var node = nodes[i];
             if (!node || node.owner !== playerIndex || connected.has(node.id) || !isNodeAssimilated(node)) continue;

@@ -126,12 +126,33 @@ function normalizedState(rawState, doctrineId) {
     return state;
 }
 
+function aiArchetypeFor(index) {
+    var safeIndex = Math.max(1, Math.floor(Number(index) || 1));
+    return AI_ARCHETYPES[(safeIndex - 1 + AI_ARCHETYPES.length) % AI_ARCHETYPES.length] || null;
+}
+
 function aiDoctrineForIndex(index) {
-    var profile = AI_ARCHETYPES[(Math.max(1, Math.floor(Number(index) || 1)) - 1 + AI_ARCHETYPES.length) % AI_ARCHETYPES.length];
+    var profile = aiArchetypeFor(index);
     if (!profile) return 'logistics';
     if (profile.name === 'Rusher') return 'siege';
     if (profile.name === 'Turtle') return 'assimilation';
     return 'logistics';
+}
+
+// Seed-based variant: archetype gives a preferred doctrine, but seed nudges
+// the choice so 1-AI matches don't always lock to the same doctrine. Without
+// a seed, behavior matches the legacy index-based mapping (tests rely on this).
+function aiDoctrineForIndexSeeded(index, seed) {
+    var legacy = aiDoctrineForIndex(index);
+    var s = Math.floor(Number(seed) || 0);
+    if (!s) return legacy;
+    var profile = aiArchetypeFor(index);
+    if (!profile) return legacy;
+    var roll = ((Math.imul(s ^ (index + 1) * 2654435761, 374761393)) >>> 0) % 100;
+    // 65% stay with archetype's preferred doctrine, 35% pick one of the others.
+    if (roll < 65) return legacy;
+    var others = ['logistics', 'assimilation', 'siege'].filter(function (id) { return id !== legacy; });
+    return others[(roll - 65) % others.length];
 }
 
 export function buildDoctrineLoadout(players, opts) {
@@ -139,11 +160,13 @@ export function buildDoctrineLoadout(players, opts) {
     players = Array.isArray(players) ? players : [];
     var explicit = Array.isArray(opts.doctrines) ? opts.doctrines : [];
     var defaultDoctrine = normalizeDoctrineId(opts.doctrineId);
+    var seed = Number(opts.seed) || 0;
     var doctrines = [];
     for (var i = 0; i < players.length; i++) {
         var player = players[i] || {};
         var explicitDoctrine = explicit[i];
-        var doctrineId = explicitDoctrine ? normalizeDoctrineId(explicitDoctrine) : (player.isAI ? aiDoctrineForIndex(i) : defaultDoctrine);
+        var aiPick = seed ? aiDoctrineForIndexSeeded(i, seed) : aiDoctrineForIndex(i);
+        var doctrineId = explicitDoctrine ? normalizeDoctrineId(explicitDoctrine) : (player.isAI ? aiPick : defaultDoctrine);
         doctrines.push(doctrineId);
     }
     return doctrines;

@@ -11,7 +11,7 @@ import { stepFlowLinks } from './flow_step.js';
 import { resolveMatchEndState } from './end_state.js';
 import { getRulesetConfig } from './ruleset.js';
 import { getStrategicPulseState } from './strategic_pulse.js';
-import { applySolarFlareFleetWipe, getSolarFlareFrame } from './solar_flare.js';
+import { applySolarFlareFleetDamage, getSolarFlareFrame } from './solar_flare.js';
 import { computeSyncHash } from './state_hash.js';
 import { decideAiCommands } from './ai.js';
 import { initFog, updateVis } from './fog.js';
@@ -289,6 +289,7 @@ export function buildAuthoritativeState(snapshot, opts) {
         doctrines: buildDoctrineLoadout(players, {
             doctrineId: snapshot.doctrineId || manifest.doctrineId || 'logistics',
             doctrines: Array.isArray(snapshot.doctrines) ? snapshot.doctrines : [],
+            seed: Number(snapshot.seed || manifest.seed) || 0,
         }),
         doctrineStates: [],
         encounters: [],
@@ -553,9 +554,10 @@ export function simulateAuthoritativeTick(state) {
         gapMinTicks: SIM_CONSTANTS.SOLAR_FLARE_GAP_MIN_TICKS,
         gapMaxTicks: SIM_CONSTANTS.SOLAR_FLARE_GAP_MAX_TICKS,
         warnTicks: SIM_CONSTANTS.SOLAR_FLARE_WARN_TICKS,
+        firstGraceTicks: SIM_CONSTANTS.SOLAR_FLARE_FIRST_GRACE_TICKS,
     };
     if (getSolarFlareFrame(state.tick, state.seed, solarCfg).phase === 'blast') {
-        applySolarFlareFleetWipe(state.fleets);
+        applySolarFlareFleetDamage(state.fleets, SIM_CONSTANTS.SOLAR_FLARE_FLEET_SURVIVAL);
     }
 
     var turretReport = applyTurretDamage({
