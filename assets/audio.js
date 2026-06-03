@@ -14,6 +14,7 @@
     var lastWormholeTeleportAt = 0;
     var lastSolarFlareWarnAt = 0;
     var lastSolarFlareBlastAt = 0;
+    var lastDeniedAt = 0;
 
     var music = {
         started: false,
@@ -902,6 +903,101 @@
         });
     }
 
+    // The three cues below are intentionally built from sine/triangle
+    // oscillators with gentle low-pass filtering only — no white noise and
+    // no square/sawtooth — so they stay clean and cannot hiss or buzz.
+
+    function strategicPulseSound() {
+        // Soft rising "power online" chime for a strategic pulse activating.
+        var pulseNotes = [466.16, 622.25, 932.33];
+        for (var i = 0; i < pulseNotes.length; i++) {
+            playOsc({
+                target: sfxBus,
+                type: i % 2 ? 'sine' : 'triangle',
+                freq: pulseNotes[i],
+                gain: 0.05 - i * 0.008,
+                attack: 0.004,
+                decay: 0.06,
+                sustain: 0.035,
+                release: 0.34,
+                delay: i * 0.075,
+                reverbSend: 0.26,
+            });
+        }
+        playOsc({
+            target: sfxBus,
+            type: 'sine',
+            freq: 155.56,
+            freqEnd: 233.08,
+            sweep: 0.26,
+            gain: 0.038,
+            attack: 0.012,
+            decay: 0.08,
+            sustain: 0.03,
+            release: 0.36,
+            filterType: 'lowpass',
+            filterFreq: 520,
+            reverbSend: 0.14,
+        });
+    }
+
+    function dominanceSound() {
+        // Warm two-note lift for crossing the map-dominance threshold.
+        var domNotes = [349.23, 523.25];
+        for (var i = 0; i < domNotes.length; i++) {
+            playOsc({
+                target: sfxBus,
+                type: 'triangle',
+                freq: domNotes[i],
+                gain: 0.058 - i * 0.01,
+                attack: 0.004,
+                decay: 0.07,
+                sustain: 0.045,
+                release: 0.3,
+                delay: i * 0.1,
+                reverbSend: 0.24,
+            });
+        }
+        playOsc({
+            target: sfxBus,
+            type: 'sine',
+            freq: 698.46,
+            gain: 0.026,
+            attack: 0.006,
+            decay: 0.05,
+            sustain: 0.03,
+            release: 0.28,
+            delay: 0.16,
+            reverbSend: 0.3,
+        });
+    }
+
+    function deniedSound() {
+        // Soft, low descending "no" for a rejected order — two muffled sine
+        // blips. Rate-limited so a quick double-click cannot stack it.
+        var c = getCtx();
+        if (!c) return;
+        var now = c.currentTime;
+        if (now - lastDeniedAt < 0.14) return;
+        lastDeniedAt = now;
+        var deniedNotes = [233.08, 174.61];
+        for (var i = 0; i < deniedNotes.length; i++) {
+            playOsc({
+                target: sfxBus,
+                type: 'sine',
+                freq: deniedNotes[i],
+                gain: 0.05,
+                attack: 0.004,
+                decay: 0.04,
+                sustain: 0.025,
+                release: 0.1,
+                delay: i * 0.085,
+                filterType: 'lowpass',
+                filterFreq: 600,
+            });
+        }
+    }
+
     function victorySound() {
         var seq = [
             { n: 392, d: 0.00 },
@@ -1053,27 +1149,14 @@
                 delay: when - ctx.currentTime,
                 pan: rand(-0.25, 0.25),
                 reverbSend: 0.22,
-                filterType: 'bandpass',
-                filterFreq: 1800,
-                filterQ: 1.2,
+                filterType: 'lowpass',
+                filterFreq: 2600,
             });
         }
 
-        // Whisper hat
-        if (stepIndex % 4 === 2) {
-            playNoise({
-                target: musicBus,
-                filterType: 'highpass',
-                filterFreq: 4800,
-                gain: 0.006,
-                attack: 0.001,
-                decay: 0.01,
-                sustain: 0.002,
-                release: 0.04,
-                delay: when - ctx.currentTime,
-                pan: rand(-0.35, 0.35),
-            });
-        }
+        // The percussive noise "whisper hat" layer was removed: filtered
+        // white noise reads as an intermittent hiss on many speakers. The
+        // melodic layers (kick, bass, pad, arpeggio) carry the track alone.
     }
 
     function startMusic() {
@@ -1118,6 +1201,9 @@
         solarFlareBlast: solarFlareBlastSound,
         combat: combatSound,
         capture: captureSound,
+        strategicPulse: strategicPulseSound,
+        dominance: dominanceSound,
+        denied: deniedSound,
         upgrade: upgradeSound,
         upgradeStart: upgradeStartSound,
         upgradeComplete: upgradeCompleteSound,

@@ -11,7 +11,7 @@ import { controlsBarrierForOwner, isDispatchAllowed, syncBarrierGateNodes } from
 import { selectBarrierGateIds } from './assets/sim/barrier_layout.js';
 import { applyDefenseFieldDamage, getDefenseFieldStats } from './assets/sim/defense_field.js';
 import { computePlayerUnitCount, computeGlobalCap } from './assets/sim/cap.js';
-import { computeOwnershipMetrics, computeSupplyConnected as computeSupplyConnectedState, computePowerByPlayer as computePowerByPlayerState, getPlayerCapitalId } from './assets/sim/state_metrics.js';
+import { computeOwnershipMetrics, computeSupplyConnected as computeSupplyConnectedState, computePowerByPlayer as computePowerByPlayerState, getPlayerCapitalId, dominanceAttackMultiplier } from './assets/sim/state_metrics.js';
 import { stepNodeEconomy } from './assets/sim/node_economy.js';
 import { activateDoctrine, buildDoctrineLoadout, canActivateDoctrine, doctrineActiveName, doctrineCooldownSummary, doctrineModifiers, doctrineName, doctrineSummary, ensureDoctrineStates, tickDoctrineStates } from './assets/sim/doctrine.js';
 import { buildEncounterState, encounterHint, encounterName, encounterSummary, stepEncounterState } from './assets/sim/encounters.js';
@@ -525,6 +525,10 @@ function showGameToast(message, opts) {
         document.body.appendChild(toast);
     }
     activeGameToastKind = opts.kind || 'info';
+    var toastClass = 'achievement-toast game-toast';
+    if (activeGameToastKind === 'hint') toastClass += ' toast-hint';
+    else if (activeGameToastKind === 'warn') toastClass += ' toast-warn';
+    toast.className = toastClass;
     toast.textContent = message;
     toast.style.display = 'block';
     if (gameToastTimer) clearTimeout(gameToastTimer);
@@ -732,6 +736,8 @@ function triggerSolarFlareBlastFeedback(opts) {
     var hit = Number.isFinite(opts.hit) ? Math.max(0, Math.floor(opts.hit)) : null;
     var lost = Number.isFinite(opts.lost) ? Math.max(0, Math.floor(opts.lost)) : null;
     G.solarFlareFx.blastFlash = 1.05;
+    // Map-wide cataclysm Ã¢â‚¬â€ a modest jolt, scaled gently with fleets caught.
+    addScreenShake(hit !== null && hit > 0 ? Math.min(13, 7 + hit) : 6);
     enqueueShockwave(MAP_W * 0.5, MAP_H * 0.5, {
         radius: 120,
         grow: 520,
@@ -788,10 +794,20 @@ function maybeApplySolarFlareCombat() {
         triggerSolarFlareBlastFeedback({ hit: report.hit, lost: report.lost });
     }
 }
+var dominanceHintShown = false;
+function maybeShowDominanceHint() {
+    if (G.state !== 'playing' || dominanceHintShown) return;
+    // Fire once, when the closeout bonus has become meaningful (~57% control).
+    if (dominanceAttackMultiplier(G.nodes, G.human) <= 1.08) return;
+    dominanceHintShown = true;
+    if (typeof AudioFX !== 'undefined' && typeof AudioFX.dominance === 'function') AudioFX.dominance();
+    showHintToast('Üstünlük kazandın: haritanın çoğu sende. Filolarının saldırı gücü kontrolün arttıkça yükselir — kalan gezegenleri devral.');
+}
 function strategicPulseToast() {
     if (G.state !== 'playing' || !G.strategicPulse.active) return;
     if (G.strategicPulse.announcedCycle === G.strategicPulse.cycle) return;
     G.strategicPulse.announcedCycle = G.strategicPulse.cycle;
+    if (typeof AudioFX !== 'undefined' && typeof AudioFX.strategicPulse === 'function') AudioFX.strategicPulse();
     showHintToast('Strategic pulse aktif: PULSE hubı +35% üretim, +18% filo hızı, +30% asimilasyon ve +18 cap verir.');
 }
 function isLinkedWormhole(srcId, tgtId) {
@@ -1101,6 +1117,8 @@ function initGame(seedStr, nc, diff, opts) {
     G.fieldBeams = [];
     G.shockwaves = [];
     G.solarFlareFx = { blastFlash: 0 };
+    dominanceHintShown = false;
+    screenShake.mag = 0; screenShake.ox = 0; screenShake.oy = 0;
     resetOrbitalVisuals();
     for (var i = 0; i < pool.length; i++) { pool[i].active = false; pool[i].trail = []; }
     G.fleets = [];
@@ -1449,8 +1467,10 @@ function dispatch(owner, srcIds, tgtId, pct) {
         }
     }
     if (blockedByBarrier && owner === G.human) {
+        if (typeof AudioFX !== 'undefined' && typeof AudioFX.denied === 'function') AudioFX.denied();
         showGameToast('Geçit kilitli: ' + barrierGateObjectiveText() + ', sonra asimilasyon tamamlanana kadar bekle.');
     } else if (!didSend && friendlyRoom !== null && owner === G.human) {
+        if (typeof AudioFX !== 'undefined' && typeof AudioFX.denied === 'function') AudioFX.denied();
         showGameToast('Hedef dolu: dost takviye sığmıyor. Birlik çıkar veya başka hedefe yönlendir.');
     }
 }
@@ -1620,6 +1640,32 @@ function enqueueShockwave(x, y, opts) {
     if (G.shockwaves.length > 80) G.shockwaves = G.shockwaves.slice(-72);
 }
 
+// Ã¢â€â‚¬Ã¢â€â‚¬ SCREEN SHAKE Ã¢â€â‚¬Ã¢â€â‚¬
+// Purely visual, client-side only Ã¢â‚¬â€ never touched by the deterministic sim
+// or the state hash, so it is safe in single-player and multiplayer alike.
+var screenShake = { mag: 0, ox: 0, oy: 0 };
+var prefersReducedMotion = (function () {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; }
+    catch (e) { return false; }
+})();
+function addScreenShake(mag) {
+    mag = Number(mag) || 0;
+    if (mag <= 0 || prefersReducedMotion) return;
+    screenShake.mag = Math.min(14, Math.max(screenShake.mag, mag));
+}
+function advanceScreenShake(dt) {
+    if (!Number.isFinite(dt) || dt <= 0) return;
+    if (screenShake.mag <= 0.15) {
+        screenShake.mag = 0; screenShake.ox = 0; screenShake.oy = 0;
+        return;
+    }
+    // Exponential decay Ã¢â‚¬â€ ~0.7s settle for a strong hit, ~0.4s for a light one.
+    screenShake.mag *= Math.pow(0.0018, Math.min(dt, 0.05));
+    var ang = Math.random() * Math.PI * 2;
+    screenShake.ox = Math.cos(ang) * screenShake.mag;
+    screenShake.oy = Math.sin(ang) * screenShake.mag;
+}
+
 var lastUpgradeFeedbackSoundAt = -99999;
 function playUpgradeFeedbackSound(kind) {
     if (typeof AudioFX === 'undefined') return;
@@ -1694,6 +1740,50 @@ function triggerNodeUpgradeCompleteFeedback(node, opts) {
         glow: 0.86,
     });
     if (!opts.silent) playUpgradeFeedbackSound('complete');
+}
+
+// Confirmation puff on the source planets/fleets the instant the human
+// issues a send order Ã¢â‚¬â€ purely cosmetic, fired only on explicit player input
+// (never for AI or flow-link dispatches), so it cannot affect the sim.
+function triggerDispatchLaunchFeedback(sourceIds, fleetIds) {
+    var humanColor = G.players[G.human] ? G.players[G.human].color : '#9fd0ff';
+    var origins = [];
+    if (Array.isArray(sourceIds)) {
+        for (var i = 0; i < sourceIds.length; i++) {
+            var node = G.nodes[sourceIds[i]];
+            if (node && node.pos && isNodeVisibleToHuman(node)) {
+                origins.push({ x: node.pos.x, y: node.pos.y, r: Number(node.radius) || 18 });
+            }
+        }
+    }
+    if (Array.isArray(fleetIds)) {
+        for (var f = 0; f < fleetIds.length; f++) {
+            var fleet = findHoldingFleetById(fleetIds[f]);
+            if (fleet) origins.push({ x: Number(fleet.x) || 0, y: Number(fleet.y) || 0, r: 11 });
+        }
+    }
+    for (var o = 0; o < origins.length; o++) {
+        var org = origins[o];
+        enqueueShockwave(org.x, org.y, {
+            color: humanColor,
+            radius: org.r * 0.62,
+            grow: org.r * 0.9 + 9,
+            life: 0.26,
+            alpha: 0.34,
+            fillAlpha: 0.04,
+            lineWidth: 1.8,
+        });
+        spawnParticles(org.x, org.y, 10, humanColor, false, {
+            spread: Math.PI * 2,
+            speedMin: 1.4,
+            speedMax: 4.4,
+            drag: 0.9,
+            lifeMin: 0.18,
+            lifeMax: 0.4,
+            radiusScale: 0.9,
+            glow: 0.5,
+        });
+    }
 }
 
 function captureNodeUpgradeReplayState(nodes) {
@@ -1921,6 +2011,7 @@ function gameTick(runtimeOpts) {
                 var modifiers = doctrineModifiers(G.doctrines, G.doctrineStates, owner);
                 var mult = modifiers.attackMult;
                 if (targetNode && targetNode.kind === 'turret') mult *= modifiers.turretAttackMult;
+                mult *= dominanceAttackMultiplier(G.nodes, owner);
                 return mult;
             },
             defenseMultiplier: function () {
@@ -1931,6 +2022,10 @@ function gameTick(runtimeOpts) {
             stepHoldingFleetDecay: stepHoldingFleetDecay,
             showGameToast: showGameToast,
             playArrivalAudio: function (kind) {
+                // Only fired for battles the human is involved in (see fleet_step.js).
+                // Capture gets a small, single jolt; ordinary combat gets none,
+                // so a sustained battle never turns into a constant rumble.
+                if (kind === 'capture') addScreenShake(3.5);
                 if (typeof AudioFX === 'undefined') return;
                 if (kind === 'capture' && typeof AudioFX.capture === 'function') AudioFX.capture();
                 else if (kind === 'combat' && typeof AudioFX.combat === 'function') AudioFX.combat();
@@ -3142,23 +3237,46 @@ function drawContestedFronts(ctx, territorySets, tick) {
     for (var fi = 0; fi < fronts.length; fi++) {
         var front = fronts[fi];
         var pulse = 0.52 + 0.48 * Math.sin(tick * 0.05 + fi * 0.9);
+        // Tension line linking the two overlapping territories.
         ctx.beginPath();
         ctx.moveTo(front.ax, front.ay);
         ctx.lineTo(front.bx, front.by);
-        ctx.strokeStyle = 'rgba(255,228,168,' + (0.1 + pulse * 0.06) + ')';
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = 'rgba(255,206,120,' + (0.2 + pulse * 0.14) + ')';
+        ctx.lineWidth = 1.6;
         ctx.stroke();
 
+        // Soft contested haze.
         ctx.beginPath();
         ctx.arc(front.x, front.y, front.radius, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255,232,180,' + (0.03 + pulse * 0.025) + ')';
+        ctx.fillStyle = 'rgba(255,178,92,' + (0.06 + pulse * 0.05) + ')';
         ctx.fill();
 
+        // Pulsing hazard ring Ã¢â‚¬â€ the unmistakable "front line" read.
         ctx.beginPath();
-        ctx.arc(front.x, front.y, front.radius * (0.74 + pulse * 0.08), 0, Math.PI * 2);
-        ctx.strokeStyle = 'rgba(255,238,196,' + (0.18 + pulse * 0.08) + ')';
-        ctx.lineWidth = 1;
+        ctx.arc(front.x, front.y, front.radius * (0.72 + pulse * 0.1), 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255,224,150,' + (0.34 + pulse * 0.2) + ')';
+        ctx.lineWidth = 1.8;
         ctx.stroke();
+
+        // Rotating hazard ticks make the hotspot legible at a glance.
+        var tickRadius = front.radius * (0.72 + pulse * 0.1);
+        var spin = tick * 0.03 + fi;
+        ctx.strokeStyle = 'rgba(255,236,186,' + (0.3 + pulse * 0.26) + ')';
+        ctx.lineWidth = 2;
+        for (var ti = 0; ti < 4; ti++) {
+            var ang = spin + ti * (Math.PI / 2);
+            var cos = Math.cos(ang), sin = Math.sin(ang);
+            ctx.beginPath();
+            ctx.moveTo(front.x + cos * (tickRadius - 3), front.y + sin * (tickRadius - 3));
+            ctx.lineTo(front.x + cos * (tickRadius + 4), front.y + sin * (tickRadius + 4));
+            ctx.stroke();
+        }
+
+        // Bright pulsing core so the contested point cannot be missed.
+        ctx.beginPath();
+        ctx.arc(front.x, front.y, 2.6 + pulse * 1.7, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,240,202,' + (0.4 + pulse * 0.35) + ')';
+        ctx.fill();
     }
     ctx.restore();
 }
@@ -3250,7 +3368,7 @@ function render(ctx, cv, tick) {
     pruneSelectedFleetIds();
     drawScreenBackdrop(ctx, cv, tick);
     ctx.save();
-    ctx.translate(cv.width / 2, cv.height / 2);
+    ctx.translate(cv.width / 2 + screenShake.ox, cv.height / 2 + screenShake.oy);
     ctx.scale(G.cam.zoom, G.cam.zoom);
     ctx.translate(-G.cam.x, -G.cam.y);
     renderWorldLayers({
@@ -3692,6 +3810,7 @@ function sendFromSelectionTo(tgtId) {
     if (!issueOnlineCommand('send', sendData)) {
         applyPlayerCommand(G.human, 'send', sendData);
     }
+    triggerDispatchLaunchFeedback(selected.sources, selected.fleetIds);
     return true;
 }
 function sendFromSourcesTo(srcs, fleetIds, tgtId) {
@@ -3711,6 +3830,7 @@ function sendFromSourcesTo(srcs, fleetIds, tgtId) {
     if (!issueOnlineCommand('send', sendData)) {
         applyPlayerCommand(G.human, 'send', sendData);
     }
+    triggerDispatchLaunchFeedback(valid, validFleetIds);
     return true;
 }
 function sendFromSourcesToPoint(srcs, fleetIds, point) {
@@ -3732,6 +3852,7 @@ function sendFromSourcesToPoint(srcs, fleetIds, point) {
     if (!issueOnlineCommand('send', sendData)) {
         applyPlayerCommand(G.human, 'send', sendData);
     }
+    triggerDispatchLaunchFeedback(valid, validFleetIds);
     return true;
 }
 function centroidForSources(srcIds, fleetIds) {
@@ -3886,8 +4007,9 @@ var hudTelemetryRow = $('hudTelemetryRow'), hudTick = $('hudTick'), hudPct = $('
 var hudContextBadge = $('hudContextBadge'), hudHintLine = $('hudHintLine'), hudCoachRow = $('hudCoachRow'), hudActionTip = $('hudActionTip');
 var hudCommandHintBadge = $('hudCommandHintBadge'), hudMobileCommandsBtn = $('hudMobileCommandsBtn'), hudMobileStatusBtn = $('hudMobileStatusBtn');
 var hudAdvisorCard = $('hudAdvisorCard'), hudAdvisorTitle = $('hudAdvisorTitle'), hudAdvisorBody = $('hudAdvisorBody');
-var nodeHoverTip = $('nodeHoverTip'), nodeHoverTipTitle = $('nodeHoverTipTitle'), nodeHoverTipBody = $('nodeHoverTipBody');
+var nodeHoverTip = $('nodeHoverTip'), nodeHoverTipTitle = $('nodeHoverTipTitle'), nodeHoverTipBody = $('nodeHoverTipBody'), nodeHoverTipStats = $('nodeHoverTipStats');
 var doctrineBtn = $('doctrineBtn'), upgradeHudBtn = $('upgradeHudBtn'), defenseHudBtn = $('defenseHudBtn'), flowHudBtn = $('flowHudBtn');
+var commandModeBanner = $('commandModeBanner');
 var sendPctQuickBtns = Array.prototype.slice.call(document.querySelectorAll('.send-quick-btn'));
 var powerSidebar = $('powerSidebar'), powerListEl = $('powerList');
 var scenarioOv = $('scenarioOverlay'), scenarioStartBtn = $('scenarioStartBtn'), scenarioCloseBtn = $('scenarioCloseBtn'), scenarioProgressEl = $('scenarioProgress'), scenarioBubbleListEl = $('scenarioBubbleList'), scenarioMissionEl = $('scenarioMission');
@@ -3898,6 +4020,7 @@ var tuneResetBtn = $('tuneResetBtn'), tuneTogBtn = $('tuneToggleBtn');
 var tuneFogCb = $('tuneFogOfWar'), tuneAiAssistCb = $('tuneAiAssist'), menuFogCb = $('menuFogOfWar');
 var exportMapHudBtn = $('exportMapHudBtn');
 var audioToggleBtn = $('audioToggleBtn'), hudInfoToggleBtn = $('hudInfoToggleBtn'), hintToggleBtn = $('hintToggleBtn');
+var musicToggleBtn = $('musicToggleBtn');
 var tuneVals = { p: $('tuneProductionVal'), f: $('tuneFleetSpeedVal'), d: $('tuneDefenseVal'), fi: $('tuneFlowIntervalVal'), aa: $('tuneAIAggressionVal'), ab: $('tuneAIBufferVal'), ad: $('tuneAIDecisionVal') };
 var UI_PREFS_KEY = 'stellar_ui_prefs_v1';
 var DEFAULT_SFX_VOLUME = 0.85, DEFAULT_MUSIC_VOLUME = 0.55;
@@ -4044,12 +4167,14 @@ function loadUiPrefs() {
         var parsed = raw ? JSON.parse(raw) : {};
         return {
             audioEnabled: parsed && parsed.audioEnabled !== false,
+            musicEnabled: parsed ? parsed.musicEnabled !== false : true,
             hudTelemetryVisible: !!(parsed && parsed.hudTelemetryVisible),
             hintsEnabled: parsed ? parsed.hintsEnabled !== false : true,
         };
     } catch (e) {
         return {
             audioEnabled: true,
+            musicEnabled: true,
             hudTelemetryVisible: false,
             hintsEnabled: true,
         };
@@ -4059,6 +4184,7 @@ function saveUiPrefs() {
     try {
         localStorage.setItem(UI_PREFS_KEY, JSON.stringify({
             audioEnabled: uiPrefs.audioEnabled !== false,
+            musicEnabled: uiPrefs.musicEnabled !== false,
             hudTelemetryVisible: !!uiPrefs.hudTelemetryVisible,
             hintsEnabled: uiPrefs.hintsEnabled !== false,
         }));
@@ -4067,8 +4193,9 @@ function saveUiPrefs() {
 function applyAudioPreference() {
     if (typeof AudioFX === 'undefined') return;
     AudioFX.setSfxVolume(uiPrefs.audioEnabled ? DEFAULT_SFX_VOLUME : 0);
-    AudioFX.setMusicVolume(uiPrefs.audioEnabled ? DEFAULT_MUSIC_VOLUME : 0);
-    if (!uiPrefs.audioEnabled) {
+    var musicOn = uiPrefs.audioEnabled && uiPrefs.musicEnabled !== false;
+    AudioFX.setMusicVolume(musicOn ? DEFAULT_MUSIC_VOLUME : 0);
+    if (!musicOn) {
         AudioFX.stopMusic();
     } else if (G.state === 'playing' || G.state === 'paused') {
         AudioFX.startMusic();
@@ -4077,6 +4204,12 @@ function applyAudioPreference() {
 function syncAudioToggleButton() {
     if (!audioToggleBtn) return;
     audioToggleBtn.textContent = uiPrefs.audioEnabled ? 'Ses: Açık' : 'Ses: Kapalı';
+    syncMusicToggleButton();
+}
+function syncMusicToggleButton() {
+    if (!musicToggleBtn) return;
+    musicToggleBtn.textContent = uiPrefs.musicEnabled !== false ? 'Müzik: Açık' : 'Müzik: Kapalı';
+    musicToggleBtn.disabled = !uiPrefs.audioEnabled;
 }
 function syncHudTelemetryVisibility() {
     if (hudTelemetryRow) hudTelemetryRow.classList.toggle('hidden', !uiPrefs.hudTelemetryVisible);
@@ -4128,6 +4261,7 @@ function ensureNodeHoverTipElements() {
     if (!nodeHoverTip) nodeHoverTip = $('nodeHoverTip');
     if (!nodeHoverTipTitle) nodeHoverTipTitle = $('nodeHoverTipTitle');
     if (!nodeHoverTipBody) nodeHoverTipBody = $('nodeHoverTipBody');
+    if (!nodeHoverTipStats) nodeHoverTipStats = $('nodeHoverTipStats');
     return !!(nodeHoverTip && nodeHoverTipTitle && nodeHoverTipBody);
 }
 function hideNodeHoverTip() {
@@ -4160,13 +4294,22 @@ function hoveredNodeForTip() {
     if (!isNodeVisibleToHuman(node)) return null;
     return node;
 }
+function nodeHoverTipOptsForNode(node) {
+    return {
+        kind: node.kind,
+        label: nodeTypeOf(node).label,
+        ownerLabel: node.owner === -1 ? 'Tarafsız' : labelForPlayer(node.owner),
+        units: node.units,
+        capacity: nodeCapacity(node),
+        level: node.level,
+        defense: !!node.defense,
+        supplied: node.owner >= 0 ? node.supplied : undefined,
+    };
+}
 function currentHoveredNodeTip() {
     var node = hoveredNodeForTip();
     if (!node) return null;
-    return buildNodeHoverTip({
-        kind: node.kind,
-        label: nodeTypeOf(node).label,
-    });
+    return buildNodeHoverTip(nodeHoverTipOptsForNode(node));
 }
 function positionNodeHoverTip(screenPos) {
     if (!ensureNodeHoverTipElements() || !cv || !screenPos) return;
@@ -4200,11 +4343,9 @@ function syncNodeHoverTip() {
         hideNodeHoverTip();
         return;
     }
-    var tip = buildNodeHoverTip({
-        kind: node.kind,
-        label: nodeTypeOf(node).label,
-    });
+    var tip = buildNodeHoverTip(nodeHoverTipOptsForNode(node));
     nodeHoverTipTitle.textContent = tip.title;
+    if (nodeHoverTipStats) nodeHoverTipStats.textContent = tip.stats || '';
     nodeHoverTipBody.textContent = tip.body;
     nodeHoverTip.classList.remove('hidden');
     nodeHoverTip.setAttribute('aria-hidden', 'false');
@@ -4295,6 +4436,13 @@ function syncMatchHudControls() {
             : 'Seçili kaynaklardan otomatik transfer hattı kurmak için hedef modu açar.');
         flowHudBtn.setAttribute('data-help-disabled', 'Flow için önce bir veya daha fazla kendi gezegenini seç.');
     }
+    if (commandModeBanner) {
+        var flowTargeting = inp.commandMode === 'flow' && G.state === 'playing';
+        commandModeBanner.classList.toggle('hidden', !flowTargeting);
+        if (flowTargeting) {
+            commandModeBanner.textContent = 'FLOW MODU · hedef gezegene tıkla — iptal için boş alana tıkla';
+        }
+    }
     if (chatToggle) {
         var chatAvailable = isRoomChatAvailable(net);
         chatToggle.disabled = !chatAvailable;
@@ -4315,6 +4463,12 @@ function setAudioEnabled(enabled) {
     saveUiPrefs();
     applyAudioPreference();
     syncAudioToggleButton();
+}
+function setMusicEnabled(enabled) {
+    uiPrefs.musicEnabled = !!enabled;
+    saveUiPrefs();
+    applyAudioPreference();
+    syncMusicToggleButton();
 }
 function setHudTelemetryVisible(visible) {
     uiPrefs.hudTelemetryVisible = !!visible;
@@ -6825,6 +6979,13 @@ if (audioToggleBtn) {
         showGameToast(uiPrefs.audioEnabled ? 'Ses açıldı.' : 'Ses kapatıldı.');
     });
 }
+if (musicToggleBtn) {
+    musicToggleBtn.addEventListener('click', function () {
+        if (!uiPrefs.audioEnabled) return;
+        setMusicEnabled(uiPrefs.musicEnabled === false);
+        showGameToast(uiPrefs.musicEnabled ? 'Müzik açıldı.' : 'Müzik kapatıldı (ses efektleri açık).');
+    });
+}
 if (hudInfoToggleBtn) {
     hudInfoToggleBtn.addEventListener('click', function () {
         setHudTelemetryVisible(!uiPrefs.hudTelemetryVisible);
@@ -7165,6 +7326,7 @@ function loop(ts) {
         }
         if (hudMeta) hudMeta.textContent = selectionMetaText();
         syncHudAssistiveText();
+        maybeShowDominanceHint();
         if (doctrineBtn) {
             var doctrineId = humanDoctrineId();
             var doctrineButtonState = buildDoctrineButtonState({
@@ -7195,6 +7357,7 @@ function loop(ts) {
     }
     syncNodeHoverTip();
     if (G.state === 'playing' || G.state === 'paused') updatePowerSidebar();
+    advanceScreenShake(rawDt);
     if (G.state !== 'mainMenu') render(ctx, cv, G.tick);
     requestAnimationFrame(loop);
 }

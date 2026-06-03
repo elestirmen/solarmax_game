@@ -1,5 +1,5 @@
 import { applyPlayerCommandWithOps } from './command_apply.js';
-import { computeOwnershipMetrics } from './state_metrics.js';
+import { computeOwnershipMetrics, dominanceAttackMultiplier } from './state_metrics.js';
 import { stepNodeEconomy } from './node_economy.js';
 import { applyTurretDamage } from './turret.js';
 import { applyDefenseFieldDamage } from './defense_field.js';
@@ -656,6 +656,7 @@ export function simulateAuthoritativeTick(state) {
                 var modifiers = doctrineModifiers(state.doctrines, state.doctrineStates, owner);
                 var mult = modifiers.attackMult;
                 if (targetNode && targetNode.kind === 'turret') mult *= modifiers.turretAttackMult;
+                mult *= dominanceAttackMultiplier(state.nodes, owner);
                 return mult;
             },
             defenseMultiplier: function () {

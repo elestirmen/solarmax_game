@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { computeOwnershipMetrics, computeSupplyConnected, getPlayerCapitalId } from '../assets/sim/state_metrics.js';
+import { computeOwnershipMetrics, computeSupplyConnected, getPlayerCapitalId, dominanceAttackMultiplier, DOMINANCE_ATTACK_MAX_BONUS } from '../assets/sim/state_metrics.js';
 
 function dist(a, b) {
     var dx = (a.x || 0) - (b.x || 0);
@@ -77,4 +77,34 @@ test('computeOwnershipMetrics derives power, cap, units, and supply from shared 
     assert.equal(metrics.powerByPlayer[1], 11);
     assert.equal(metrics.supplyByPlayer[0].has(1), true);
     assert.equal(metrics.supplyByPlayer[1].has(2), true);
+});
+
+test('dominanceAttackMultiplier stays neutral at or below half the map', function () {
+    var nodes = [
+        { owner: 0 }, { owner: 0 }, { owner: 1 }, { owner: 1 },
+    ];
+    assert.equal(dominanceAttackMultiplier(nodes, 0), 1);
+    assert.equal(dominanceAttackMultiplier(nodes, 1), 1);
+});
+
+test('dominanceAttackMultiplier ramps up as a player controls more of the map', function () {
+    var nodes = [
+        { owner: 0 }, { owner: 0 }, { owner: 0 }, { owner: 1 },
+    ];
+    var mult = dominanceAttackMultiplier(nodes, 0);
+    assert.ok(mult > 1, 'leader past 50% control gets a bonus');
+    assert.ok(mult < 1 + DOMINANCE_ATTACK_MAX_BONUS, 'bonus below the full-map cap');
+    // 75% control => halfway up the 50%->100% ramp.
+    assert.ok(Math.abs(mult - (1 + 0.5 * DOMINANCE_ATTACK_MAX_BONUS)) < 1e-9);
+});
+
+test('dominanceAttackMultiplier reaches the max bonus at full control', function () {
+    var nodes = [{ owner: 0 }, { owner: 0 }, { owner: 0 }];
+    assert.equal(dominanceAttackMultiplier(nodes, 0), 1 + DOMINANCE_ATTACK_MAX_BONUS);
+});
+
+test('dominanceAttackMultiplier is safe for empty or invalid input', function () {
+    assert.equal(dominanceAttackMultiplier([], 0), 1);
+    assert.equal(dominanceAttackMultiplier(null, 0), 1);
+    assert.equal(dominanceAttackMultiplier([{ owner: 0 }], -1), 1);
 });

@@ -352,11 +352,23 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
         }
 
         if (n.selected && n.owner === game.human) {
+            var selPulse = 0.5 + 0.5 * Math.sin(tick * 0.12 + n.id * 0.4);
+            var selCol = game.players[n.owner] ? game.players[n.owner].color : '#ffffff';
+            var toRgba = typeof helpers.hexToRgba === 'function' ? helpers.hexToRgba : function () { return 'rgba(255,255,255,0.3)'; };
+            ctx.save();
+            // Soft pulsing halo in the owner's colour.
+            ctx.beginPath();
+            ctx.arc(n.pos.x, n.pos.y, drawRadius + 6 + selPulse * 2.6, 0, Math.PI * 2);
+            ctx.strokeStyle = toRgba(selCol, 0.20 + selPulse * 0.20);
+            ctx.lineWidth = 3.6;
+            ctx.stroke();
+            // Crisp inner ring for an unambiguous selection edge.
             ctx.beginPath();
             ctx.arc(n.pos.x, n.pos.y, drawRadius + 4, 0, Math.PI * 2);
-            ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-            ctx.lineWidth = 1.5;
+            ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+            ctx.lineWidth = 1.6;
             ctx.stroke();
+            ctx.restore();
         }
 
         if ((vis || n.owner === game.human) && n.owner >= 0 && n.supplied === false) {
@@ -880,15 +892,36 @@ export function renderMinimapLayer(opts) {
         } else {
             mcol = blendHex(baseCol, tc, 0.38);
         }
-        var mr = 7.6;
-        if (mn.kind === 'turret') mr = 10.2;
-        else if (mn.kind === 'gate') mr = 9.6;
-        else if (mn.kind === 'forge' || mn.kind === 'bulwark' || mn.kind === 'nexus') mr = 8.9;
-        else if (mn.kind === 'relay') mr = 8.35;
+        var mr = 8.6;
+        if (mn.kind === 'turret') mr = 11.4;
+        else if (mn.kind === 'gate') mr = 10.8;
+        else if (mn.kind === 'forge' || mn.kind === 'bulwark' || mn.kind === 'nexus') mr = 10;
+        else if (mn.kind === 'relay') mr = 9.4;
+        // Soft glow so dots read clearly against the dark minimap.
+        ctx.globalAlpha = mn.owner >= 0 ? 0.45 : 0.28;
+        ctx.fillStyle = mcol;
+        ctx.beginPath();
+        ctx.arc(mn.pos.x, mn.pos.y, mr * 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        // Solid core dot.
         ctx.fillStyle = mcol;
         ctx.beginPath();
         ctx.arc(mn.pos.x, mn.pos.y, mr, 0, Math.PI * 2);
         ctx.fill();
+        // Bright highlight for legibility.
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.beginPath();
+        ctx.arc(mn.pos.x, mn.pos.y, mr * 0.38, 0, Math.PI * 2);
+        ctx.fill();
+        // Ring the player's own holdings so their front is obvious.
+        if (mn.owner === game.human) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+            ctx.lineWidth = 2.4;
+            ctx.beginPath();
+            ctx.arc(mn.pos.x, mn.pos.y, mr + 2.4, 0, Math.PI * 2);
+            ctx.stroke();
+        }
     }
     ctx.restore();
 

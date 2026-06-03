@@ -174,6 +174,28 @@ test('ai keeps reserve on a newly captured frontline node instead of using it as
     assert.deepEqual(firstSend.data.sources, [0]);
 });
 
+test('ai will not throw away a node captured this very moment as an attack source', function () {
+    // assimilationLock at the full lock window means the node changed hands
+    // moments ago; even with a healthy garrison the AI should consolidate it
+    // and attack from its established home base instead.
+    var justTaken = node(1, 1, 120, 0, 70, 'core');
+    justTaken.assimilationProgress = 0;
+    justTaken.assimilationLock = 180;
+
+    var nodes = [
+        node(0, 1, -150, 0, 96, 'core'),
+        justTaken,
+        node(2, 0, 230, 0, 18, 'core'),
+    ];
+    var commands = decideAiCommands(buildState('hard', nodes, { 0: 96, 1: 132 }), 1);
+    var sendToPickup = commands.find(function (command) {
+        return command.type === 'send' && command.data && command.data.tgtId === 2;
+    });
+
+    assert.ok(sendToPickup);
+    assert.equal(sendToPickup.data.sources.indexOf(1), -1, 'a node captured this tick is not used as a throwaway source');
+});
+
 test('ai stages a turret siege on a safe friendly planet before committing', function () {
     var nodes = [
         node(0, 1, 0, 0, 74, 'core'),

@@ -135,3 +135,31 @@ export function computeOwnershipMetrics(params) {
         capByPlayer: capByPlayer,
     };
 }
+
+// Above this share of the map the closeout bonus starts ramping up.
+export var DOMINANCE_ATTACK_THRESHOLD = 0.5;
+// Extra attack power at 100% map control (e.g. 0.6 => +60% attack).
+export var DOMINANCE_ATTACK_MAX_BONUS = 0.6;
+
+// Late-game closeout aid: a player who controls most of the map gets a
+// gradually rising attack bonus, so mopping up the last well-defended
+// holdouts does not stall out. Pure and deterministic Ã¢â‚¬â€ it reads only node
+// ownership Ã¢â‚¬â€ so the client prediction and the authoritative server always
+// compute the same multiplier. Returns a value >= 1.
+export function dominanceAttackMultiplier(nodes, owner) {
+    if (!Array.isArray(nodes) || !(owner >= 0)) return 1;
+    var owned = 0;
+    var total = 0;
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (!node) continue;
+        total++;
+        if (node.owner === owner) owned++;
+    }
+    if (total <= 0) return 1;
+    var share = owned / total;
+    if (share <= DOMINANCE_ATTACK_THRESHOLD) return 1;
+    var ramp = (share - DOMINANCE_ATTACK_THRESHOLD) / (1 - DOMINANCE_ATTACK_THRESHOLD);
+    if (ramp > 1) ramp = 1;
+    return 1 + ramp * DOMINANCE_ATTACK_MAX_BONUS;
+}

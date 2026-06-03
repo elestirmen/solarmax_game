@@ -88,6 +88,25 @@ export function buildNodeHoverTip(opts) {
     var title = opts.label ? String(opts.label) : (NODE_TYPE_LABELS[kind] || NODE_TYPE_LABELS.core);
     return {
         title: title,
+        stats: buildNodeHoverStats(opts),
         body: NODE_TYPE_TIPS[kind] || NODE_TYPE_TIPS.core,
     };
+}
+
+// Compact live-stat line for the hovered planet: owner, garrison vs capacity,
+// level and status flags. Empty string when no stats were supplied.
+export function buildNodeHoverStats(opts) {
+    opts = opts && typeof opts === 'object' ? opts : {};
+    var parts = [];
+    if (opts.ownerLabel) parts.push(String(opts.ownerLabel));
+    if (Number.isFinite(Number(opts.units))) {
+        var units = Math.max(0, Math.floor(Number(opts.units)));
+        var cap = Number(opts.capacity);
+        parts.push('Birlik ' + units + (Number.isFinite(cap) && cap > 0 ? ' / ' + Math.floor(cap) : ''));
+    }
+    var level = Math.floor(Number(opts.level) || 0);
+    if (level >= 1) parts.push('Sv.' + level);
+    if (opts.defense) parts.push('Kalkan açık');
+    if (opts.supplied === false) parts.push('Tedariksiz');
+    return parts.join('  ·  ');
 }

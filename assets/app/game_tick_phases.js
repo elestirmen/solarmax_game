@@ -235,6 +235,13 @@ export function runCombatTickPhase(opts) {
     for (var ari = 0; ari < arrivalReport.particleBursts.length; ari++) {
         var burst = arrivalReport.particleBursts[ari];
         callbacks.spawnParticles(burst.x, burst.y, burst.count, burst.color, burst.isCapture, burst);
+        if (burst.isCapture && typeof callbacks.enqueueShockwave === 'function') {
+            // Bright, fast "punch" flash the instant a node changes hands.
+            callbacks.enqueueShockwave(burst.x, burst.y, {
+                color: '#ffffff', radius: 4, grow: 48, life: 0.22,
+                alpha: 0.72, fillAlpha: 0.3, lineWidth: 3,
+            });
+        }
     }
     for (var asi = 0; asi < (arrivalReport.shockwaves || []).length; asi++) {
         var wave = arrivalReport.shockwaves[asi];

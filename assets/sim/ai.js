@@ -216,6 +216,12 @@ export function decideAiCommands(state, playerIndex) {
             else nodeReserve += 3;
         } else if (territoryState.contested) nodeReserve += 4;
         else if (!territoryState.friendlySafe) nodeReserve += 2;
+        // Freshly conquered nodes are still under the assimilation lock.
+        // Keep their garrison thicker so the AI consolidates a new capture
+        // instead of immediately re-launching from it and overextending the
+        // front line it just established.
+        var captureLock = Math.max(0, Number(node.assimilationLock) || 0);
+        if (captureLock > 0) nodeReserve += Math.ceil(captureLock / 20);
         if (node.gate) nodeReserve += 4;
         if (node.defense) nodeReserve += 2;
         if (node.kind === 'turret') nodeReserve += 3;

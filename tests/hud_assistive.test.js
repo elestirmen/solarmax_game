@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { HUD_ACTION_HELP_DEFAULT, buildHudContextBadge, buildHudHintText, buildNodeHoverTip } from '../assets/ui/hud_assistive.js';
+import { HUD_ACTION_HELP_DEFAULT, buildHudContextBadge, buildHudHintText, buildNodeHoverTip, buildNodeHoverStats } from '../assets/ui/hud_assistive.js';
 
 test('HUD helpers return empty-state guidance', function () {
     assert.equal(HUD_ACTION_HELP_DEFAULT.length > 10, true);
@@ -39,4 +39,37 @@ test('HUD hover tips explain planet roles succinctly', function () {
     assert.match(gateTip.body, /Bariyer kapısı/);
     assert.match(turretTip.body, /Üretmez/);
     assert.equal(fallbackTip.title, 'Core');
+});
+
+test('buildNodeHoverStats summarises owner, garrison and status', function () {
+    var stats = buildNodeHoverStats({
+        ownerLabel: 'Sen', units: 42.7, capacity: 60, level: 2,
+        defense: true, supplied: false,
+    });
+    assert.match(stats, /Sen/);
+    assert.match(stats, /Birlik 42 \/ 60/);
+    assert.match(stats, /Sv\.2/);
+    assert.match(stats, /Kalkan açık/);
+    assert.match(stats, /Tedariksiz/);
+});
+
+test('buildNodeHoverStats omits flags that do not apply', function () {
+    var stats = buildNodeHoverStats({ ownerLabel: 'Tarafsız', units: 12, level: 1 });
+    assert.match(stats, /Tarafsız/);
+    assert.match(stats, /Birlik 12/);
+    assert.doesNotMatch(stats, /Kalkan/);
+    assert.doesNotMatch(stats, /Tedariksiz/);
+    assert.doesNotMatch(stats, /\//);
+});
+
+test('buildNodeHoverTip carries the live stat line alongside the type tip', function () {
+    var tip = buildNodeHoverTip({ kind: 'forge', ownerLabel: 'AI 1', units: 8 });
+    assert.equal(tip.title, 'Forge');
+    assert.match(tip.stats, /AI 1/);
+    assert.match(tip.body, /Üretim yüksek/);
+});
+
+test('buildNodeHoverStats is empty when no stats are supplied', function () {
+    assert.equal(buildNodeHoverStats({}), '');
+    assert.equal(buildNodeHoverStats(), '');
 });
