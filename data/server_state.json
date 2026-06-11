@@ -41,6 +41,18 @@
       "wins": 0,
       "games": 1,
       "ts": 1774120453060
+    },
+    {
+      "name": "elestirmen",
+      "wins": 1,
+      "games": 1,
+      "ts": 1781203895831
+    },
+    {
+      "name": "muhittin",
+      "wins": 0,
+      "games": 1,
+      "ts": 1781203895831
     }
   ],
   "dailyChallengeScores": []

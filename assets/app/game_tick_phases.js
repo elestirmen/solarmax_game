@@ -42,7 +42,11 @@ export function runEconomyTickPhase(opts) {
     var callbacks = opts.callbacks || {};
 
     game.doctrineStates = callbacks.tickDoctrineStates(game.doctrines, game.doctrineStates);
+    var previousPulseAnnouncement = game.strategicPulse && game.strategicPulse.announcedCycle;
     game.strategicPulse = callbacks.currentStrategicPulse(game.tick);
+    if (previousPulseAnnouncement !== undefined && game.strategicPulse && typeof game.strategicPulse === 'object') {
+        game.strategicPulse.announcedCycle = previousPulseAnnouncement;
+    }
     callbacks.strategicPulseToast();
 
     var ownershipMetrics = callbacks.computeOwnershipMetrics({
