@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { buildDoctrineButtonState, buildHudCapText, buildHudTickText, buildPingDisplayText } from '../assets/ui/match_hud.js';
 
-test('buildHudTickText shows pulse owner and time left when active', function () {
+test('buildHudTickText shows match time, pulse owner, and time left when active', function () {
     var text = buildHudTickText({
         tick: 240,
         diff: 'hard',
@@ -11,16 +11,17 @@ test('buildHudTickText shows pulse owner and time left when active', function ()
         pulseOwner: 0,
         pulseRemainingTicks: 90,
         humanIndex: 0,
+        tickRate: 30,
     });
 
-    assert.match(text, /Tick: 240/);
-    assert.match(text, /hard/);
-    assert.match(text, /Pulse: Sen 3s/);
+    assert.match(text, /00:08/);
+    assert.match(text, /HARD/);
+    assert.match(text, /Pulse Sen 3 sn/);
 });
 
 test('buildHudCapText surfaces strain once pressure crosses threshold', function () {
-    assert.equal(buildHudCapText({ units: 82, cap: 100, strainThreshold: 0.82 }), 'Cap 82/100');
-    assert.equal(buildHudCapText({ units: 91, cap: 100, strainThreshold: 0.82 }), 'Cap 91/100 | Strain 91%');
+    assert.equal(buildHudCapText({ units: 82, cap: 100, strainThreshold: 0.82 }), 'Kapasite 82/100');
+    assert.equal(buildHudCapText({ units: 91, cap: 100, strainThreshold: 0.82 }), 'Kapasite 91/100 · Baskı %91');
 });
 
 test('buildDoctrineButtonState describes missing and ready doctrines', function () {

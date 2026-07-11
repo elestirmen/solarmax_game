@@ -73,3 +73,12 @@ test('buildNodeHoverStats is empty when no stats are supplied', function () {
     assert.equal(buildNodeHoverStats({}), '');
     assert.equal(buildNodeHoverStats(), '');
 });
+
+test('node hover helper includes a selected-source dispatch forecast', function () {
+    var tip = buildNodeHoverTip({
+        kind: 'bulwark', ownerLabel: 'AI 1', units: 12, capacity: 40, level: 2,
+        forecastLabel: 'RİSKLİ', forecastSummary: '10 saldırı · ~17 savunma', forecastTone: 'warning',
+    });
+    assert.match(tip.stats, /RİSKLİ/);
+    assert.equal(tip.forecastTone, 'warning');
+});

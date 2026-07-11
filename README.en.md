@@ -161,6 +161,7 @@ e2e/                      Playwright smoke tests
 | Toggle flow | Right click on target |
 | Defense mode | Right click on your own planet |
 | Camera pan | Middle mouse + drag |
+| Move via minimap | Click / drag the minimap |
 | Zoom | Mouse wheel |
 
 ### Keyboard Shortcuts
@@ -171,14 +172,16 @@ e2e/                      Playwright smoke tests
 | `0` | Send percentage 100 |
 | `U` | Upgrade selected planets |
 | `A` | Select all owned planets |
+| `F` | Focus the capital and nearby opening targets |
 | `Q` | Doctrine active ability |
 | `Esc` / `P` | Pause / resume |
 
-**Note:** For the full control list and mobile HUD action buttons (upgrade, defense, flow, doctrine), use the in-game **How to play** modal.
+**Note:** While drag-sending, the route forecast shows the effective unit count and estimated defense. Use the in-game **How to play** modal for the full control list.
 
 ### Mobile
 
 - One finger to select and drag; two fingers to pan and zoom
+- Tap the minimap to move the camera anywhere in the sector
 - **Visual viewport** offsets (browser chrome / safe area) are compensated; canvas tracks `--app-vvh` / `--app-vvw`
 - Tuning control top-right; panel stacking tuned for touch
 

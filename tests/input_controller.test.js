@@ -21,6 +21,7 @@ function createTouchHarness(config) {
     };
     var selectedIds = [];
     var pinchCalls = { begin: 0, update: 0 };
+    var focusCalls = 0;
 
     attachGameInputController({
         canvas: {
@@ -102,6 +103,7 @@ function createTouchHarness(config) {
         triggerHumanDoctrine: function () { return false; },
         setSendPct: function () {},
         closePauseMenu: function () {},
+        focusOpeningSector: function () { focusCalls++; },
     });
 
     return {
@@ -111,8 +113,17 @@ function createTouchHarness(config) {
         gameState: gameState,
         selectedIds: selectedIds,
         pinchCalls: pinchCalls,
+        getFocusCalls: function () { return focusCalls; },
     };
 }
+
+test('F keyboard shortcut recenters the opening sector', function () {
+    var harness = createTouchHarness();
+    var prevented = false;
+    harness.handlers.keydown({ key: 'f', target: null, preventDefault: function () { prevented = true; } });
+    assert.equal(harness.getFocusCalls(), 1);
+    assert.equal(prevented, true);
+});
 
 test('reconcileInputStateAfterAuthoritativeSync preserves valid online selection and drag sources', function () {
     var inputState = createInputState();

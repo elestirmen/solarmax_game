@@ -7,7 +7,9 @@ export var SIM_CONSTANTS = {
     FLOW_FRAC: 0.08,
     DEF_FACTOR: 1.2,
     VISION_R: 180,
-    SEL_BONUS: 1.2,
+    // Selection is presentation state, not a scouting mechanic. Keeping this at 1
+    // guarantees identical fog rules in local and authoritative matches.
+    SEL_BONUS: 1,
     AI_INTERVAL: 30,
     AI_BUF: 5,
     AI_AGG: 1.0,

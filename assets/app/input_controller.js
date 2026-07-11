@@ -731,6 +731,10 @@ export function attachGameInputController(opts) {
             }
             if (opts.isInGameMenuOpen()) return;
             if (e.key === 'a') opts.selectAllHumanNodes();
+            if ((e.key === 'f' || e.key === 'F') && typeof opts.focusOpeningSector === 'function') {
+                opts.focusOpeningSector();
+                e.preventDefault();
+            }
             if (e.key === 'u' || e.key === 'U') opts.activateSelectionUpgrade();
             if (e.key === 'q' || e.key === 'Q') {
                 if (opts.triggerHumanDoctrine()) e.preventDefault();

@@ -1,12 +1,14 @@
+import { formatMatchTime } from './tactical_status.js';
+
 export function buildHudTickText(opts) {
     opts = opts && typeof opts === 'object' ? opts : {};
-    var text = 'Tick: ' + Math.floor(Number(opts.tick) || 0) + ' | ' + (opts.diff || '');
+    var text = formatMatchTime(opts.tick, opts.tickRate || 30) + ' · ' + String(opts.diff || '').toUpperCase();
     if (!opts.pulseActive) return text;
 
     var pulseOwner = Math.floor(Number(opts.pulseOwner));
     var ownerText = pulseOwner < 0 ? 'Tarafsız' : (pulseOwner === Math.floor(Number(opts.humanIndex) || 0) ? 'Sen' : ('P' + (pulseOwner + 1)));
     var secondsLeft = Math.max(1, Math.ceil((Number(opts.pulseRemainingTicks) || 0) / 30));
-    return text + ' | Pulse: ' + ownerText + ' ' + secondsLeft + 's';
+    return text + ' · Pulse ' + ownerText + ' ' + secondsLeft + ' sn';
 }
 
 export function buildHudCapText(opts) {
@@ -14,9 +16,9 @@ export function buildHudCapText(opts) {
     var units = Math.floor(Number(opts.units) || 0);
     var cap = Math.floor(Number(opts.cap) || 0);
     var pressure = cap > 0 ? units / cap : 0;
-    var text = 'Cap ' + units + '/' + cap;
+    var text = 'Kapasite ' + units + '/' + cap;
     if (pressure > Number(opts.strainThreshold || 0.82)) {
-        text += ' | Strain ' + Math.round(pressure * 100) + '%';
+        text += ' · Baskı %' + Math.round(pressure * 100);
     }
     return text;
 }
@@ -26,7 +28,7 @@ export function buildDoctrineButtonState(opts) {
     if (!opts.doctrineId) {
         return {
             disabled: true,
-            text: 'DOK',
+            text: 'DOKTRİN',
             title: 'Doktrin seçilmedi',
             help: 'Bu maçta doktrin yüklemesi yok.',
             helpDisabled: 'Bu maçta doktrin yüklemesi yok.',
@@ -36,7 +38,7 @@ export function buildDoctrineButtonState(opts) {
     var label = (opts.doctrineName || opts.doctrineId) + ' | ' + (opts.doctrineStatus || '');
     return {
         disabled: !opts.ready,
-        text: 'DOK',
+        text: opts.ready ? 'DOKTRİN' : 'DOKTRİN · BEKLE',
         title: label,
         help: label + ' — Kısayol: Q',
         helpDisabled: label + ' — henüz hazır değil',

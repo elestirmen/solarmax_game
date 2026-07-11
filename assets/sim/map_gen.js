@@ -3,7 +3,7 @@ import { selectBarrierGateIds } from './barrier_layout.js';
 import { buildEncounterState } from './encounters.js';
 import { resolveMapMutator } from './mutator.js';
 import { normalizeNodeKindForRuleset } from './ruleset.js';
-import { PLAYER_COLORS, SIM_CONSTANTS, difficultyConfig, nodeCapacity, pickNodeKindForRadius, tunedNodeRadiusForKind } from './shared_config.js';
+import { PLAYER_COLORS, SIM_CONSTANTS, difficultyConfig, hashSeed, nodeCapacity, pickNodeKindForRadius, tunedNodeRadiusForKind } from './shared_config.js';
 
 var MAP_W = 1600;
 var MAP_H = 1000;
@@ -215,7 +215,7 @@ export function buildInitialMatchSnapshot(manifest, players) {
     manifest = manifest || {};
     players = Array.isArray(players) ? players : [];
 
-    var seed = isNaN(Number(manifest.seed)) ? Number(manifest.seed) : Number(manifest.seed);
+    var seed = isNaN(Number(manifest.seed)) ? hashSeed(String(manifest.seed || '42')) : Number(manifest.seed);
     if (!Number.isFinite(seed)) seed = 42;
     var rng = new RNG(seed);
     var diffCfg = difficultyConfig(manifest.difficulty || 'normal');

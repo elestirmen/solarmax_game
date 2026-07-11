@@ -6,7 +6,7 @@ var NODE_TYPE_TIPS = {
     bulwark: 'Kalın garnizon ve yüksek kapasite; üretim nispeten düşük. Dar geçit ve kuşatmayı emmek için ideal.',
     relay: 'Akış (flow) ve filo hızı güçlü. Uzun hatta takviye ve hızlı cephe taşıması için omurga düğümü.',
     nexus: 'Hibrit bonus: biraz üretim, savunma, akış ve kapasite. Esnek orta oyun ve yedek “iyi her şey” köşesi.',
-    gate: 'Bariyer kapısı. Çizginin üstünde durur; ele geçirildiğinde senin filoların için sınır hattını açar.',
+    gate: 'Bariyer kapısı. Ele geçirip asimilasyonu tamamladığında filoların için sınır hattını açar.',
     turret: 'Üretmez; menzil içindeki düşmanı otomatik vurur. Saldırıdan önce çevreyi temizle, tek dalga ile deneme.',
 };
 
@@ -90,6 +90,7 @@ export function buildNodeHoverTip(opts) {
         title: title,
         stats: buildNodeHoverStats(opts),
         body: NODE_TYPE_TIPS[kind] || NODE_TYPE_TIPS.core,
+        forecastTone: opts.forecastTone || '',
     };
 }
 
@@ -108,5 +109,8 @@ export function buildNodeHoverStats(opts) {
     if (level >= 1) parts.push('Sv.' + level);
     if (opts.defense) parts.push('Kalkan açık');
     if (opts.supplied === false) parts.push('Tedariksiz');
+    if (opts.forecastLabel) {
+        parts.push('Emir: ' + String(opts.forecastLabel) + (opts.forecastSummary ? ' · ' + String(opts.forecastSummary) : ''));
+    }
     return parts.join('  ·  ');
 }

@@ -321,6 +321,9 @@ test('resolveCombatOutcome captures node, resets assimilation, and reports effec
         gate: true,
         units: 10,
         maxUnits: 20,
+        upgradeStartTick: 20,
+        upgradeCompleteTick: 80,
+        upgradeTargetLevel: 3,
         pos: { x: 40, y: 60 },
     };
 
@@ -346,6 +349,9 @@ test('resolveCombatOutcome captures node, resets assimilation, and reports effec
     assert.equal(targetNode.owner, 0);
     assert.equal(targetNode.assimilationProgress, 0);
     assert.equal(targetNode.assimilationLock, 180);
+    assert.equal(targetNode.upgradeStartTick, -1);
+    assert.equal(targetNode.upgradeCompleteTick, -1);
+    assert.equal(targetNode.upgradeTargetLevel, 0);
     assert.equal(targetNode.maxUnits, 24);
     assert.equal(result.statsDelta.nodesCaptured, 1);
     assert.equal(result.statsDelta.gateCaptures, 1);

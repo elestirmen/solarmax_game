@@ -79,10 +79,12 @@ if [ "$MODE" = "check" ]; then
     exit 0
 fi
 
+COMPOSE_FILE="$ROOT_DIR/../docker-compose.yml"
+
 if docker compose version >/dev/null 2>&1; then
-    COMPOSE_CMD=(docker compose)
+    COMPOSE_CMD=(docker compose -f "$COMPOSE_FILE")
 elif command -v docker-compose >/dev/null 2>&1; then
-    COMPOSE_CMD=(docker-compose)
+    COMPOSE_CMD=(docker-compose -f "$COMPOSE_FILE")
 else
     echo "Hata: docker compose bulunamadi." >&2
     exit 1
@@ -99,11 +101,11 @@ if ! docker network inspect npm-net >/dev/null 2>&1; then
 fi
 
 echo "Solarmax deploy basliyor..."
-"${COMPOSE_CMD[@]}" up -d --build
+"${COMPOSE_CMD[@]}" up -d --build solarmax
 
 echo
 echo "Canli konteyner durumu:"
-"${COMPOSE_CMD[@]}" ps
+"${COMPOSE_CMD[@]}" ps solarmax
 
 echo
 echo "Deploy dogrulamasi:"

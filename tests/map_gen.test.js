@@ -23,6 +23,20 @@ test('buildInitialMatchSnapshot is deterministic for the same manifest and playe
     assert.deepEqual(a, b);
 });
 
+test('different string seeds produce different authoritative maps', function () {
+    var players = [
+        { index: 0, name: 'Host', botControlled: false },
+        { index: 1, name: 'AI 1', botControlled: true },
+    ];
+    var alpha = buildInitialMatchSnapshot({ seed: 'alpha', nodeCount: 16, difficulty: 'normal', mapFeature: 'none' }, players);
+    var beta = buildInitialMatchSnapshot({ seed: 'beta', nodeCount: 16, difficulty: 'normal', mapFeature: 'none' }, players);
+
+    assert.notDeepEqual(
+        alpha.nodes.map(function (node) { return [node.pos.x, node.pos.y, node.radius, node.units]; }),
+        beta.nodes.map(function (node) { return [node.pos.x, node.pos.y, node.radius, node.units]; })
+    );
+});
+
 test('buildInitialMatchSnapshot assigns a capital to every player and preserves AI flags', function () {
     var manifest = {
         seed: 'capital-check',

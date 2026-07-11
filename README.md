@@ -161,6 +161,7 @@ e2e/                      Playwright duman testleri
 | Flow aç/kapat | Sağ tık (hedefe) |
 | Savunma modu | Kendi gezegene sağ tık |
 | Kamera | Orta tuş + sürükle |
+| Mini haritadan kamera | Mini haritaya tıkla / sürükle |
 | Zoom | Mouse tekerleği |
 
 ### Klavye Kısayolları
@@ -171,14 +172,16 @@ e2e/                      Playwright duman testleri
 | `0` | Send % 100 |
 | `U` | Seçili gezegenleri yükselt |
 | `A` | Tüm gezegenleri seç |
+| `F` | Ana gezegen ve yakın hedeflere odaklan |
 | `Q` | Doktrin aktif becerisi |
 | `Esc` / `P` | Duraklat / Devam |
 
-**Not:** Tam seçenek listesi ve mobil **YUK / SAV / FLOW / DOC** düğmeleri için oyundaki **Nasıl Oynanır** modalına bakın.
+**Not:** Sürükle-gönder sırasında rota üstündeki tahmin, etkili birlik sayısını ve yaklaşık savunmayı gösterir. Tam seçenek listesi ve mobil komutlar için oyundaki **Nasıl Oynanır** modalına bakın.
 
 ### Mobil
 
 - Tek parmakla seç ve sürükle; iki parmakla pan / zoom
+- Mini haritaya dokunarak kamerayı sektörün istediğin noktasına taşı
 - Adres çubuğu / güvenli alan kayması **visual viewport** ile telafi edilir; canvas boyutu CSS değişkenleriyle hizalanır
 - Üst sağda ince ayar (tuning) düğmesi; panel z-index ve yükseklik dokunmatik kullanıma göre ayarlanır
 

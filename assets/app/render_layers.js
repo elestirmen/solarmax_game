@@ -1,4 +1,5 @@
 import { getSolarFlareFrame } from '../sim/solar_flare.js';
+import { buildDispatchForecast } from '../ui/command_preview.js';
 
 function nodeIsWormholeEndpoint(game, nodeId) {
     var links = game && Array.isArray(game.wormholes) ? game.wormholes : [];
@@ -118,12 +119,45 @@ function drawFlowLinksLayer(ctx, game, constants, helpers) {
         if (game.tune.fogEnabled && fl.owner !== game.human && !game.fog.vis[game.human][fl.srcId] && !game.fog.vis[game.human][fl.tgtId]) continue;
         var col = game.players[fl.owner] ? game.players[fl.owner].color : constants.colNeutral;
         var cp = helpers.bezCP(sn.pos, tn.pos);
+        var tick = Number(game.tick) || 0;
         ctx.beginPath();
         ctx.moveTo(sn.pos.x, sn.pos.y);
         ctx.quadraticCurveTo(cp.x, cp.y, tn.pos.x, tn.pos.y);
-        ctx.strokeStyle = helpers.hexToRgba(col, 0.35);
-        ctx.lineWidth = 1;
+        ctx.strokeStyle = helpers.hexToRgba(col, 0.3);
+        ctx.lineWidth = 1.25 / Math.max(0.45, Number(game.cam && game.cam.zoom) || 1);
         ctx.stroke();
+
+        // A moving signal and a fixed chevron make the main logistics mechanic
+        // readable at a glance, even when several flow lines overlap.
+        var signalT = (tick * 0.012 + i * 0.29) % 1;
+        var signalU = 1 - signalT;
+        var signalX = signalU * signalU * sn.pos.x + 2 * signalU * signalT * cp.x + signalT * signalT * tn.pos.x;
+        var signalY = signalU * signalU * sn.pos.y + 2 * signalU * signalT * cp.y + signalT * signalT * tn.pos.y;
+        ctx.beginPath();
+        ctx.arc(signalX, signalY, 2.5 / Math.max(0.5, Number(game.cam && game.cam.zoom) || 1), 0, Math.PI * 2);
+        ctx.fillStyle = helpers.hexToRgba(col, 0.9);
+        ctx.fill();
+
+        var arrowT = 0.64;
+        var arrowU = 1 - arrowT;
+        var arrowX = arrowU * arrowU * sn.pos.x + 2 * arrowU * arrowT * cp.x + arrowT * arrowT * tn.pos.x;
+        var arrowY = arrowU * arrowU * sn.pos.y + 2 * arrowU * arrowT * cp.y + arrowT * arrowT * tn.pos.y;
+        var tangentX = 2 * arrowU * (cp.x - sn.pos.x) + 2 * arrowT * (tn.pos.x - cp.x);
+        var tangentY = 2 * arrowU * (cp.y - sn.pos.y) + 2 * arrowT * (tn.pos.y - cp.y);
+        var arrowAngle = Math.atan2(tangentY, tangentX);
+        var arrowScale = 1 / Math.max(0.5, Number(game.cam && game.cam.zoom) || 1);
+        ctx.save();
+        ctx.translate(arrowX, arrowY);
+        ctx.rotate(arrowAngle);
+        ctx.beginPath();
+        ctx.moveTo(5 * arrowScale, 0);
+        ctx.lineTo(-4 * arrowScale, -3.2 * arrowScale);
+        ctx.lineTo(-2 * arrowScale, 0);
+        ctx.lineTo(-4 * arrowScale, 3.2 * arrowScale);
+        ctx.closePath();
+        ctx.fillStyle = helpers.hexToRgba(col, 0.72);
+        ctx.fill();
+        ctx.restore();
     }
 }
 
@@ -818,12 +852,130 @@ function drawParticleLayer(ctx, game, tick, inputState, constants, helpers) {
         var ds = inputState.dragStart;
         var de = inputState.dragEnd;
         var dcp = helpers.bezCP(ds, de, constants.bezierCurve * 0.7);
+        var target = null;
+        var targetDist = Infinity;
+        for (var ni = 0; ni < game.nodes.length; ni++) {
+            var candidate = game.nodes[ni];
+            if (!candidate || !candidate.pos) continue;
+            var ndx = candidate.pos.x - de.x;
+            var ndy = candidate.pos.y - de.y;
+            var nd = Math.sqrt(ndx * ndx + ndy * ndy);
+            if (nd <= Math.max(18, Number(candidate.radius) || 18) + 14 / Math.max(0.4, game.cam.zoom) && nd < targetDist) {
+                target = candidate;
+                targetDist = nd;
+            }
+        }
+
+        var sourceGroups = [];
+        var allBlocked = !!target;
+        var sourceIds = Array.isArray(inputState.dragNodeIds) ? inputState.dragNodeIds : [];
+        for (var si = 0; si < sourceIds.length; si++) {
+            var sourceNode = game.nodes[sourceIds[si]];
+            if (!sourceNode || sourceNode.owner !== game.human) continue;
+            var allowed = true;
+            if (target && typeof helpers.isDispatchAllowed === 'function') {
+                allowed = helpers.isDispatchAllowed({
+                    src: sourceNode,
+                    tgt: target,
+                    barrier: game.mapFeature && game.mapFeature.type === 'barrier' ? game.mapFeature : null,
+                    owner: game.human,
+                    nodes: game.nodes,
+                });
+            }
+            if (!allowed) continue;
+            allBlocked = false;
+            var sourceType = typeof helpers.nodeTypeOf === 'function' ? helpers.nodeTypeOf(sourceNode) : { flow: 1 };
+            sourceGroups.push({ units: sourceNode.units, flowMult: sourceType && sourceType.flow });
+        }
+        var fleetUnits = 0;
+        var fleetIds = Array.isArray(inputState.dragFleetIds) ? inputState.dragFleetIds : [];
+        for (var fi = 0; fi < fleetIds.length; fi++) {
+            for (var gfi = 0; gfi < game.fleets.length; gfi++) {
+                var sourceFleet = game.fleets[gfi];
+                if (!sourceFleet || sourceFleet.id !== fleetIds[fi] || sourceFleet.owner !== game.human || !sourceFleet.holding) continue;
+                fleetUnits += Math.max(0, Math.floor(Number(sourceFleet.count) || 0));
+                allBlocked = false;
+                break;
+            }
+        }
+        var incomingFriendlyUnits = 0;
+        if (target && target.owner === game.human) {
+            for (var ifi = 0; ifi < game.fleets.length; ifi++) {
+                var incoming = game.fleets[ifi];
+                if (incoming && incoming.active && incoming.owner === game.human && incoming.tgtId === target.id) {
+                    incomingFriendlyUnits += Math.max(0, Math.floor(Number(incoming.count) || 0));
+                }
+            }
+        }
+        var forecast = buildDispatchForecast({
+            sourceGroups: sourceGroups,
+            fleetUnits: fleetUnits,
+            sendPct: inputState.sendPct,
+            target: target ? {
+                owner: target.owner,
+                units: target.units,
+                maxUnits: target.maxUnits,
+                capacity: target.maxUnits,
+                level: target.level,
+                defense: target.defense,
+                kind: target.kind,
+            } : null,
+            humanIndex: game.human,
+            incomingFriendlyUnits: incomingFriendlyUnits,
+            blocked: allBlocked,
+        });
+        var toneColors = {
+            advantage: '#50e3a4',
+            friendly: '#66b4ff',
+            warning: '#ffc95c',
+            danger: '#ff6b73',
+            blocked: '#ff5575',
+            move: '#9fb9ff',
+        };
+        var routeColor = toneColors[forecast.tone] || '#ffffff';
+        var zoom = Math.max(0.35, Number(game.cam.zoom) || 1);
         ctx.beginPath();
         ctx.moveTo(ds.x, ds.y);
         ctx.quadraticCurveTo(dcp.x, dcp.y, de.x, de.y);
-        ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-        ctx.lineWidth = 1;
+        var routeGradient = ctx.createLinearGradient(ds.x, ds.y, de.x, de.y);
+        routeGradient.addColorStop(0, helpers.hexToRgba(routeColor, 0.28));
+        routeGradient.addColorStop(1, helpers.hexToRgba(routeColor, 0.95));
+        ctx.strokeStyle = routeGradient;
+        ctx.lineWidth = 2.2 / zoom;
+        ctx.setLineDash([8 / zoom, 5 / zoom]);
+        ctx.lineDashOffset = -(tick * 0.8) / zoom;
         ctx.stroke();
+        ctx.setLineDash([]);
+
+        if (target) {
+            ctx.beginPath();
+            ctx.arc(target.pos.x, target.pos.y, (Number(target.radius) || 18) + 9 / zoom, 0, Math.PI * 2);
+            ctx.strokeStyle = helpers.hexToRgba(routeColor, 0.9);
+            ctx.lineWidth = 2.4 / zoom;
+            ctx.stroke();
+        }
+
+        var labelT = 0.56;
+        var labelU = 1 - labelT;
+        var labelX = labelU * labelU * ds.x + 2 * labelU * labelT * dcp.x + labelT * labelT * de.x;
+        var labelY = labelU * labelU * ds.y + 2 * labelU * labelT * dcp.y + labelT * labelT * de.y;
+        var labelText = forecast.label + '  ·  ' + forecast.summary;
+        ctx.save();
+        ctx.translate(labelX, labelY);
+        ctx.scale(1 / zoom, 1 / zoom);
+        ctx.font = '600 11px Outfit,sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        var labelWidth = Math.min(230, Math.max(112, ctx.measureText(labelText).width + 22));
+        traceRoundedPill(ctx, -labelWidth * 0.5, -16, labelWidth, 32);
+        ctx.fillStyle = 'rgba(7,12,23,0.92)';
+        ctx.fill();
+        ctx.lineWidth = 1.2;
+        ctx.strokeStyle = helpers.hexToRgba(routeColor, 0.72);
+        ctx.stroke();
+        ctx.fillStyle = '#f2f6ff';
+        ctx.fillText(labelText, 0, 0, labelWidth - 16);
+        ctx.restore();
     }
 }
 
@@ -871,11 +1023,11 @@ export function renderMinimapLayer(opts) {
         return;
     }
 
-    canvas.width = 140;
-    canvas.height = 90;
+    if (canvas.width !== 140) canvas.width = 140;
+    if (canvas.height !== 90) canvas.height = 90;
     var scale = Math.min(canvas.width / constants.mapWidth, canvas.height / constants.mapHeight);
-    var mx = canvas.width / 2 - game.cam.x * scale;
-    var my = canvas.height / 2 - game.cam.y * scale;
+    var mx = (canvas.width - constants.mapWidth * scale) * 0.5;
+    var my = (canvas.height - constants.mapHeight * scale) * 0.5;
     ctx.fillStyle = 'rgba(8,12,21,0.95)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.save();
@@ -927,8 +1079,10 @@ export function renderMinimapLayer(opts) {
 
     var vw = (viewportCanvas.width / game.cam.zoom) * scale;
     var vh = (viewportCanvas.height / game.cam.zoom) * scale;
+    var vx = mx + game.cam.x * scale - vw * 0.5;
+    var vy = my + game.cam.y * scale - vh * 0.5;
     ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-    ctx.strokeRect(canvas.width / 2 - vw / 2, canvas.height / 2 - vh / 2, vw, vh);
+    ctx.strokeRect(vx, vy, vw, vh);
     if (wrapper) wrapper.classList.remove('hidden');
 }
 

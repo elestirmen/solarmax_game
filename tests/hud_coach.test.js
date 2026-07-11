@@ -23,3 +23,10 @@ test('HUD coach distinguishes owned-node and parked-fleet selections', function 
     assert.equal(owned[2].key, 'U');
     assert.equal(fleet[1].key, 'BOŞ');
 });
+
+test('HUD coach uses touch-first language on coarse pointers', function () {
+    var items = buildHudCoachItems({ nodeCount: 0, fleetCount: 0, sendPct: 50, coarsePointer: true });
+    assert.equal(items[0].key, 'DOKUN');
+    assert.equal(items[1].key, '2 PARMAK');
+    assert.doesNotMatch(items.map(function (item) { return item.key; }).join(' '), /SHIFT|SOL/);
+});

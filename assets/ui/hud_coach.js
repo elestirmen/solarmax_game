@@ -8,16 +8,24 @@ export function buildHudCoachItems(opts) {
     var fleetCount = Math.max(0, Math.floor(Number(opts.fleetCount) || 0));
     var ownedCount = Math.max(0, Math.floor(Number(opts.ownedCount) || 0));
     var sendPct = Math.max(10, Math.min(100, Math.round(Number(opts.sendPct) || 50)));
+    var touchMode = opts.coarsePointer === true;
 
     if (opts.commandMode === 'flow') {
         return [
-            coachItem('SOL', 'Hedef gezegen: flow'),
+            coachItem(touchMode ? 'DOKUN' : 'SOL', 'Hedef gezegen: flow'),
             coachItem('BOŞ', 'İptal'),
             coachItem('%' + sendPct, 'Dalga gücü'),
         ];
     }
 
     if (!nodeCount && !fleetCount) {
+        if (touchMode) {
+            return [
+                coachItem('DOKUN', 'Gezegen seç'),
+                coachItem('2 PARMAK', 'Kamera / zoom'),
+                coachItem('%' + sendPct, 'Gönderim oranı'),
+            ];
+        }
         return [
             coachItem('SOL', 'Gezegen seç'),
             coachItem('SHIFT', 'Seçime ekle'),
@@ -26,6 +34,13 @@ export function buildHudCoachItems(opts) {
     }
 
     if (fleetCount && !nodeCount) {
+        if (touchMode) {
+            return [
+                coachItem('DOKUN', 'Hedefe gönder'),
+                coachItem('BOŞ', 'Konumu taşı'),
+                coachItem('%' + sendPct, 'Gönderim oranı'),
+            ];
+        }
         return [
             coachItem('SOL', 'Hedefe gönder'),
             coachItem('BOŞ', 'Konumu taşı'),
@@ -34,6 +49,13 @@ export function buildHudCoachItems(opts) {
     }
 
     if (ownedCount > 1 || fleetCount > 1) {
+        if (touchMode) {
+            return [
+                coachItem('DOKUN', 'Toplu gönder'),
+                coachItem('KOMUT', 'Savunma / flow'),
+                coachItem('%' + sendPct, 'Gönderim oranı'),
+            ];
+        }
         return [
             coachItem('SOL', 'Toplu gönder'),
             coachItem('SAĞ', 'Savunma / flow'),
@@ -42,6 +64,13 @@ export function buildHudCoachItems(opts) {
     }
 
     if (ownedCount === 1) {
+        if (touchMode) {
+            return [
+                coachItem('DOKUN', 'Hedefe gönder'),
+                coachItem('KOMUT', 'Savunma / flow'),
+                coachItem('%' + sendPct, 'Gönderim oranı'),
+            ];
+        }
         return [
             coachItem('SOL', 'Gönder'),
             coachItem('SAĞ', 'Savunma veya flow'),
@@ -50,6 +79,13 @@ export function buildHudCoachItems(opts) {
     }
 
     if (nodeCount > 0) {
+        if (touchMode) {
+            return [
+                coachItem('DOKUN', 'Kendi gezegenini seç'),
+                coachItem('KOMUT', 'Kaynak eylemleri'),
+                coachItem('%' + sendPct, 'Gönderim oranı'),
+            ];
+        }
         return [
             coachItem('SHIFT', 'Kendi dünyanı ekle'),
             coachItem('A', 'Hepsini seç'),
@@ -66,8 +102,12 @@ export function buildHudCoachItems(opts) {
 
 export function renderHudCoach(container, items) {
     if (!container) return;
+    items = Array.isArray(items) ? items : [];
+    var renderKey = items.map(function (item) { return (item && item.key || '') + ':' + (item && item.text || ''); }).join('|');
+    if (container.dataset && container.dataset.coachKey === renderKey) return;
+    if (container.dataset) container.dataset.coachKey = renderKey;
     container.replaceChildren();
-    if (!Array.isArray(items) || !items.length) return;
+    if (!items.length) return;
 
     var doc = container.ownerDocument || document;
     var frag = doc.createDocumentFragment();

@@ -44,9 +44,12 @@ import { renderMarqueeLayer, renderMinimapLayer, renderWorldLayers } from './ass
 import { applyCampaignRunState, applyDailyChallengeRunState, applySkirmishRunState, buildCampaignLevelStartConfig, buildCustomMapStartConfig, buildDailyChallengeStartConfig, buildSkirmishStartConfig } from './assets/app/start_flow.js';
 import { applyRoomStateNetState, beginOnlineMatch, buildCreateRoomRequest, buildJoinRoomRequest, buildOnlineMatchInitOptions, buildOnlineMatchStatusText, buildRoomStateMenuPatches, computeAuthoritativeFrameIntervalMs, computeOnlineCommandTick, getSocketEndpoint, isRoomChatAvailable, resetOnlineRoomState } from './assets/net/online_session.js';
 import { canvasToViewportPoint, findHoveredNodeAtScreen } from './assets/app/hover_target.js';
+import { buildOpeningCamera } from './assets/app/camera_fit.js';
 import { HUD_ACTION_HELP_DEFAULT, buildHudContextBadge, buildHudHintText, buildNodeHoverTip } from './assets/ui/hud_assistive.js';
 import { buildHudAdvisorCard } from './assets/ui/hud_advisor.js';
 import { buildHudCoachItems, renderHudCoach } from './assets/ui/hud_coach.js';
+import { buildDispatchForecast } from './assets/ui/command_preview.js';
+import { buildTacticalStatus, formatMatchTime } from './assets/ui/tactical_status.js';
 import { applyLobbyControlState, buildLobbyListStatus, buildRoomStatusSummary, getLobbyControlState, renderRoomPlayers, setRoomStatusState } from './assets/ui/lobby_ui.js';
 import { buildDoctrineButtonState, buildHudCapText, buildHudTickText, buildPingDisplayText } from './assets/ui/match_hud.js';
 import { MENU_PANEL_META, buildMenuHeroSummary, buildMenuLobbyMeta, clampMenuNodeCount, createInitialMenuState as createMenuState, menuBackTarget, menuDifficultyLabel, normalizeMenuDifficulty, normalizeMenuDoctrine, normalizeMenuPanel, normalizeMenuPlaylist, normalizeMenuRoomType, normalizeMenuRulesMode, normalizeMenuSeed } from './assets/ui/menu_state.js';
@@ -83,7 +86,7 @@ var TICK_DT = SIM_CONSTANTS.TICK_DT, BASE_PROD = SIM_CONSTANTS.BASE_PROD, MAX_UN
     COLORS_BG = '#080c15', COL_NEUTRAL = '#5a6272', COL_FOG = '#2e3340',
     COL_GRID = 'rgba(255,255,255,0.025)', COL_GLOW = 'rgba(255,255,255,0.35)',
     PLAYER_COLORS = SHARED_PLAYER_COLORS,
-    TRAIL_LEN = SIM_CONSTANTS.TRAIL_LEN, MAX_ORBIT_SQUADS = 14, MAX_ORBIT_SHIPS_PER_SQUAD = 6, ORBIT_UNITS_PER_VISIBLE_SHIP = 2, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 14, ORBIT_MAX_RINGS = 4,
+    TRAIL_LEN = SIM_CONSTANTS.TRAIL_LEN, MAX_ORBIT_SQUADS = 10, MAX_ORBIT_SHIPS_PER_SQUAD = 5, ORBIT_UNITS_PER_VISIBLE_SHIP = 3, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 14, ORBIT_MAX_RINGS = 4,
     NODE_LEVEL_MAX = SIM_CONSTANTS.NODE_LEVEL_MAX,
     UPGRADE_DURATION_TICKS = SIM_CONSTANTS.UPGRADE_DURATION_TICKS,
     UPGRADE_VISUAL_SCALE_PER_LEVEL = SIM_CONSTANTS.UPGRADE_VISUAL_SCALE_PER_LEVEL,
@@ -638,6 +641,94 @@ function preferredCameraNodeForPlayer(playerIndex) {
     }
     return G.nodes[0] || null;
 }
+function openingCameraTarget() {
+    if (!cv || !G.nodes || !G.nodes.length) return null;
+    var compact = !!(window.matchMedia && window.matchMedia('(max-width: 720px), (pointer: coarse)').matches);
+    var hudRect = hud && !hud.classList.contains('hidden') && typeof hud.getBoundingClientRect === 'function'
+        ? hud.getBoundingClientRect()
+        : null;
+    var bottomReserve = hudRect && hudRect.height > 0 ? Math.ceil(hudRect.height) + (compact ? 26 : 18) : (compact ? 140 : 180);
+    var missionActive = !!(G.campaign && G.campaign.active) || !!(G.daily && G.daily.active);
+    var capitalId = G.playerCapital && G.playerCapital[G.human] !== undefined ? G.playerCapital[G.human] : -1;
+    return buildOpeningCamera({
+        nodes: G.nodes,
+        playerIndex: G.human,
+        capitalId: capitalId,
+        viewportWidth: cv.width || window.innerWidth,
+        viewportHeight: cv.height || window.innerHeight,
+        compact: compact,
+        bottomReserve: bottomReserve,
+        topReserve: compact && missionActive ? Math.min(220, Math.round((cv.height || window.innerHeight) * 0.28)) : (compact ? 82 : 24),
+        rightReserve: compact ? 12 : 196,
+        visibleTest: function (node) { return isNodeVisibleToHuman(node); },
+    });
+}
+function focusOpeningSector(opts) {
+    opts = opts && typeof opts === 'object' ? opts : {};
+    var target = openingCameraTarget();
+    if (!target) return false;
+    var instant = opts.instant === true || prefersReducedMotion;
+    if (instant) {
+        cameraFocusTween = null;
+        G.cam.x = target.x;
+        G.cam.y = target.y;
+        G.cam.zoom = target.zoom;
+    } else {
+        cameraFocusTween = {
+            fromX: G.cam.x,
+            fromY: G.cam.y,
+            fromZoom: G.cam.zoom,
+            toX: target.x,
+            toY: target.y,
+            toZoom: target.zoom,
+            startedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
+            duration: 420,
+        };
+    }
+    if (!opts.silent) showGameToast('Açılış cephesi kadraja alındı.', { durationMs: 1500 });
+    return true;
+}
+function advanceCameraFocus(timestamp) {
+    if (!cameraFocusTween) return;
+    var elapsed = Math.max(0, Number(timestamp) - cameraFocusTween.startedAt);
+    var t = clamp(elapsed / cameraFocusTween.duration, 0, 1);
+    var eased = 1 - Math.pow(1 - t, 3);
+    G.cam.x = cameraFocusTween.fromX + (cameraFocusTween.toX - cameraFocusTween.fromX) * eased;
+    G.cam.y = cameraFocusTween.fromY + (cameraFocusTween.toY - cameraFocusTween.fromY) * eased;
+    G.cam.zoom = cameraFocusTween.fromZoom + (cameraFocusTween.toZoom - cameraFocusTween.fromZoom) * eased;
+    if (t >= 1) cameraFocusTween = null;
+}
+function showMatchIntro() {
+    if (!matchIntroEl || G.state !== 'playing') return;
+    var title = 'SERBEST ÇATIŞMA';
+    if (G.daily && G.daily.active) title = 'GÜNLÜK OPERASYON';
+    else if (G.campaign && G.campaign.active) {
+        var level = currentCampaignLevel();
+        title = level ? ('BÖLÜM ' + level.id + ' · ' + polishTurkishText(level.name)) : 'KAMPANYA OPERASYONU';
+    } else if (net.online) title = 'CANLI SEKTÖR';
+    else if (G.sandbox) title = 'SANDBOX';
+
+    var objective = 'Sektörü genişlet · rakip çekirdeklerini etkisizleştir';
+    var objectiveRow = pickPrimaryObjectiveRow(currentCampaignObjectiveRows());
+    if (objectiveRow && objectiveRow.label) objective = polishTurkishText(objectiveRow.label);
+    else if (G.mapFeature && G.mapFeature.type === 'barrier') objective = 'GATE kontrolünü al · asimilasyonu tamamla · karşı cepheyi aç';
+    else if (G.mapFeature && G.mapFeature.type === 'wormhole') objective = 'Solucan deliği köprüsünü kullan · iki cepheyi aynı anda yönet';
+
+    if (matchIntroEyebrow) matchIntroEyebrow.textContent = 'SEKTÖR ' + G.seed + '  //  OPERASYON BAŞLIYOR';
+    if (matchIntroTitle) matchIntroTitle.textContent = title;
+    if (matchIntroMeta) matchIntroMeta.textContent = G.nodes.length + ' GEZEGEN  ·  ' + menuDifficultyLabel(G.diff).toUpperCase() + '  ·  ' + playlistName(G.playlist || 'standard').toUpperCase();
+    if (matchIntroObjective) matchIntroObjective.textContent = objective;
+    matchIntroEl.classList.remove('visible');
+    void matchIntroEl.offsetWidth;
+    matchIntroEl.classList.add('visible');
+    matchIntroEl.setAttribute('aria-hidden', 'false');
+    if (matchIntroTimer) clearTimeout(matchIntroTimer);
+    matchIntroTimer = setTimeout(function () {
+        if (matchIntroEl) matchIntroEl.classList.remove('visible');
+        if (matchIntroEl) matchIntroEl.setAttribute('aria-hidden', 'true');
+        matchIntroTimer = null;
+    }, prefersReducedMotion ? 1200 : 3000);
+}
 function upgradeCost(node) {
     return sharedUpgradeCost(node);
 }
@@ -1118,6 +1209,14 @@ function initGame(seedStr, nc, diff, opts) {
     G.shockwaves = [];
     G.solarFlareFx = { blastFlash: 0 };
     dominanceHintShown = false;
+    openingCameraApplied = false;
+    cameraFocusTween = null;
+    if (matchIntroTimer) clearTimeout(matchIntroTimer);
+    matchIntroTimer = null;
+    if (matchIntroEl) {
+        matchIntroEl.classList.remove('visible');
+        matchIntroEl.setAttribute('aria-hidden', 'true');
+    }
     screenShake.mag = 0; screenShake.ox = 0; screenShake.oy = 0;
     resetOrbitalVisuals();
     for (var i = 0; i < pool.length; i++) { pool[i].active = false; pool[i].trail = []; }
@@ -1373,7 +1472,7 @@ function dispatch(owner, srcIds, tgtId, pct) {
     var order = normalizeDispatchOrder(srcIds, tgtId, pct);
     var tgt = order.tgtId !== null ? G.nodes[order.tgtId] : null;
     var targetPoint = tgt ? tgt.pos : order.targetPoint;
-    if (!tgt && !targetPoint) return;
+    if (!tgt && !targetPoint) return false;
     var didSend = false;
     var anyWormholeSend = false;
     var blockedByBarrier = false;
@@ -1473,6 +1572,7 @@ function dispatch(owner, srcIds, tgtId, pct) {
         if (typeof AudioFX !== 'undefined' && typeof AudioFX.denied === 'function') AudioFX.denied();
         showGameToast('Hedef dolu: dost takviye sığmıyor. Birlik çıkar veya başka hedefe yönlendir.');
     }
+    return didSend;
 }
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ COMBAT Ã¢â€â‚¬Ã¢â€â‚¬
@@ -2673,7 +2773,7 @@ function drawGateStation(ctx, n, col, tick) {
 
 function drawRocketShape(ctx, x, y, dirX, dirY, col, flicker, alpha, scale, bank, throttle) {
     var nX = -dirY, nY = dirX;
-    scale = (scale || 1) * 1.5;
+    scale = (scale || 1) * 1.25;
     alpha = alpha === undefined ? 1 : alpha;
     bank = clamp(Number(bank) || 0, -1, 1);
     throttle = clamp(Number(throttle) || 1, 0.2, 1.3);
@@ -2821,10 +2921,10 @@ function drawFleetRocket(ctx, f, col, tick, renderState) {
     var supportCount = Math.max(0, Math.floor(count) - 1);
     if (supportCount > 0) {
         var spacingT = getFleetUnitSpacingT(f);
-        var visibleSupportCount = Math.min(supportCount, Math.max(1, Math.min(24, Math.round(Math.sqrt(count) * 4.2))));
+        var visibleSupportCount = Math.min(supportCount, Math.max(1, Math.min(18, Math.round(Math.sqrt(count) * 3.4))));
         var swarmLaneCount = Math.max(2, Math.min(6, Math.round(Math.sqrt(visibleSupportCount * 0.9))));
-        var swarmWingGap = Math.min(13.5, 4.8 + Math.sqrt(visibleSupportCount) * 1.28 + Math.abs(f.offsetL) * 0.04);
-        var swarmPush = Math.min(5.6, 1.8 + Math.sqrt(count) * 0.34);
+        var swarmWingGap = Math.min(11.5, 4.4 + Math.sqrt(visibleSupportCount) * 1.08 + Math.abs(f.offsetL) * 0.035);
+        var swarmPush = Math.min(5, 1.6 + Math.sqrt(count) * 0.28);
         var visualStep = supportCount / visibleSupportCount;
         for (var vi = 0; vi < visibleSupportCount; vi++) {
             var unitIndex = Math.min(supportCount, Math.round(vi * visualStep) + 1);
@@ -2856,7 +2956,7 @@ function drawFleetRocket(ctx, f, col, tick, renderState) {
             var sy = pt.y + uny * offsetL * fade - udy * pushBack * fade;
             var localFlicker = 0.5 + 0.5 * Math.sin(phase + unitIndex * 0.33);
             var alpha = clamp(0.9 - row * 0.08 - vi * 0.004, 0.32, 0.9);
-            var supportScale = clamp(0.82 - row * 0.04, 0.62, 0.82);
+            var supportScale = clamp(0.76 - row * 0.04, 0.56, 0.76);
             var supportBank = leadBank * clamp(1 - row * 0.12, 0.26, 0.92) + (driftNoise - 0.5) * 0.02;
             drawRocketShape(ctx, sx, sy, udx, udy, shipCol, localFlicker, alpha, supportScale, supportBank, throttle * 0.94 + hitFlash * 0.12);
         }
@@ -2880,8 +2980,8 @@ function drawHoldingFleet(ctx, fleet, col, tick, selected, renderState) {
     dir.y /= dirLen;
     var nX = -dir.y, nY = dir.x;
     var count = Math.max(1, Math.floor(Number(fleet.count) || 0));
-    var shipCount = Math.max(3, Math.min(9, Math.round(Math.sqrt(count) * 1.5)));
-    var formationRadius = Math.max(6, r * 0.78);
+    var shipCount = Math.max(3, Math.min(7, Math.round(Math.sqrt(count) * 1.25)));
+    var formationRadius = Math.max(6, r * 0.72);
 
     ctx.save();
     ctx.beginPath();
@@ -2909,11 +3009,11 @@ function drawHoldingFleet(ctx, fleet, col, tick, selected, renderState) {
 
     for (var i = 0; i < shipCount; i++) {
         var ratio = shipCount <= 1 ? 0 : i / (shipCount - 1);
-        var lateral = (ratio - 0.5) * formationRadius * 1.35;
+        var lateral = (ratio - 0.5) * formationRadius * 1.18;
         var depth = (Math.abs(ratio - 0.5) * -3.4) + Math.sin(tick * 0.02 + i * 1.7 + (fleet.id || 0)) * 1.1;
         var shipX = x + nX * lateral - dir.x * depth;
         var shipY = y + nY * lateral - dir.y * depth;
-        var shipScale = i === Math.floor(shipCount / 2) ? 0.8 : 0.66;
+        var shipScale = i === Math.floor(shipCount / 2) ? 0.72 : 0.58;
         var shipAlpha = i === Math.floor(shipCount / 2) ? 0.96 : 0.72;
         drawRocketShape(ctx, shipX, shipY, dir.x, dir.y, col, 0.5 + 0.5 * Math.sin(tick * 0.06 + i * 0.8 + fleet.id), shipAlpha, shipScale, 0, 0.6);
     }
@@ -2956,7 +3056,7 @@ function drawHoldingFleet(ctx, fleet, col, tick, selected, renderState) {
 function desiredOrbitSquadCount(node) {
     var visibleShips = desiredOrbitVisibleShipCount(node);
     if (visibleShips <= 0) return 0;
-    var preferredShipsPerSquad = 4;
+    var preferredShipsPerSquad = 5;
     return Math.min(MAX_ORBIT_SQUADS, Math.max(1, Math.ceil(visibleShips / preferredShipsPerSquad)));
 }
 
@@ -3033,9 +3133,9 @@ function getNodeOrbitalSquads(node) {
 }
 
 function getOrbitalFrame(node, squad, tick) {
-    var baseRadius = node.radius + 12.5 + squad.lane * 8.4 + squad.radiusBias - (node.defense ? squad.lane * 0.55 : 0);
+    var baseRadius = node.radius + 14.5 + squad.lane * 7.4 + squad.radiusBias - (node.defense ? squad.lane * 0.45 : 0);
     var bobble = Math.sin(tick * 0.021 + squad.bobblePhase + squad.slot * 0.61) * squad.bobbleAmp;
-    var rx = Math.max(node.radius + 9, baseRadius + bobble);
+    var rx = Math.max(node.radius + 11, baseRadius + bobble);
     var ry = rx * clamp(squad.ellipseRatio + Math.sin(tick * 0.01 + squad.bobblePhase) * 0.015, 0.56, 0.82);
     var tilt = squad.tilt + tick * squad.precession;
     var orbitSpeed = ORBIT_SPD * squad.speedMult * Math.pow((node.radius + 12) / rx, 0.42) * squad.turnDir;
@@ -3107,11 +3207,11 @@ function drawOrbitalSquadron(ctx, node, squad, col, tick, frontPass) {
     var radial = orbitalRadial(lead, node);
     var dirX = tangent.x, dirY = tangent.y;
     var nX = -dirY, nY = dirX;
-    var formationTightness = node.defense ? 0.82 : 1.02;
-    var leadScale = (squad.baseScale + (frontPass ? 0.06 : 0)) * (0.9 + squad.presence * 0.18);
-    var spread = squad.wingSpread * leadScale * 3.15 * formationTightness;
-    var trailGap = leadScale * 4.9 * (node.defense ? 0.84 : 1);
-    var radialGap = leadScale * 3.2 * squad.radialLag;
+    var formationTightness = node.defense ? 0.78 : 0.94;
+    var leadScale = (squad.baseScale + (frontPass ? 0.04 : 0)) * (0.84 + squad.presence * 0.14);
+    var spread = squad.wingSpread * leadScale * 2.75 * formationTightness;
+    var trailGap = leadScale * 4.35 * (node.defense ? 0.8 : 1);
+    var radialGap = leadScale * 2.7 * squad.radialLag;
     var shipAlpha = (frontPass ? 0.8 : 0.38) * squad.presence;
     var shipCol = frontPass ? blendHex(baseCol, '#ffffff', 0.08 + squad.presence * 0.08) : blendHex(baseCol, '#8fa3bf', 0.24);
     var radialLean = clamp(lead.localY / Math.max(1, frame.ry), -1, 1);
@@ -3415,6 +3515,7 @@ function render(ctx, cv, tick) {
             getNodeVisualScale: nodeVisualScale,
             getNodeUpgradeProgress: getNodeUpgradeProgress,
             isNodeUpgradePending: isNodeUpgradePending,
+            isDispatchAllowed: isDispatchAllowed,
         },
     });
     ctx.restore();
@@ -3803,13 +3904,20 @@ function selectedSendOrder(tgtId) {
     });
     return { sources: srcs, fleetIds: fleetIds };
 }
+function submitSendCommand(sendData) {
+    var serialBefore = Math.max(0, Math.floor(Number(G.fleetSerial) || 0));
+    var issuedOnline = issueOnlineCommand('send', sendData);
+    if (issuedOnline) {
+        if (net.authoritativeEnabled) return Math.max(0, Math.floor(Number(G.fleetSerial) || 0)) > serialBefore;
+        return true;
+    }
+    return applyPlayerCommand(G.human, 'send', sendData) === true;
+}
 function sendFromSelectionTo(tgtId) {
     var selected = selectedSendOrder(tgtId);
     if (!selected.sources.length && !selected.fleetIds.length) return false;
     var sendData = { sources: selected.sources, fleetIds: selected.fleetIds, tgtId: tgtId, pct: inp.sendPct / 100 };
-    if (!issueOnlineCommand('send', sendData)) {
-        applyPlayerCommand(G.human, 'send', sendData);
-    }
+    if (!submitSendCommand(sendData)) return false;
     triggerDispatchLaunchFeedback(selected.sources, selected.fleetIds);
     return true;
 }
@@ -3827,9 +3935,7 @@ function sendFromSourcesTo(srcs, fleetIds, tgtId) {
     }
     if (!valid.length && !validFleetIds.length) return false;
     var sendData = { sources: valid, fleetIds: validFleetIds, tgtId: tgtId, pct: inp.sendPct / 100 };
-    if (!issueOnlineCommand('send', sendData)) {
-        applyPlayerCommand(G.human, 'send', sendData);
-    }
+    if (!submitSendCommand(sendData)) return false;
     triggerDispatchLaunchFeedback(valid, validFleetIds);
     return true;
 }
@@ -3849,9 +3955,7 @@ function sendFromSourcesToPoint(srcs, fleetIds, point) {
     }
     if (!valid.length && !validFleetIds.length) return false;
     var sendData = { sources: valid, fleetIds: validFleetIds, targetPoint: targetPoint, pct: inp.sendPct / 100 };
-    if (!issueOnlineCommand('send', sendData)) {
-        applyPlayerCommand(G.human, 'send', sendData);
-    }
+    if (!submitSendCommand(sendData)) return false;
     triggerDispatchLaunchFeedback(valid, validFleetIds);
     return true;
 }
@@ -3920,8 +4024,16 @@ function activateSelectionUpgrade() {
 function activateSelectionDefense() {
     var targetIds = selectedOwnedNodeIds();
     if (!targetIds.length) return false;
-    if (issueOnlineCommand('toggleDefense', { nodeIds: targetIds })) return true;
-    for (var i = 0; i < targetIds.length; i++) toggleDefense(G.human, targetIds[i]);
+    var enableDefense = false;
+    for (var i = 0; i < targetIds.length; i++) {
+        if (G.nodes[targetIds[i]] && !G.nodes[targetIds[i]].defense) { enableDefense = true; break; }
+    }
+    var toggleIds = targetIds.filter(function (id) {
+        return G.nodes[id] && !!G.nodes[id].defense !== enableDefense;
+    });
+    if (!toggleIds.length) return false;
+    if (issueOnlineCommand('toggleDefense', { nodeIds: toggleIds })) return true;
+    for (var ti = 0; ti < toggleIds.length; ti++) toggleDefense(G.human, toggleIds[ti]);
     return true;
 }
 function armFlowSelection() {
@@ -4008,10 +4120,12 @@ var hudContextBadge = $('hudContextBadge'), hudHintLine = $('hudHintLine'), hudC
 var hudCommandHintBadge = $('hudCommandHintBadge'), hudMobileCommandsBtn = $('hudMobileCommandsBtn'), hudMobileStatusBtn = $('hudMobileStatusBtn');
 var hudAdvisorCard = $('hudAdvisorCard'), hudAdvisorTitle = $('hudAdvisorTitle'), hudAdvisorBody = $('hudAdvisorBody');
 var nodeHoverTip = $('nodeHoverTip'), nodeHoverTipTitle = $('nodeHoverTipTitle'), nodeHoverTipBody = $('nodeHoverTipBody'), nodeHoverTipStats = $('nodeHoverTipStats');
-var doctrineBtn = $('doctrineBtn'), upgradeHudBtn = $('upgradeHudBtn'), defenseHudBtn = $('defenseHudBtn'), flowHudBtn = $('flowHudBtn');
+var doctrineBtn = $('doctrineBtn'), upgradeHudBtn = $('upgradeHudBtn'), defenseHudBtn = $('defenseHudBtn'), flowHudBtn = $('flowHudBtn'), focusMapBtn = $('focusMapBtn');
 var commandModeBanner = $('commandModeBanner');
 var sendPctQuickBtns = Array.prototype.slice.call(document.querySelectorAll('.send-quick-btn'));
-var powerSidebar = $('powerSidebar'), powerListEl = $('powerList');
+var powerSidebar = $('powerSidebar'), powerListEl = $('powerList'), matchPhaseLabel = $('matchPhaseLabel'), matchClockEl = $('matchClock'), matchShareFill = $('matchShareFill'), matchPhaseHint = $('matchPhaseHint');
+var minimapEl = $('minimap'), minimapCanvasEl = $('minimapCanvas');
+var matchIntroEl = $('matchIntro'), matchIntroEyebrow = $('matchIntroEyebrow'), matchIntroTitle = $('matchIntroTitle'), matchIntroMeta = $('matchIntroMeta'), matchIntroObjective = $('matchIntroObjective');
 var scenarioOv = $('scenarioOverlay'), scenarioStartBtn = $('scenarioStartBtn'), scenarioCloseBtn = $('scenarioCloseBtn'), scenarioProgressEl = $('scenarioProgress'), scenarioBubbleListEl = $('scenarioBubbleList'), scenarioMissionEl = $('scenarioMission');
 var campaignMissionHud = $('campaignMissionHud'), dailyChallengeCard = $('dailyChallengeCard');
 var tuneProd = $('tuneProduction'), tuneFSpd = $('tuneFleetSpeed'), tuneDef = $('tuneDefense'), tuneFlowInt = $('tuneFlowInterval');
@@ -4027,6 +4141,7 @@ var DEFAULT_SFX_VOLUME = 0.85, DEFAULT_MUSIC_VOLUME = 0.55;
 var hudMobilePanelMode = 'commands';
 var hudMobileExpanded = false;
 var tuningOpen = false, powerRenderKey = '', inGameMenuOpen = false, hudActionHelpBound = false;
+var openingCameraApplied = false, cameraFocusTween = null, matchIntroTimer = null;
 var menuPanelViews = {
     hub: menuHubView,
     single_customize: panelSingleCustomize,
@@ -4294,7 +4409,58 @@ function hoveredNodeForTip() {
     if (!isNodeVisibleToHuman(node)) return null;
     return node;
 }
+function dispatchForecastForTarget(targetNode) {
+    if (!targetNode || !inp) return null;
+    var sourceIds = selectedOwnedNodeIds(targetNode.id);
+    var fleetIds = inp.selFleets ? Array.from(inp.selFleets) : [];
+    if (!sourceIds.length && !fleetIds.length) return null;
+    var sourceGroups = [];
+    var fleetUnits = 0;
+    var barrierCfg = G.mapFeature && G.mapFeature.type === 'barrier' ? G.mapFeature : null;
+    var allBlocked = true;
+    for (var i = 0; i < sourceIds.length; i++) {
+        var sourceNode = G.nodes[sourceIds[i]];
+        if (!sourceNode) continue;
+        if (!isDispatchAllowed({ src: sourceNode, tgt: targetNode, barrier: barrierCfg, owner: G.human, nodes: G.nodes })) continue;
+        allBlocked = false;
+        sourceGroups.push({ units: sourceNode.units, flowMult: nodeTypeOf(sourceNode).flow });
+    }
+    for (var fi = 0; fi < fleetIds.length; fi++) {
+        var fleet = findHoldingFleetById(fleetIds[fi]);
+        if (!fleet || fleet.owner !== G.human) continue;
+        if (!isDispatchAllowed({ src: { pos: { x: fleet.x, y: fleet.y } }, tgt: targetNode, barrier: barrierCfg, owner: G.human, nodes: G.nodes })) continue;
+        allBlocked = false;
+        fleetUnits += Math.max(0, Math.floor(Number(fleet.count) || 0));
+    }
+    var incomingFriendlyUnits = 0;
+    if (targetNode.owner === G.human) {
+        for (var gi = 0; gi < G.fleets.length; gi++) {
+            var incoming = G.fleets[gi];
+            if (incoming && incoming.active && incoming.owner === G.human && incoming.tgtId === targetNode.id) {
+                incomingFriendlyUnits += Math.max(0, Math.floor(Number(incoming.count) || 0));
+            }
+        }
+    }
+    return buildDispatchForecast({
+        sourceGroups: sourceGroups,
+        fleetUnits: fleetUnits,
+        sendPct: inp.sendPct,
+        target: {
+            owner: targetNode.owner,
+            units: targetNode.units,
+            capacity: nodeCapacity(targetNode),
+            maxUnits: targetNode.maxUnits,
+            level: targetNode.level,
+            defense: targetNode.defense,
+            kind: targetNode.kind,
+        },
+        humanIndex: G.human,
+        incomingFriendlyUnits: incomingFriendlyUnits,
+        blocked: allBlocked,
+    });
+}
 function nodeHoverTipOptsForNode(node) {
+    var forecast = dispatchForecastForTarget(node);
     return {
         kind: node.kind,
         label: nodeTypeOf(node).label,
@@ -4304,6 +4470,9 @@ function nodeHoverTipOptsForNode(node) {
         level: node.level,
         defense: !!node.defense,
         supplied: node.owner >= 0 ? node.supplied : undefined,
+        forecastLabel: forecast ? forecast.label : '',
+        forecastSummary: forecast ? forecast.summary : '',
+        forecastTone: forecast ? forecast.tone : '',
     };
 }
 function currentHoveredNodeTip() {
@@ -4347,6 +4516,8 @@ function syncNodeHoverTip() {
     nodeHoverTipTitle.textContent = tip.title;
     if (nodeHoverTipStats) nodeHoverTipStats.textContent = tip.stats || '';
     nodeHoverTipBody.textContent = tip.body;
+    nodeHoverTip.classList.remove('forecast-advantage', 'forecast-friendly', 'forecast-warning', 'forecast-danger', 'forecast-blocked', 'forecast-move');
+    if (tip.forecastTone) nodeHoverTip.classList.add('forecast-' + tip.forecastTone);
     nodeHoverTip.classList.remove('hidden');
     nodeHoverTip.setAttribute('aria-hidden', 'false');
     if (inp && inp.ms) positionNodeHoverTip(inp.ms);
@@ -4411,7 +4582,13 @@ function syncMatchHudControls() {
         spdBtn.setAttribute('data-help-disabled', 'Online maçlarda hız sunucu senkronu için sabittir.');
     }
     if (upgradeHudBtn) {
-        upgradeHudBtn.disabled = G.state !== 'playing' || !selectedUpgradeableNodeIds().length || !(G.rules && G.rules.allowUpgrade);
+        var upgradeableIds = selectedUpgradeableNodeIds();
+        upgradeHudBtn.disabled = G.state !== 'playing' || !upgradeableIds.length || !(G.rules && G.rules.allowUpgrade);
+        var lowestUpgradeCost = Infinity;
+        for (var uhi = 0; uhi < upgradeableIds.length; uhi++) {
+            lowestUpgradeCost = Math.min(lowestUpgradeCost, upgradeCost(G.nodes[upgradeableIds[uhi]]));
+        }
+        upgradeHudBtn.textContent = upgradeableIds.length && Number.isFinite(lowestUpgradeCost) ? ('YÜKSELT · ' + lowestUpgradeCost) : 'YÜKSELT';
         upgradeHudBtn.title = G.rules && G.rules.allowUpgrade ? 'Seçili gezegenleri yükselt' : 'Bu modda yükseltme kapalı';
         upgradeHudBtn.setAttribute('data-help', 'Seçili kendi gezegenlerini yükseltir. Kısayol: U.');
         upgradeHudBtn.setAttribute('data-help-disabled', G.rules && G.rules.allowUpgrade
@@ -4419,16 +4596,20 @@ function syncMatchHudControls() {
             : 'Bu modda yükseltme kapalı.');
     }
     if (defenseHudBtn) {
-        defenseHudBtn.disabled = G.state !== 'playing' || !selectedOwnedNodeIds().length;
+        var defenseIds = selectedOwnedNodeIds();
+        defenseHudBtn.disabled = G.state !== 'playing' || !defenseIds.length;
+        var defendedCount = 0;
+        for (var dhi = 0; dhi < defenseIds.length; dhi++) if (G.nodes[defenseIds[dhi]] && G.nodes[defenseIds[dhi]].defense) defendedCount++;
+        defenseHudBtn.textContent = defenseIds.length && defendedCount === defenseIds.length ? 'SAVUN · KAPAT' : 'SAVUN · AÇ';
         defenseHudBtn.title = 'Seçili gezegenlerde savunmayı aç veya kapat';
-        defenseHudBtn.setAttribute('data-help', 'Savunma: cephede daha dayanıklı ve alan hasarı güçlü; üretim, asimilasyon ve flow çıkışı düşer.');
+        defenseHudBtn.setAttribute('data-help', 'Savunma: cephede daha dayanıklı, alan hasarı ve asimilasyon daha güçlü; üretim ve flow çıkışı düşer.');
         defenseHudBtn.setAttribute('data-help-disabled', 'Savunma için önce kendi gezegenlerinden birini seç.');
     }
     if (flowHudBtn) {
         var hasOwnedSelection = selectedOwnedNodeIds().length > 0;
         if (!hasOwnedSelection && inp.commandMode) clearCommandMode();
         flowHudBtn.disabled = G.state !== 'playing' || !hasOwnedSelection;
-        flowHudBtn.textContent = inp.commandMode === 'flow' ? 'HEDEF' : 'FLOW';
+        flowHudBtn.textContent = inp.commandMode === 'flow' ? 'HEDEF SEÇ' : 'FLOW';
         flowHudBtn.title = inp.commandMode === 'flow' ? 'Flow hedefi seç' : 'Seçili kaynaklar için flow hedefi seç';
         flowHudBtn.classList.toggle('active', inp.commandMode === 'flow');
         flowHudBtn.setAttribute('data-help', inp.commandMode === 'flow'
@@ -4455,7 +4636,12 @@ function syncMatchHudControls() {
         chatToggle.setAttribute('aria-expanded', chatAvailable && isChatComposerOpen() ? 'true' : 'false');
     }
     if (exportMapHudBtn) {
+        exportMapHudBtn.textContent = 'DIŞA AKTAR';
         exportMapHudBtn.setAttribute('data-help', 'Geçerli maçı özel harita JSON’u olarak dışa aktarır.');
+    }
+    if (focusMapBtn) {
+        focusMapBtn.disabled = G.state !== 'playing';
+        focusMapBtn.setAttribute('data-help', 'Ana gezegenini ve yakın hedefleri kadraja alır. Kısayol: F. Mini haritaya tıklayarak da kamerayı taşıyabilirsin.');
     }
 }
 function setAudioEnabled(enabled) {
@@ -4750,6 +4936,8 @@ function syncHudAssistiveText() {
         });
     }
     var hintsOn = hintsEnabled();
+    var coarsePointer = !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+    var coachVisible = hintsOn && (!!commandMode || G.tick < TICK_RATE * 15);
     var hoverDescActive = !nodeCount && !fleetCount && !!currentHoveredNodeTip();
     if (hudHintLine) {
         /* Hover kartı açıkken aynı metni burada tekrarlama. */
@@ -4760,18 +4948,20 @@ function syncHudAssistiveText() {
                 nodeCount: nodeCount,
                 fleetCount: fleetCount,
                 ownedCount: ownedCount,
-                coarsePointer: !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches),
+                coarsePointer: coarsePointer,
             });
         }
+        hudHintLine.classList.toggle('coach-compact', coachVisible);
     }
     if (hudCoachRow) {
-        hudCoachRow.classList.toggle('hidden', !hintsOn);
-        renderHudCoach(hudCoachRow, hintsOn ? buildHudCoachItems({
+        hudCoachRow.classList.toggle('hidden', !coachVisible);
+        renderHudCoach(hudCoachRow, coachVisible ? buildHudCoachItems({
             commandMode: commandMode,
             nodeCount: nodeCount,
             fleetCount: fleetCount,
             ownedCount: ownedCount,
             sendPct: inp ? inp.sendPct : 50,
+            coarsePointer: coarsePointer,
         }) : []);
     }
     if (hudAdvisorCard) {
@@ -4814,8 +5004,10 @@ function syncHudAssistiveText() {
 function updatePowerSidebar() {
     if (!powerSidebar || !powerListEl || !G.players || !G.players.length) return;
     var rows = [];
+    var rawPowers = [];
     for (var i = 0; i < G.players.length; i++) {
         var ply = G.players[i] || {};
+        rawPowers.push(Math.max(0, Number((G.powerByPlayer && G.powerByPlayer[i]) || 0)));
         rows.push({
             idx: i,
             name: labelForPlayer(i),
@@ -4827,9 +5019,27 @@ function updatePowerSidebar() {
     }
     rows.sort(function (a, b) { if (b.power !== a.power) return b.power - a.power; return a.idx - b.idx; });
 
-    var nextKey = rows.map(function (r) { return r.idx + ':' + r.power + ':' + (r.alive ? 1 : 0) + ':' + r.name; }).join('|');
+    var tactical = buildTacticalStatus({
+        tick: G.tick,
+        tickRate: TICK_RATE,
+        powers: rawPowers,
+        humanIndex: G.human,
+        humanPower: rawPowers[G.human],
+        ownedNodes: countOwnedNodes(G.human),
+        totalNodes: G.nodes ? G.nodes.length : 0,
+    });
+
+    var nextKey = rows.map(function (r) { return r.idx + ':' + r.power + ':' + (r.alive ? 1 : 0) + ':' + r.name; }).join('|') + '|phase:' + tactical.id + ':' + tactical.time + ':' + tactical.powerPercent;
     if (nextKey === powerRenderKey) return;
     powerRenderKey = nextKey;
+
+    if (matchPhaseLabel) matchPhaseLabel.textContent = tactical.label;
+    if (matchClockEl) matchClockEl.textContent = tactical.time;
+    if (matchPhaseHint) matchPhaseHint.textContent = tactical.hint;
+    if (matchShareFill) matchShareFill.style.width = tactical.powerPercent + '%';
+    powerSidebar.classList.remove('tone-calm', 'tone-neutral', 'tone-danger', 'tone-success', 'tone-accent');
+    powerSidebar.classList.add('tone-' + tactical.tone);
+    powerSidebar.setAttribute('aria-label', tactical.label + ', maç süresi ' + tactical.time + ', sektör gücü yüzde ' + tactical.powerPercent);
 
     var frag = document.createDocumentFragment();
     for (var ri = 0; ri < rows.length; ri++) {
@@ -5570,9 +5780,21 @@ function syncHudLayoutMode() {
         hudCommandHintBadge.textContent = compact ? 'Dokunmatik HUD' : 'Fare + kısayol';
     }
     if (docEl && docEl.style) {
-        docEl.style.setProperty('--mobile-chat-hud-offset', expanded ? '224px' : '112px');
-        docEl.style.setProperty('--mobile-toast-hud-offset', expanded ? '214px' : '100px');
-        docEl.style.setProperty('--mobile-minimap-hud-offset', expanded ? '198px' : '88px');
+        var fallbackHudHeight = expanded ? (panel === 'status' ? 300 : 266) : 108;
+        var hudRect = compact && !hud.classList.contains('hidden') && typeof hud.getBoundingClientRect === 'function'
+            ? hud.getBoundingClientRect()
+            : null;
+        var hudHeight = hudRect && hudRect.height > 0 ? Math.ceil(hudRect.height) : fallbackHudHeight;
+        var compactOffset = hudHeight + 16;
+        var minimapEl = compact ? document.getElementById('minimap') : null;
+        var minimapRect = minimapEl && !minimapEl.classList.contains('hidden') && typeof minimapEl.getBoundingClientRect === 'function'
+            ? minimapEl.getBoundingClientRect()
+            : null;
+        var minimapHeight = minimapRect && minimapRect.height > 0 ? Math.ceil(minimapRect.height) : 56;
+        var messageOffset = compactOffset + minimapHeight + 14;
+        docEl.style.setProperty('--mobile-chat-hud-offset', compact ? messageOffset + 'px' : '110px');
+        docEl.style.setProperty('--mobile-toast-hud-offset', compact ? messageOffset + 'px' : '196px');
+        docEl.style.setProperty('--mobile-minimap-hud-offset', compact ? compactOffset + 'px' : '12px');
     }
 }
 function setHudMobilePanel(panel) {
@@ -5614,6 +5836,45 @@ function resize() {
     cv.height = h;
     syncInputLayoutHints();
     syncHudLayoutMode();
+}
+function moveCameraFromMinimap(clientX, clientY) {
+    if (!minimapCanvasEl || (G.state !== 'playing' && G.state !== 'paused')) return false;
+    var rect = minimapCanvasEl.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+    var internalW = 140, internalH = 90;
+    var scale = Math.min(internalW / MAP_W, internalH / MAP_H);
+    var offsetX = (internalW - MAP_W * scale) * 0.5;
+    var offsetY = (internalH - MAP_H * scale) * 0.5;
+    var px = ((Number(clientX) - rect.left) / rect.width) * internalW;
+    var py = ((Number(clientY) - rect.top) / rect.height) * internalH;
+    cameraFocusTween = null;
+    G.cam.x = clamp((px - offsetX) / scale, 0, MAP_W);
+    G.cam.y = clamp((py - offsetY) / scale, 0, MAP_H);
+    return true;
+}
+if (minimapCanvasEl) {
+    var minimapPointerId = null;
+    minimapCanvasEl.addEventListener('pointerdown', function (e) {
+        minimapPointerId = e.pointerId;
+        if (typeof minimapCanvasEl.setPointerCapture === 'function') minimapCanvasEl.setPointerCapture(e.pointerId);
+        moveCameraFromMinimap(e.clientX, e.clientY);
+        e.preventDefault();
+    });
+    minimapCanvasEl.addEventListener('pointermove', function (e) {
+        if (minimapPointerId !== e.pointerId) return;
+        moveCameraFromMinimap(e.clientX, e.clientY);
+        e.preventDefault();
+    });
+    function releaseMinimapPointer(e) {
+        if (minimapPointerId === e.pointerId) minimapPointerId = null;
+    }
+    minimapCanvasEl.addEventListener('pointerup', releaseMinimapPointer);
+    minimapCanvasEl.addEventListener('pointercancel', releaseMinimapPointer);
+    minimapCanvasEl.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        focusOpeningSector();
+        e.preventDefault();
+    });
 }
 if (typeof history !== 'undefined' && history && 'scrollRestoration' in history) {
     try { history.scrollRestoration = 'manual'; } catch (e) {}
@@ -5819,6 +6080,14 @@ function showUI(st) {
     syncHudAssistiveText();
     syncHudLayoutMode();
     refreshCampaignMissionPanels();
+    if (st === 'playing' && !openingCameraApplied) {
+        openingCameraApplied = true;
+        requestAnimationFrame(function () {
+            if (G.state !== 'playing') return;
+            focusOpeningSector({ instant: true, silent: true });
+            showMatchIntro();
+        });
+    }
 }
 
 function restoreUiAfterPageLifecycle() {
@@ -7015,6 +7284,11 @@ if (themeBtn) themeBtn.addEventListener('click', function () {
 });
 syncThemeButton();
 bindHudActionHelp();
+if (focusMapBtn) {
+    focusMapBtn.addEventListener('click', function () {
+        focusOpeningSector();
+    });
+}
 if (hudMobileCommandsBtn) {
     hudMobileCommandsBtn.addEventListener('click', function () {
         setHudMobilePanel('commands');
@@ -7233,6 +7507,9 @@ attachGameInputController({
         G.nodes.forEach(function (n) { if (n.owner === G.human) inp.sel.add(n.id); });
         syncNodeSelectionFlags();
     },
+    focusOpeningSector: function () {
+        focusOpeningSector();
+    },
     audioSelect: function () {
         if (typeof AudioFX !== 'undefined') AudioFX.select();
     },
@@ -7245,8 +7522,11 @@ function loop(ts) {
     if (G.state !== prevSt) {
         showUI(G.state); if (G.state === 'gameOver') {
             if (nextLevelBtn) nextLevelBtn.style.display = 'none';
-            goTitle.textContent = G.winner === G.human ? 'Zafer' : 'Maglubiyet';
-            goMsg.textContent = G.winner === G.human ? (G.tick + ' tickte tum yildizlari fethettin.') : ('Tick ' + G.tick + ' civarinda oyundan dustun.');
+            var matchTimeText = formatMatchTime(G.tick, TICK_RATE);
+            goTitle.textContent = G.winner === G.human ? 'Zafer' : 'Mağlubiyet';
+            goMsg.textContent = G.winner === G.human
+                ? (matchTimeText + ' içinde sektör kontrolünü tamamladın.')
+                : (matchTimeText + ' sonunda filon etkisiz hâle geldi. Cephe planını değiştirip yeniden dene.');
             if (G.campaign.active && G.campaign.levelIndex >= 0) {
                 var level = CAMPAIGN_LEVELS[G.campaign.levelIndex];
                 if (G.winner === G.human) {
@@ -7276,12 +7556,12 @@ function loop(ts) {
                 if (G.winner === G.human) {
                     goTitle.textContent = 'Günlük Meydan Okuma Tamamlandı';
                     goMsg.textContent = dailyProgress.bestTick === G.tick ?
-                        ('Yeni en iyi süre: ' + G.tick + ' tick.') :
-                        ('Meydan okuma temizlendi. En iyi süre: ' + dailyProgress.bestTick + ' tick.');
+                        ('Yeni en iyi süre: ' + formatMatchTime(G.tick, TICK_RATE) + '.') :
+                        ('Meydan okuma temizlendi. En iyi süre: ' + formatMatchTime(dailyProgress.bestTick, TICK_RATE) + '.');
                 } else {
                     goTitle.textContent = 'Günlük Meydan Okuma Kaçırıldı';
                     goMsg.textContent = G.missionFailureText || (dailyProgress.bestTick > 0 ?
-                        ('Bugünün en iyi sonucun: ' + dailyProgress.bestTick + ' tick. Bir tur daha dene.') :
+                        ('Bugünün en iyi sonucun: ' + formatMatchTime(dailyProgress.bestTick, TICK_RATE) + '. Bir tur daha dene.') :
                         'Bugünün meydan okuması henüz temizlenmedi. Açılışı daha agresif kur.');
                 }
             }
@@ -7316,6 +7596,7 @@ function loop(ts) {
             pulseOwner: pulseNode ? pulseNode.owner : -1,
             pulseRemainingTicks: G.strategicPulse ? G.strategicPulse.remainingTicks : 0,
             humanIndex: G.human,
+            tickRate: TICK_RATE,
         });
         if (hudCap) {
             hudCap.textContent = buildHudCapText({
@@ -7358,6 +7639,7 @@ function loop(ts) {
     syncNodeHoverTip();
     if (G.state === 'playing' || G.state === 'paused') updatePowerSidebar();
     advanceScreenShake(rawDt);
+    advanceCameraFocus(ts);
     if (G.state !== 'mainMenu') render(ctx, cv, G.tick);
     requestAnimationFrame(loop);
 }

@@ -2,6 +2,7 @@ import { resolveFriendlyArrival } from './reinforcement.js';
 import { getFleetUnitSpacingT } from './shared_config.js';
 import { getMapMutatorSpeedMultiplier } from './mutator.js';
 import { isPointInsideFriendlyTerritory } from './territory.js';
+import { clearNodeUpgradeState } from './node_upgrade.js';
 
 function normalizeDirection(dx, dy, fallbackX, fallbackY) {
     var x = Number(dx);
@@ -451,6 +452,7 @@ export function resolveCombatOutcome(params) {
         targetNode.owner = fleet.owner;
         targetNode.units = Math.max(1, Math.floor(atk - def));
         targetNode.defense = false;
+        clearNodeUpgradeState(targetNode);
         targetNode.assimilationProgress = 0;
         targetNode.assimilationLock = assimLockTicks;
         particleBursts.push({
