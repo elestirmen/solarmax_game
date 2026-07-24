@@ -13,7 +13,7 @@ export var CAMPAIGN_LEVELS = [
         mapFeature: 'none',
         rulesMode: 'advanced',
         tune: { aiAgg: 0.88, aiBuf: 8, aiInt: 42, flowInt: 20 },
-        hint: 'Ilk hedefin merkezdeki strategic hub olsun. Pulse oraya dondugunde yakin iki node daha alip ekonomi farki kur.',
+        hint: 'Once en yakin tarafsiz gezegenleri al. Kucuk ve guvenli sevkiyatlarla uretim agini buyut; bu bolumde yalnizca temel fetih var.',
         objectives: [
             { id: 'hold-four', type: 'owned_nodes', target: 4, label: '4 node kontrol et', remindAt: 150, coach: 'Ilk iki genislemeyi merkeze yakin ekonomik node\'lara yap.' },
             { id: 'fast-win-1', type: 'win_before_tick', target: 900, label: '900 tickten once kazan', optional: true },
@@ -22,7 +22,7 @@ export var CAMPAIGN_LEVELS = [
     {
         id: 2,
         name: 'Kenar Cizgisi',
-        blurb: 'Harita genisliyor. Iki yonde savunma kur.',
+        blurb: 'Temel fetih devam ediyor. Bu kez iki yonde genisle.',
         seed: 'camp-02-ridge',
         nc: 11,
         diff: 'easy',
@@ -31,9 +31,9 @@ export var CAMPAIGN_LEVELS = [
         mapFeature: 'none',
         rulesMode: 'advanced',
         tune: { aiAgg: 0.94, aiBuf: 7, aiInt: 40, flowInt: 19 },
-        hint: 'Yeni aldigin node\'da defense ac ve garnizonu kacirma. Asimilasyon bitince savunma alani cepheyi kendi kendine yumusatir.',
+        hint: 'Tek bir hatta fazla birlik biriktirme. Iki yonde standart gezegen fethederek rakibin genisleme alanini daralt.',
         objectives: [
-            { id: 'defense-once', type: 'defense_activations', target: 1, label: 'En az 1 kez savunma ac', remindAt: 180, coach: 'Yeni aldigin node\'da savunmayi acarsan asimilasyon daha rahat oturur.' },
+            { id: 'produce-80', type: 'units_produced', target: 80, label: '80 birlik uret', remindAt: 180, coach: 'Daha cok standart gezegen daha guclu ve surekli bir ekonomi demektir.' },
             { id: 'hold-five', type: 'owned_nodes', target: 5, label: '5 node tut', optional: true },
         ],
     },
@@ -49,7 +49,7 @@ export var CAMPAIGN_LEVELS = [
         mapFeature: 'wormhole',
         rulesMode: 'advanced',
         tune: { aiAgg: 0.98, aiBuf: 7, aiInt: 38, flowInt: 18 },
-        hint: 'Wormhole ucunu erken al. Sonra pulse acildiginda wormhole uzerinden hizli baskin at; uzun yoldan gitme.',
+        hint: 'Ilk yeni mekanik acildi: wormhole ucunu erken al ve uzun rota yerine bu kopruyu kullan.',
         objectives: [
             { id: 'wormhole-two', type: 'wormhole_dispatches', target: 2, label: 'Wormhole ile 2 sevkiyat yap', remindAt: 210, coach: 'Wormhole cikisini alip o eksenden kisa dalgalar gonder.' },
             { id: 'fast-win-3', type: 'win_before_tick', target: 1020, label: '1020 tickten once kazan', optional: true },
@@ -85,9 +85,9 @@ export var CAMPAIGN_LEVELS = [
         mapFeature: 'gravity',
         rulesMode: 'advanced',
         tune: { aiAgg: 1.06, aiBuf: 6, aiInt: 32, flowInt: 15 },
-        hint: 'Merkez gravity alanini kestirme olarak kullan. Pulse merkezdeyse savunmak yerine hizli dalga ile rakip ekonomisini del.',
+        hint: 'Gravity alani filolarin rotasini degistirir. Merkezdeki cekimi kestirme olarak kullan ve ekonomini dagit.',
         objectives: [
-            { id: 'pulse-six', type: 'pulse_control_ticks', target: 180, label: 'Pulse kontrolunu 6s tut', remindAt: 270, coach: 'Merkez strategic node\'u aldiginda pulse donusunu savunma ile tut.' },
+            { id: 'hold-seven-5', type: 'owned_nodes', target: 7, label: '7 node kontrol et', remindAt: 270, coach: 'Cekim alanindan gecen kisa rotalarla merkez ekonomisini once sen kur.' },
             { id: 'fast-win-5', type: 'win_before_tick', target: 1140, label: '1140 tickten once kazan', optional: true },
         ],
     },
@@ -139,9 +139,9 @@ export var CAMPAIGN_LEVELS = [
         mapFeature: 'none',
         rulesMode: 'advanced',
         tune: { aiAgg: 1.12, aiBuf: 5, aiInt: 29, flowInt: 14 },
-        hint: 'Sis altinda uzak hedef kovalamak yerine pulse hub ve ara baglantilari tut. Gorus almadan buyuk filo cikarma.',
+        hint: 'Yeni mekanik sis: uzak hedef kovalamak yerine ara baglantilari tut. Gorus almadan buyuk filo cikarma.',
         objectives: [
-            { id: 'pulse-eight', type: 'pulse_control_ticks', target: 240, label: 'Pulse kontrolunu 8s tut', remindAt: 360, coach: 'Sis altinda gereksiz kovalamaca yerine strategic hub\'lara odaklan.' },
+            { id: 'hold-eight', type: 'owned_nodes', target: 8, label: '8 node kontrol et', remindAt: 360, coach: 'Sis altinda adim adim genisle; gorus veren ara gezegenleri kaybetme.' },
             { id: 'keep-cap-8', type: 'peak_cap_pressure_below', target: 1.0, label: 'Straini %100 uzeri gormeden bitir', optional: true },
         ],
     },
@@ -160,7 +160,7 @@ export var CAMPAIGN_LEVELS = [
         hint: 'Ilk buyuk amac GATE olsun. Fethettikten sonra hemen gecis bekleme; asimilasyon tamamlaninca karsi tarafa pulse destekli dalga gonder.',
         objectives: [
             { id: 'gate-one', type: 'gate_captures', target: 1, label: 'En az 1 GATE ele gecir', remindAt: 390, coach: 'Bariyer haritasinda ilk buyuk hedefin mutlaka GATE olsun.' },
-            { id: 'pulse-nine', type: 'pulse_control_ticks', target: 180, label: 'Pulse kontrolunu 6s tut', optional: true },
+            { id: 'defense-two-9', type: 'defense_activations', target: 2, label: 'Savunmayi 2 kez ac', optional: true },
         ],
     },
     {

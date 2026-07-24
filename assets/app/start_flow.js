@@ -1,20 +1,26 @@
 import { normalizeCustomMapConfig } from '../sim/custom_map.js';
+import { campaignMechanicsPreset } from '../sim/mechanics.js';
 
-export function buildSkirmishStartConfig(skirmish) {
+export function buildSkirmishStartConfig(skirmish, options) {
     skirmish = skirmish && typeof skirmish === 'object' ? skirmish : {};
+    options = options && typeof options === 'object' ? options : {};
+    var primitive = options.primitive === true;
     return {
         seed: skirmish.seed,
         nodeCount: skirmish.nodeCount,
         difficulty: skirmish.difficulty,
-        fogEnabled: !!skirmish.fogEnabled,
+        fogEnabled: primitive ? false : !!skirmish.fogEnabled,
         customMapConfig: null,
         initOptions: {
-            fogEnabled: !!skirmish.fogEnabled,
-            rulesMode: skirmish.rulesMode,
-            mapMutator: 'auto',
-            playlist: skirmish.playlist,
-            doctrineId: skirmish.doctrineId,
-            forcePlaylistOverrides: skirmish.playlist !== 'standard',
+            fogEnabled: primitive ? false : !!skirmish.fogEnabled,
+            rulesMode: primitive ? 'classic' : skirmish.rulesMode,
+            mechanicsPreset: primitive ? 'primitive' : 'advanced',
+            mapFeature: primitive ? 'none' : 'auto',
+            mapMutator: primitive ? 'none' : 'auto',
+            playlist: primitive ? 'standard' : skirmish.playlist,
+            doctrineId: primitive ? 'none' : skirmish.doctrineId,
+            encounters: [],
+            forcePlaylistOverrides: primitive ? false : skirmish.playlist !== 'standard',
         },
     };
 }
@@ -76,6 +82,10 @@ export function buildCampaignLevelStartConfig(level, levelIndex) {
     // Senaryo bölümlerinde zafer yalnızca rakip eliminasyonu ile (tüm düğüm ve aktif filoları yok).
     // Görevler ilerleme, faz ve koç ipuçları içindir; hedef tamamlanınca maç otomatik bitmez.
     var campaignEndOnObjectives = false;
+    var mechanicsPreset = level.mechanicsPreset || campaignMechanicsPreset(levelIndex);
+    var campaignRulesMode = mechanicsPreset === 'primitive' || mechanicsPreset === 'anomaly' || mechanicsPreset === 'logistics'
+        ? 'classic'
+        : (level.rulesMode || 'advanced');
     var customMap = level.customMap && typeof level.customMap === 'object'
         ? normalizeCustomMapConfig({
             name: level.customMap.name || ('Campaign ' + (level.id || (Number(levelIndex) + 1))),
@@ -110,7 +120,8 @@ export function buildCampaignLevelStartConfig(level, levelIndex) {
             initOptions: {
                 fogEnabled: !!customMap.fogEnabled,
                 aiCount: Math.max(0, (customMap.playerCount || 1) - 1),
-                rulesMode: customMap.rulesMode || level.rulesMode || 'advanced',
+                rulesMode: campaignRulesMode,
+                mechanicsPreset: mechanicsPreset,
                 tuneOverrides: customMap.tuneOverrides || null,
                 customMap: customMap,
                 playlist: customMap.playlist || level.playlist || 'standard',
@@ -136,7 +147,8 @@ export function buildCampaignLevelStartConfig(level, levelIndex) {
             mapFeature: level.mapFeature || 'auto',
             mapMutator: level.mapMutator || 'none',
             tuneOverrides: level.tune || null,
-            rulesMode: level.rulesMode || 'advanced',
+            rulesMode: campaignRulesMode,
+            mechanicsPreset: mechanicsPreset,
             playlist: level.playlist || 'standard',
             doctrineId: level.doctrineId || 'auto',
             encounters: level.encounters || [],

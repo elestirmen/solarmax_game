@@ -76,13 +76,13 @@ export var SIM_CONSTANTS = {
 export var PLAYER_COLORS = ['#4a8eff', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'];
 
 export var NODE_TYPE_DEFS = {
-    core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#9ca9bd' },
-    forge: { label: 'Forge', prod: 1.44, def: 0.84, cap: 0.87, flow: 1.08, speed: 1.0, color: '#c6a18c' },
-    bulwark: { label: 'Bulwark', prod: 0.72, def: 1.4, cap: 1.18, flow: 0.86, speed: 0.93, color: '#afb7c3' },
-    relay: { label: 'Relay', prod: 0.86, def: 0.92, cap: 0.8, flow: 1.45, speed: 1.42, color: '#9bb6be' },
-    nexus: { label: 'Nexus', prod: 1.17, def: 1.13, cap: 1.13, flow: 1.22, speed: 1.12, color: '#b5acc1' },
+    core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#78a9ff' },
+    forge: { label: 'Forge', prod: 1.44, def: 0.84, cap: 0.87, flow: 1.08, speed: 1.0, color: '#ff8a4c' },
+    bulwark: { label: 'Bulwark', prod: 0.72, def: 1.4, cap: 1.18, flow: 0.86, speed: 0.93, color: '#b9d0e7' },
+    relay: { label: 'Relay', prod: 0.86, def: 0.92, cap: 0.8, flow: 1.45, speed: 1.42, color: '#43e6d1' },
+    nexus: { label: 'Nexus', prod: 1.17, def: 1.13, cap: 1.13, flow: 1.22, speed: 1.12, color: '#c58cff' },
     gate: { label: 'Gate', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#f0be6a' },
-    turret: { label: 'Turret', prod: 0.0, def: 2.1, cap: 0.78, flow: 0.78, speed: 1.0, color: '#a4c0c4' },
+    turret: { label: 'Turret', prod: 0.0, def: 2.1, cap: 0.78, flow: 0.78, speed: 1.0, color: '#71d7f2' },
 };
 
 export var NODE_KIND_SIZE_PROFILES = {

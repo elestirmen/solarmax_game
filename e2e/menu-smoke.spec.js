@@ -42,3 +42,21 @@ test('host setup panel updates locked inputs by room type', async ({ page }) => 
     await expect(page.locator('#multiSeedInput')).toBeEnabled();
     await expect(page.locator('#multiPlaylistSelect')).toBeEnabled();
 });
+
+test('quick match opens as a primitive conquest game', async ({ page }) => {
+    var pageErrors = [];
+    page.on('pageerror', function (error) { pageErrors.push(error.message); });
+    await page.goto('/');
+
+    await expect(page.locator('#startBtn')).toHaveText('Temel Fetih Başlat');
+    await expect(page.locator('#menuQuickStatus')).toContainText('Yalın başlangıç');
+    await page.click('#startBtn');
+
+    await expect(page.locator('#hud')).toBeVisible();
+    await expect(page.locator('#matchIntroTitle')).toHaveText('TEMEL FETİH');
+    await expect(page.locator('#upgradeHudBtn')).toBeHidden();
+    await expect(page.locator('#defenseHudBtn')).toBeHidden();
+    await expect(page.locator('#flowHudBtn')).toBeHidden();
+    await expect(page.locator('#doctrineBtn')).toBeHidden();
+    expect(pageErrors).toEqual([]);
+});

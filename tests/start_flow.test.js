@@ -29,6 +29,41 @@ test('buildSkirmishStartConfig preserves menu skirmish tuning in init payload', 
     assert.equal(config.initOptions.forcePlaylistOverrides, true);
 });
 
+test('quick skirmish starts as a primitive conquest match', function () {
+    var config = buildSkirmishStartConfig({
+        seed: 'primitive-1',
+        nodeCount: 14,
+        difficulty: 'normal',
+        fogEnabled: true,
+        rulesMode: 'advanced',
+        playlist: 'chaos',
+        doctrineId: 'siege',
+    }, { primitive: true });
+
+    assert.equal(config.fogEnabled, false);
+    assert.equal(config.initOptions.mechanicsPreset, 'primitive');
+    assert.equal(config.initOptions.rulesMode, 'classic');
+    assert.equal(config.initOptions.mapFeature, 'none');
+    assert.equal(config.initOptions.mapMutator, 'none');
+    assert.equal(config.initOptions.playlist, 'standard');
+    assert.equal(config.initOptions.doctrineId, 'none');
+});
+
+test('opening campaign chapters expose mechanics progressively', function () {
+    var configs = CAMPAIGN_LEVELS.slice(0, 10).map(function (level, index) {
+        return buildCampaignLevelStartConfig(level, index).initOptions;
+    });
+    var presets = configs.map(function (config) { return config.mechanicsPreset; });
+
+    assert.deepEqual(presets, [
+        'primitive', 'primitive', 'anomaly', 'logistics', 'logistics',
+        'economy', 'economy', 'economy', 'frontier', 'advanced',
+    ]);
+    assert.equal(configs[0].rulesMode, 'classic');
+    assert.equal(configs[4].rulesMode, 'classic');
+    assert.equal(configs[5].rulesMode, 'advanced');
+});
+
 test('daily, custom, and campaign start configs derive mode-specific init data', function () {
     var daily = buildDailyChallengeStartConfig({
         seed: 'daily-1',

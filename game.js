@@ -16,6 +16,7 @@ import { stepNodeEconomy } from './assets/sim/node_economy.js';
 import { activateDoctrine, buildDoctrineLoadout, canActivateDoctrine, doctrineActiveName, doctrineCooldownSummary, doctrineModifiers, doctrineName, doctrineSummary, ensureDoctrineStates, tickDoctrineStates } from './assets/sim/doctrine.js';
 import { buildEncounterState, encounterHint, encounterName, encounterSummary, stepEncounterState } from './assets/sim/encounters.js';
 import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } from './assets/sim/ruleset.js';
+import { getMechanicsConfig, mechanicsProgressionInfo } from './assets/sim/mechanics.js';
 import { computeFriendlyReinforcementRoom } from './assets/sim/reinforcement.js';
 import { buildFleetSpawnProfile, getFleetUnitSpacingT, hashMix, pickNodeKindForRadius, tunedNodeRadiusForKind } from './assets/sim/shared_config.js';
 import { beginNodeUpgrade, getNodeUpgradeProgress, getNodeUpgradeVisualLevel, isNodeUpgradePending, normalizeNodeUpgradeState, resolvePendingNodeUpgrades } from './assets/sim/node_upgrade.js';
@@ -237,65 +238,111 @@ var grad2 = new Float64Array([1,1,-1,1,1,-1,-1,-1,1,0,-1,0,1,0,-1,0,0,1,0,-1,0,1
 function createNoise2D(rnd) { rnd = rnd || Math.random; var perm = buildPermTable(rnd), gx = new Float64Array(perm).map(function(v){return grad2[(v%12)*2];}), gy = new Float64Array(perm).map(function(v){return grad2[(v%12)*2+1];}); var F2=0.5*(Math.sqrt(3)-1), G2=(3-Math.sqrt(3))/6; return function(x,y){ var s=(x+y)*F2, i=Math.floor(x+s)|0, j=Math.floor(y+s)|0, t=(i+j)*G2, X0=i-t, Y0=j-t, x0=x-X0, y0=y-Y0; var i1,j1; x0>y0?(i1=1,j1=0):(i1=0,j1=1); var x1=x0-i1+G2, y1=y0-j1+G2, x2=x0-1+2*G2, y2=y0-1+2*G2; var ii=i&255, jj=j&255; var n0=0,n1=0,n2=0; var t0=0.5-x0*x0-y0*y0; if(t0>=0){var gi=ii+perm[jj]; t0*=t0; n0=t0*t0*(gx[gi]*x0+gy[gi]*y0);} var t1=0.5-x1*x1-y1*y1; if(t1>=0){var gi=ii+i1+perm[jj+j1]; t1*=t1; n1=t1*t1*(gx[gi]*x1+gy[gi]*y1);} var t2=0.5-x2*x2-y2*y2; if(t2>=0){var gi=ii+1+perm[jj+1]; t2*=t2; n2=t2*t2*(gx[gi]*x2+gy[gi]*y2);} return 70*(n0+n1+n2); }; }
 function createSeededNoise(seed) { var rng = new RNG(seed); return createNoise2D(function () { return rng.next(); }); }
 function fbm(noise2D, x, y, octaves, persistence) { octaves = octaves || 4; persistence = persistence || 0.5; var total = 0, freq = 1, amp = 1, maxV = 0; for (var i = 0; i < octaves; i++) { total += noise2D(x * freq, y * freq) * amp; maxV += amp; amp *= persistence; freq *= 2; } return total / maxV; }
-function planetTextureVariant(kind, rng) {
-    if (kind === 'forge') return 1;
-    if (kind === 'bulwark') return 2;
-    if (kind === 'relay') return rng.next() < 0.76 ? 3 : 0;
-    if (kind === 'nexus') return rng.next() < 0.88 ? 3 : 0;
-    return rng.next() < 0.72 ? 0 : 2;
-}
 function getPlanetTexture(id, radius, kind) {
     kind = kind || 'core';
-    var cacheKey = id + ':' + Math.round((Number(radius) || 0) * 10) + ':' + kind;
+    var cacheKey = 'premium-v3:' + id + ':' + Math.round((Number(radius) || 0) * 10) + ':' + kind;
     if (planetTexCache[cacheKey]) return planetTexCache[cacheKey];
-    var scale = 2, size = radius * 2 * scale, r = radius * scale, cx = r, cy = r;
+    var scale = 2, size = Math.max(8, Math.ceil(radius * 2 * scale)), r = size * 0.5, cx = r, cy = r;
     var canvas = document.createElement('canvas'); canvas.width = size; canvas.height = size;
     var ctx = canvas.getContext('2d', { alpha: true }); if (!ctx) return canvas;
     var kindSeed = NODE_KIND_TEXTURE_SEEDS[kind] || NODE_KIND_TEXTURE_SEEDS.core;
-    var rng = new RNG(id * 9999 + kindSeed * 131), type = planetTextureVariant(kind, rng);
-    var noise2D = createSeededNoise(id * 12345 + kindSeed * 41), noiseDetail = createSeededNoise(id * 67890 + kindSeed * 67);
+    var noise2D = createSeededNoise(id * 12345 + kindSeed * 41);
+    var noiseDetail = createSeededNoise(id * 67890 + kindSeed * 67);
+    var profiles = {
+        core: { dark: [8, 31, 70], mid: [23, 91, 145], light: [102, 181, 199] },
+        forge: { dark: [44, 11, 10], mid: [119, 35, 18], light: [235, 101, 40] },
+        bulwark: { dark: [24, 33, 45], mid: [65, 82, 99], light: [139, 157, 174] },
+        relay: { dark: [5, 39, 57], mid: [16, 102, 117], light: [83, 205, 191] },
+        nexus: { dark: [31, 15, 63], mid: [91, 45, 132], light: [181, 103, 207] }
+    };
+    var profile = profiles[kind] || profiles.core;
+
+    function mixChannel(a, b, amount) {
+        return a + (b - a) * clamp(amount, 0, 1);
+    }
+
     ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r - 1, 0, Math.PI * 2); ctx.clip();
-    var baseScale = kind === 'relay' ? 0.011 : (kind === 'bulwark' ? 0.019 : 0.015);
-    var detailScale = kind === 'nexus' ? 0.1 : (kind === 'bulwark' ? 0.06 : 0.08);
     var imgData = ctx.createImageData(size, size), data = imgData.data;
     for (var py = 0; py < size; py++) for (var px = 0; px < size; px++) {
         var dx = (px - cx) / r, dy = (py - cy) / r, distSq = dx * dx + dy * dy;
         if (distSq > 1) continue;
-        var dist = Math.sqrt(distSq), angle = Math.atan2(dy, dx);
-        var nx = Math.cos(angle) * (1 - dist), ny = Math.sin(angle) * (1 - dist), u = nx * 3, v = ny * 3;
-        var baseNoise = fbm(noise2D, u * baseScale, v * baseScale, 4, 0.5), detailNoise = noiseDetail(u * detailScale, v * detailScale);
-        var rv = 0, gv = 0, bv = 0, av = 255;
-        if (type === 0) {
-            var landThresh = 0.15;
-            if (baseNoise > landThresh) { var lv = (detailNoise + 1) * 0.5; rv = Math.floor(45 + (0.2 + (1 - lv) * 0.5) * 80); gv = Math.floor(90 + (0.3 + lv * 0.4) * 60); bv = Math.floor(40 + lv * 30); }
-            else { var depth = (landThresh - baseNoise) / landThresh; rv = Math.floor(10 + depth * 35); gv = Math.floor(22 + depth * 75); bv = Math.floor(40 + depth * 120); }
-        } else if (type === 1) { var t = (baseNoise + 1) * 0.5, dust = (detailNoise + 1) * 0.5; rv = Math.floor(92 + t * 80 + dust * 40); gv = Math.floor(35 + t * 50 + dust * 30); bv = Math.floor(28 + t * 25); }
-        else if (type === 2) { var cn = fbm(noise2D, u * 0.04, v * 0.04, 3, 0.6), crater = Math.pow(Math.max(0, -cn), 2), base = 42 + (baseNoise + 1) * 25; rv = gv = bv = Math.floor(Math.max(26, base * (1 - crater * 0.8))); }
-        else { var t = (baseNoise + 1) * 0.5; rv = Math.floor(26 + t * 60); gv = Math.floor(60 + t * 80); bv = Math.floor(90 + t * 70); }
-        var idx = (py * size + px) * 4; data[idx] = Math.min(255, Math.max(0, rv)); data[idx + 1] = Math.min(255, Math.max(0, gv)); data[idx + 2] = Math.min(255, Math.max(0, bv)); data[idx + 3] = av;
+        var z = Math.sqrt(Math.max(0, 1 - distSq));
+        var longitude = Math.atan2(dx, Math.max(0.001, z));
+        var latitude = Math.asin(clamp(dy, -1, 1));
+        var mapX = longitude * 1.72 + kindSeed * 0.071;
+        var mapY = latitude * 3.45 - id * 0.037;
+        var baseNoise = fbm(noise2D, mapX, mapY, 5, 0.52);
+        var detailNoise = fbm(noiseDetail, mapX * 2.8 + 7.1, mapY * 2.8 - 4.7, 3, 0.55);
+        var surface = clamp(0.5 + baseNoise * 0.43 + detailNoise * 0.16, 0, 1);
+        var featureGlow = 0;
+
+        if (kind === 'core') {
+            var continent = baseNoise + detailNoise * 0.22;
+            if (continent > 0.08) {
+                surface = clamp(0.55 + continent * 0.42, 0.48, 1);
+            } else {
+                surface = clamp(0.15 + (continent + 0.45) * 0.5, 0.04, 0.46);
+            }
+        } else if (kind === 'forge') {
+            var fissure = Math.max(0, 1 - Math.abs(detailNoise + baseNoise * 0.38) * 8.5);
+            surface = clamp(0.16 + baseNoise * 0.2 + detailNoise * 0.08, 0.02, 0.52);
+            featureGlow = Math.pow(fissure, 2.4);
+        } else if (kind === 'bulwark') {
+            var sector = Math.floor((Math.atan2(dy, dx) + Math.PI) / (Math.PI / 4));
+            var radialBand = Math.floor(Math.sqrt(distSq) * 4);
+            surface = clamp(0.34 + baseNoise * 0.2 + ((sector + radialBand) % 2) * 0.1, 0.12, 0.72);
+        } else if (kind === 'relay') {
+            var signalBand = Math.sin(latitude * 17 + baseNoise * 2.6 + id) * 0.5 + 0.5;
+            surface = clamp(0.28 + signalBand * 0.42 + detailNoise * 0.08, 0.12, 0.9);
+            featureGlow = Math.pow(Math.max(0, signalBand - 0.82) / 0.18, 1.8) * 0.34;
+        } else if (kind === 'nexus') {
+            var energyVein = Math.max(0, 1 - Math.abs(baseNoise - detailNoise * 0.46) * 6.4);
+            surface = clamp(0.28 + baseNoise * 0.28 + detailNoise * 0.12, 0.08, 0.82);
+            featureGlow = Math.pow(energyVein, 2.7) * 0.52;
+        }
+
+        var lowerMix = Math.min(1, surface * 2);
+        var upperMix = Math.max(0, surface * 2 - 1);
+        var rv = lowerMix < 1 ? mixChannel(profile.dark[0], profile.mid[0], lowerMix) : mixChannel(profile.mid[0], profile.light[0], upperMix);
+        var gv = lowerMix < 1 ? mixChannel(profile.dark[1], profile.mid[1], lowerMix) : mixChannel(profile.mid[1], profile.light[1], upperMix);
+        var bv = lowerMix < 1 ? mixChannel(profile.dark[2], profile.mid[2], lowerMix) : mixChannel(profile.mid[2], profile.light[2], upperMix);
+        if (kind === 'core' && detailNoise > 0.38) {
+            var cloud = clamp((detailNoise - 0.38) * 1.45, 0, 0.34);
+            rv = mixChannel(rv, 218, cloud); gv = mixChannel(gv, 232, cloud); bv = mixChannel(bv, 239, cloud);
+        }
+        if (featureGlow > 0) {
+            var glowTarget = kind === 'forge' ? [255, 197, 83] : (kind === 'nexus' ? [232, 190, 255] : [154, 255, 239]);
+            rv = mixChannel(rv, glowTarget[0], featureGlow);
+            gv = mixChannel(gv, glowTarget[1], featureGlow);
+            bv = mixChannel(bv, glowTarget[2], featureGlow);
+        }
+
+        var lightDot = Math.max(0, -dx * 0.46 - dy * 0.54 + z * 0.7);
+        var lighting = 0.3 + lightDot * 0.82;
+        var limb = Math.pow(z, 0.22);
+        lighting *= 0.5 + limb * 0.5;
+        rv *= lighting; gv *= lighting; bv *= lighting;
+        var idx = (py * size + px) * 4; data[idx] = Math.min(255, Math.max(0, rv)); data[idx + 1] = Math.min(255, Math.max(0, gv)); data[idx + 2] = Math.min(255, Math.max(0, bv)); data[idx + 3] = 255;
     }
     ctx.putImageData(imgData, 0, 0);
-    if (type === 2) { ctx.globalCompositeOperation = 'multiply'; for (var i = 0; i < rng.nextInt(12, 25); i++) { var fx = cx + rng.nextFloat(-r * 0.85, r * 0.85), fy = cy + rng.nextFloat(-r * 0.85, r * 0.85), fr = rng.nextFloat(r * 0.05, r * 0.25); if ((fx - cx) * (fx - cx) + (fy - cy) * (fy - cy) > (r - fr) * (r - fr)) continue; var grad = ctx.createRadialGradient(fx, fy, 0, fx, fy, fr); grad.addColorStop(0, 'rgba(20,20,20,0.9)'); grad.addColorStop(0.5, 'rgba(50,50,50,0.5)'); grad.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(fx, fy, fr, 0, Math.PI * 2); ctx.fill(); } ctx.globalCompositeOperation = 'source-over'; }
-    if (type !== 2) { for (var i = 0; i < rng.nextInt(12, 28); i++) { var fx = cx + rng.nextFloat(-r * 0.85, r * 0.85), fy = cy + rng.nextFloat(-r * 0.85, r * 0.85), fr = rng.nextFloat(r * 0.15, r * 0.5); if ((fx - cx) * (fx - cx) + (fy - cy) * (fy - cy) > (r - fr) * (r - fr)) continue; var ca = type === 0 ? 0.55 : (type === 1 ? 0.12 : 0.3), grad = ctx.createRadialGradient(fx, fy, 0, fx, fy, fr); grad.addColorStop(0, 'rgba(255,255,255,' + ca + ')'); grad.addColorStop(0.6, 'rgba(255,255,255,' + ca * 0.4 + ')'); grad.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = grad; ctx.beginPath(); ctx.ellipse(fx, fy, fr, fr * 0.6, rng.nextFloat(0, Math.PI), 0, Math.PI * 2); ctx.fill(); } }
-    var sg = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.1, cx, cy, r); sg.addColorStop(0, 'rgba(0,0,0,0)'); sg.addColorStop(0.6, 'rgba(0,0,0,0.35)'); sg.addColorStop(1, 'rgba(0,0,0,0.8)'); ctx.fillStyle = sg; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
-    var sp = ctx.createRadialGradient(cx - r * 0.45, cy - r * 0.45, 0, cx - r * 0.45, cy - r * 0.45, r * 0.55); sp.addColorStop(0, 'rgba(255,255,255,0.45)'); sp.addColorStop(0.5, 'rgba(255,255,255,0.15)'); sp.addColorStop(1, 'rgba(255,255,255,0)'); ctx.fillStyle = sp; ctx.fill();
-    if (type !== 2) {
-        var accentHex = (NODE_TYPE_DEFS[kind] && NODE_TYPE_DEFS[kind].color) || '#9fb8ff';
-        var accentMid = kind === 'core' ? 0.14 : (kind === 'relay' ? 0.16 : 0.2);
-        var accentEdge = kind === 'core' ? 0.4 : (kind === 'nexus' ? 0.62 : 0.54);
-        var ag = ctx.createRadialGradient(cx, cy, r * 0.75, cx, cy, r);
-        ag.addColorStop(0, hexToRgba(accentHex, 0));
-        ag.addColorStop(0.8, hexToRgba(accentHex, accentMid));
-        ag.addColorStop(1, hexToRgba(accentHex, accentEdge));
-        ctx.fillStyle = ag;
-        ctx.fill();
-        ctx.strokeStyle = hexToRgba(accentHex, 0.86);
-        ctx.lineWidth = 1.5 * scale;
-        ctx.beginPath();
-        ctx.arc(cx, cy, r - 1, 0, Math.PI * 2);
-        ctx.stroke();
-    }
-    else { ctx.strokeStyle = 'rgba(120,120,120,0.7)'; ctx.lineWidth = 1 * scale; ctx.beginPath(); ctx.arc(cx, cy, r - 1, 0, Math.PI * 2); ctx.stroke(); }
+    var accentHex = (NODE_TYPE_DEFS[kind] && NODE_TYPE_DEFS[kind].color) || '#9fb8ff';
+    var atmosphere = ctx.createRadialGradient(cx, cy, r * 0.68, cx, cy, r);
+    atmosphere.addColorStop(0, hexToRgba(accentHex, 0));
+    atmosphere.addColorStop(0.78, hexToRgba(accentHex, kind === 'bulwark' ? 0.04 : 0.08));
+    atmosphere.addColorStop(1, hexToRgba(accentHex, kind === 'nexus' || kind === 'relay' ? 0.64 : 0.46));
+    ctx.fillStyle = atmosphere;
+    ctx.fillRect(0, 0, size, size);
+    var specular = ctx.createRadialGradient(cx - r * 0.38, cy - r * 0.42, 0, cx - r * 0.38, cy - r * 0.42, r * 0.62);
+    specular.addColorStop(0, 'rgba(255,255,255,0.38)');
+    specular.addColorStop(0.38, 'rgba(255,255,255,0.1)');
+    specular.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = specular;
+    ctx.fillRect(0, 0, size, size);
+    ctx.strokeStyle = hexToRgba(accentHex, 0.88);
+    ctx.lineWidth = (kind === 'bulwark' ? 2 : 1.4) * scale;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r - 1.5, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore(); planetTexCache[cacheKey] = canvas; return canvas;
 }
 
@@ -401,6 +448,7 @@ function acquireFleet() { for (var i = 0; i < pool.length; i++) { if (!pool[i].a
 var G = {
     state: 'mainMenu', winner: -1, tick: 0, speed: 1, rng: null, seed: 42, diff: 'normal',
     rulesMode: 'advanced', rules: getRulesetConfig('advanced'),
+    mechanics: getMechanicsConfig('advanced'),
     nodes: [], fleets: [], flows: [], players: [], human: 0, fog: null,
     cam: { x: MAP_W / 2, y: MAP_H / 2, zoom: 1 },
     diffCfg: DIFFICULTY_PRESETS.normal,
@@ -455,6 +503,7 @@ function territoryBonusBlockedAtPoint(point) {
 }
 
 function territoryPresenceAtPoint(point) {
+    if (!G.mechanics || !G.mechanics.territory) return { owners: {}, ownerCount: 0, bonusBlocked: false };
     return getTerritoryOwnersAtPoint({
         point: point,
         nodes: G.nodes,
@@ -618,16 +667,17 @@ function nodeCapacity(node) {
     return sharedNodeCapacity(node);
 }
 function applyRulesetNodeKinds() {
-    if (!G.rules || !G.rules.simplifyNodeKinds) return;
+    if ((!G.rules || !G.rules.simplifyNodeKinds) && (!G.mechanics || G.mechanics.nodeTypes)) return;
     for (var i = 0; i < G.nodes.length; i++) {
         var node = G.nodes[i];
-        node.kind = normalizeNodeKindForRuleset(node.kind, G.rulesMode);
+        node.kind = node.kind === 'gate' ? 'gate' : 'core';
         node.maxUnits = nodeCapacity(node);
         if (node.units > node.maxUnits) node.units = node.maxUnits;
     }
 }
 function isNodeAssimilated(node) {
     if (!node) return false;
+    if (!G.mechanics || !G.mechanics.assimilation) return true;
     if ((node.assimilationLock || 0) > 0) return false;
     return node.assimilationProgress === undefined || node.assimilationProgress >= 1;
 }
@@ -707,8 +757,10 @@ function showMatchIntro() {
         title = level ? ('BÖLÜM ' + level.id + ' · ' + polishTurkishText(level.name)) : 'KAMPANYA OPERASYONU';
     } else if (net.online) title = 'CANLI SEKTÖR';
     else if (G.sandbox) title = 'SANDBOX';
+    else if (G.mechanics && G.mechanics.preset === 'primitive') title = 'TEMEL FETİH';
 
     var objective = 'Sektörü genişlet · rakip çekirdeklerini etkisizleştir';
+    if (G.mechanics && G.mechanics.preset === 'primitive') objective = 'Standart gezegenleri fethet · üretimini büyüt · rakibi saf dışı bırak';
     var objectiveRow = pickPrimaryObjectiveRow(currentCampaignObjectiveRows());
     if (objectiveRow && objectiveRow.label) objective = polishTurkishText(objectiveRow.label);
     else if (G.mapFeature && G.mapFeature.type === 'barrier') objective = 'GATE kontrolünü al · asimilasyonu tamamla · karşı cepheyi aç';
@@ -716,7 +768,8 @@ function showMatchIntro() {
 
     if (matchIntroEyebrow) matchIntroEyebrow.textContent = 'SEKTÖR ' + G.seed + '  //  OPERASYON BAŞLIYOR';
     if (matchIntroTitle) matchIntroTitle.textContent = title;
-    if (matchIntroMeta) matchIntroMeta.textContent = G.nodes.length + ' GEZEGEN  ·  ' + menuDifficultyLabel(G.diff).toUpperCase() + '  ·  ' + playlistName(G.playlist || 'standard').toUpperCase();
+    var mechanicsInfo = mechanicsProgressionInfo(G.mechanics && G.mechanics.preset);
+    if (matchIntroMeta) matchIntroMeta.textContent = G.nodes.length + ' GEZEGEN  ·  ' + menuDifficultyLabel(G.diff).toUpperCase() + '  ·  ' + mechanicsInfo.title;
     if (matchIntroObjective) matchIntroObjective.textContent = objective;
     matchIntroEl.classList.remove('visible');
     void matchIntroEl.offsetWidth;
@@ -734,7 +787,7 @@ function upgradeCost(node) {
 }
 function canUpgradeNodeForOwner(node, owner, tick) {
     if (!node || node.owner !== owner || !isNodeAssimilated(node)) return false;
-    if (!G.rules || !G.rules.allowUpgrade) return false;
+    if (!G.rules || !G.rules.allowUpgrade || !G.mechanics || !G.mechanics.upgrades) return false;
     if ((Number(node.level) || 1) >= NODE_LEVEL_MAX) return false;
     if (isNodeUpgradePending(node, tick === undefined ? G.tick : tick)) return false;
     return (Number(node.units) || 0) >= upgradeCost(node);
@@ -799,6 +852,9 @@ function difficultyConfig(diff) {
     return sharedDifficultyConfig(diff);
 }
 function currentStrategicPulse(tick) {
+    if (!G.mechanics || !G.mechanics.strategicPulse) {
+        return { active: false, nodeId: -1, cycle: 0, phase: 0, remainingTicks: 0, announcedCycle: -1 };
+    }
     return getStrategicPulseState({
         strategicNodeIds: G.strategicNodes,
         tick: tick,
@@ -811,6 +867,7 @@ function strategicPulseAppliesToNode(nodeId) {
     return isStrategicPulseActiveForNode(nodeId, G.strategicPulse);
 }
 function solarFlareCfg() {
+    if (!G.mechanics || !G.mechanics.solarFlare) return null;
     return {
         gapMinTicks: SOLAR_FLARE_GAP_MIN_TICKS,
         gapMaxTicks: SOLAR_FLARE_GAP_MAX_TICKS,
@@ -862,6 +919,7 @@ function triggerSolarFlareBlastFeedback(opts) {
     if (typeof AudioFX !== 'undefined' && typeof AudioFX.solarFlareBlast === 'function') AudioFX.solarFlareBlast();
 }
 function replayAuthoritativeSolarFlareFeedback(previousTick, nextTick) {
+    if (!solarFlareCfg()) return;
     var transitions = getSolarFlareTransitions(previousTick, nextTick, G.seed, solarFlareCfg());
     if (transitions.warnStartTick >= 0) {
         triggerSolarFlareWarningFeedback();
@@ -873,7 +931,7 @@ function replayAuthoritativeSolarFlareFeedback(previousTick, nextTick) {
     }
 }
 function maybeApplySolarFlareCombat() {
-    if (G.state !== 'playing') return;
+    if (G.state !== 'playing' || !G.mechanics || !G.mechanics.solarFlare) return;
     var cfg = solarFlareCfg();
     var cur = getSolarFlareFrame(G.tick, G.seed, cfg);
     var prev = G.tick <= 0 ? { phase: 'idle' } : getSolarFlareFrame(G.tick - 1, G.seed, cfg);
@@ -1159,6 +1217,7 @@ function initGame(seedStr, nc, diff, opts) {
     G.diffCfg = difficultyConfig(diff);
     G.rulesMode = rulesMode;
     G.rules = getRulesetConfig(rulesMode);
+    G.mechanics = getMechanicsConfig(opts.mechanicsPreset || 'advanced');
     if (!keepTuning) {
         G.tune = defaultTune();
         G.tune.aiAgg = G.diffCfg.aiAggBase;
@@ -1248,13 +1307,19 @@ function initGame(seedStr, nc, diff, opts) {
         applyMapMutator(mapMutatorCfg);
     }
     applyRulesetNodeKinds();
-    G.doctrines = buildDoctrineLoadout(G.players, {
+    if (!G.mechanics.strategicPulse) {
+        G.strategicNodes = [];
+        for (var sni = 0; sni < G.nodes.length; sni++) G.nodes[sni].strategic = false;
+    }
+    G.doctrines = G.mechanics.doctrines ? buildDoctrineLoadout(G.players, {
         doctrineId: G.doctrineId || playlistConfig.doctrineId || 'logistics',
         doctrines: opts.doctrines || [],
         seed: G.seed,
-    });
+    }) : G.players.map(function () { return ''; });
     G.doctrineStates = ensureDoctrineStates(G.doctrines, opts.doctrineStates || []);
-    G.encounters = buildEncounterState(customMapCfg ? customMapCfg.encounters : playlistConfig.encounters, G.nodes, G.seed);
+    G.encounters = G.mechanics.encounters
+        ? buildEncounterState(customMapCfg ? customMapCfg.encounters : playlistConfig.encounters, G.nodes, G.seed)
+        : [];
     G.encounterContext = {};
     applyMissionScript(G, opts.missionScript || null);
     stepEncounterState(G);
@@ -1954,6 +2019,7 @@ function applyImpactFeedback(impacts) {
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ FLOW LINKS Ã¢â€â‚¬Ã¢â€â‚¬
 function addFlow(owner, srcId, tgtId) {
+    if (!G.mechanics || !G.mechanics.flow) return false;
     srcId = Math.floor(Number(srcId));
     tgtId = Math.floor(Number(tgtId));
     if (!isFinite(srcId) || !isFinite(tgtId) || srcId === tgtId) return;
@@ -1966,6 +2032,7 @@ function addFlow(owner, srcId, tgtId) {
 }
 function rmFlow(owner, srcId, tgtId) { G.flows = G.flows.filter(function (f) { return !(f.srcId === srcId && f.tgtId === tgtId && f.owner === owner); }); }
 function toggleDefense(owner, nodeId) {
+    if (!G.mechanics || !G.mechanics.defense) return false;
     var node = G.nodes[nodeId];
     if (!node || node.owner !== owner) return false;
     node.defense = !node.defense;
@@ -1973,7 +2040,7 @@ function toggleDefense(owner, nodeId) {
     return true;
 }
 function upgradeNode(owner, nodeId) {
-    if (!G.rules || !G.rules.allowUpgrade) return false;
+    if (!G.rules || !G.rules.allowUpgrade || !G.mechanics || !G.mechanics.upgrades) return false;
     var node = G.nodes[nodeId];
     if (!node || node.owner !== owner || !isNodeAssimilated(node)) return false;
     if (node.level >= NODE_LEVEL_MAX) return false;
@@ -1989,7 +2056,15 @@ function upgradeNode(owner, nodeId) {
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ AI Ã¢â€â‚¬Ã¢â€â‚¬
 function aiDecide(pi) {
-    return decideAiCommands(G, pi);
+    var commands = decideAiCommands(G, pi);
+    return commands.filter(function (command) {
+        if (!command) return false;
+        if ((command.type === 'flow' || command.type === 'rmFlow') && (!G.mechanics || !G.mechanics.flow)) return false;
+        if (command.type === 'upgrade' && (!G.mechanics || !G.mechanics.upgrades)) return false;
+        if (command.type === 'toggleDefense' && (!G.mechanics || !G.mechanics.defense)) return false;
+        if (command.type === 'activateDoctrine' && (!G.mechanics || !G.mechanics.doctrines)) return false;
+        return true;
+    });
 }
 
 function applyPlayerCommand(playerIndex, type, data) {
@@ -2336,21 +2411,31 @@ function nodeTypeLetter(kind) {
 }
 
 function drawTypeBadge(ctx, n, tdef) {
-    var bx = n.pos.x, by = n.pos.y + n.radius * 0.6, br = Math.max(5, n.radius * 0.2);
+    var br = Math.max(5.2, n.radius * 0.2);
+    var bx = n.pos.x + n.radius * 0.57, by = n.pos.y + n.radius * 0.57;
     var letter = nodeTypeLetter(n.kind);
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
+    ctx.globalCompositeOperation = 'source-over';
     ctx.beginPath();
-    ctx.arc(bx, by, br * 1.05, 0, Math.PI * 2);
-    ctx.fillStyle = hexToRgba(tdef.color, 0.42);
+    ctx.arc(bx, by, br * 1.52, 0, Math.PI * 2);
+    ctx.fillStyle = hexToRgba(tdef.color, 0.13);
     ctx.fill();
-    ctx.strokeStyle = hexToRgba('#ffffff', 0.55);
-    ctx.lineWidth = 1.15;
+    ctx.beginPath();
+    ctx.arc(bx, by, br * 1.08, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(5,10,18,0.9)';
+    ctx.fill();
+    ctx.strokeStyle = hexToRgba(tdef.color, 0.96);
+    ctx.lineWidth = 1.35;
     ctx.stroke();
-    ctx.font = 'bold ' + Math.max(7, br * 1.08) + 'px Outfit,sans-serif';
-    ctx.fillStyle = 'rgba(255,255,255,0.94)';
-    ctx.fillText(letter, bx, by);
+    ctx.beginPath();
+    ctx.arc(bx - br * 0.26, by - br * 0.28, Math.max(0.75, br * 0.16), 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.fill();
+    ctx.font = '800 ' + Math.max(7, br * 1.08) + 'px Outfit,sans-serif';
+    ctx.fillStyle = 'rgba(255,255,255,0.98)';
+    ctx.fillText(letter, bx, by + 0.4);
     ctx.restore();
 }
 
@@ -2614,6 +2699,33 @@ function drawPlanetTypeVisual(ctx, n, tdef, col, tick) {
         ctx.strokeStyle = hexToRgba('#ffcf84', 0.58);
         ctx.lineWidth = 1.7;
         ctx.stroke();
+        for (var spark = 0; spark < 3; spark++) {
+            var sparkA = orbitPhase * 0.72 + spark * Math.PI * 0.67;
+            var sparkR = ring + 4.5 + Math.sin(tick * 0.08 + spark) * 1.2;
+            ctx.beginPath();
+            ctx.arc(cx + Math.cos(sparkA) * sparkR, cy + Math.sin(sparkA) * sparkR, 1.25 + pulse * 0.45, 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba('#ffe0a3', 0.64 + pulse * 0.22);
+            ctx.fill();
+        }
+    } else if (k === 'bulwark') {
+        for (var plate = 0; plate < 8; plate++) {
+            var plateStart = Math.PI / 8 + plate * Math.PI / 4 + orbitPhase * 0.025;
+            ctx.beginPath();
+            ctx.arc(cx, cy, ring + 2.2, plateStart, plateStart + Math.PI / 5.35);
+            ctx.strokeStyle = hexToRgba(plate % 2 ? accent : '#ffffff', plate % 2 ? 0.78 : 0.42);
+            ctx.lineWidth = 3.2;
+            ctx.lineCap = 'butt';
+            ctx.stroke();
+        }
+        ctx.lineCap = 'round';
+        for (var bolt = 0; bolt < 4; bolt++) {
+            var boltA = Math.PI / 4 + bolt * Math.PI * 0.5;
+            var boltR = ring + 4.2;
+            ctx.beginPath();
+            ctx.arc(cx + Math.cos(boltA) * boltR, cy + Math.sin(boltA) * boltR, 1.65, 0, Math.PI * 2);
+            ctx.fillStyle = hexToRgba('#ffffff', 0.72);
+            ctx.fill();
+        }
     } else if (k === 'relay') {
         ctx.setLineDash([4, 3.2]);
         ctx.lineDashOffset = -tick * 0.24;
@@ -2623,12 +2735,52 @@ function drawPlanetTypeVisual(ctx, n, tdef, col, tick) {
         ctx.lineWidth = 1.5;
         ctx.stroke();
         ctx.setLineDash([]);
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(orbitPhase * 0.62);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, ring + 8, ring * 0.42, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = hexToRgba(accent, 0.48);
+        ctx.lineWidth = 1.45;
+        ctx.stroke();
+        for (var beacon = 0; beacon < 2; beacon++) {
+            var beaconA = orbitPhase * 1.8 + beacon * Math.PI;
+            var beaconX = Math.cos(beaconA) * (ring + 8);
+            var beaconY = Math.sin(beaconA) * ring * 0.42;
+            ctx.beginPath();
+            ctx.arc(beaconX, beaconY, 2.05, 0, Math.PI * 2);
+            ctx.fillStyle = 'rgba(232,255,251,0.94)';
+            ctx.fill();
+        }
+        ctx.restore();
     } else if (k === 'nexus') {
+        traceDiamond(ring + 5.5, ring + 5.5);
+        ctx.strokeStyle = hexToRgba(accent, 0.48 + pulse * 0.18);
+        ctx.lineWidth = 1.55;
+        ctx.stroke();
         ctx.beginPath();
         ctx.arc(cx, cy, ring + 1.8, 0, Math.PI * 2);
         ctx.strokeStyle = hexToRgba(accent, 0.46);
         ctx.lineWidth = 1.3;
         ctx.stroke();
+        for (var crystal = 0; crystal < 4; crystal++) {
+            var crystalA = -Math.PI / 2 + crystal * Math.PI * 0.5;
+            var crystalR = ring + 5.5;
+            var crystalX = cx + Math.cos(crystalA) * crystalR;
+            var crystalY = cy + Math.sin(crystalA) * crystalR;
+            ctx.save();
+            ctx.translate(crystalX, crystalY);
+            ctx.rotate(crystalA + Math.PI / 2);
+            ctx.beginPath();
+            ctx.moveTo(0, -3.2);
+            ctx.lineTo(2.15, 0);
+            ctx.lineTo(0, 3.2);
+            ctx.lineTo(-2.15, 0);
+            ctx.closePath();
+            ctx.fillStyle = hexToRgba('#f1ddff', 0.72 + pulse * 0.2);
+            ctx.fill();
+            ctx.restore();
+        }
     } else if (k === 'core') {
         ctx.beginPath();
         ctx.arc(cx, cy, ring - 1.2, 0, Math.PI * 2);
@@ -3382,6 +3534,7 @@ function drawContestedFronts(ctx, territorySets, tick) {
 }
 
 function drawTerritories(ctx, tick) {
+    if (!G.mechanics || !G.mechanics.territory) return;
     var territoryCfg = territoryConfig();
     var byOwner = {};
     var territorySets = [];
@@ -3435,7 +3588,7 @@ function drawTerritories(ctx, tick) {
 }
 
 function drawSolarFlareScreenOverlay(ctx, cv, tick) {
-    if (G.state !== 'playing' && G.state !== 'paused') return;
+    if ((G.state !== 'playing' && G.state !== 'paused') || !G.mechanics || !G.mechanics.solarFlare) return;
     var frame = getSolarFlareFrame(tick, G.seed, solarFlareCfg());
     var w = cv.width;
     var h = cv.height;
@@ -4004,6 +4157,7 @@ function clearCommandMode() {
     inp.commandMode = '';
 }
 function toggleFlowFromSelectionTo(targetId) {
+    if (!G.mechanics || !G.mechanics.flow) return false;
     var sourceIds = selectedOwnedNodeIds(targetId);
     if (!sourceIds.length) return false;
     for (var i = 0; i < sourceIds.length; i++) {
@@ -4016,12 +4170,13 @@ function toggleFlowFromSelectionTo(targetId) {
 }
 function activateSelectionUpgrade() {
     var targetIds = selectedUpgradeableNodeIds();
-    if (!targetIds.length || !(G.rules && G.rules.allowUpgrade)) return false;
+    if (!targetIds.length || !(G.rules && G.rules.allowUpgrade) || !G.mechanics || !G.mechanics.upgrades) return false;
     if (issueOnlineCommand('upgrade', { nodeIds: targetIds })) return true;
     for (var i = 0; i < targetIds.length; i++) upgradeNode(G.human, targetIds[i]);
     return true;
 }
 function activateSelectionDefense() {
+    if (!G.mechanics || !G.mechanics.defense) return false;
     var targetIds = selectedOwnedNodeIds();
     if (!targetIds.length) return false;
     var enableDefense = false;
@@ -4037,6 +4192,7 @@ function activateSelectionDefense() {
     return true;
 }
 function armFlowSelection() {
+    if (!G.mechanics || !G.mechanics.flow) return false;
     if (!selectedOwnedNodeIds().length) return false;
     inp.commandMode = inp.commandMode === 'flow' ? '' : 'flow';
     if (inp.commandMode === 'flow') showGameToast('Flow hedefini seç.');
@@ -4157,11 +4313,11 @@ function setMenuLobbyMeta(text) {
 function refreshMenuHeroSummary() {
     var summary = buildMenuHeroSummary(menuState.skirmish);
     if (menuSeedChip) menuSeedChip.textContent = summary.seedChip;
-    if (menuPlaylistChip) menuPlaylistChip.textContent = summary.playlistChip;
-    if (menuDoctrineChip) menuDoctrineChip.textContent = summary.doctrineChip;
-    if (menuModeChip) menuModeChip.textContent = summary.modeChip;
-    if (menuFogChip) menuFogChip.textContent = summary.fogChip;
-    if (menuQuickStatusEl) menuQuickStatusEl.textContent = summary.quickStatus;
+    if (menuPlaylistChip) menuPlaylistChip.textContent = 'Temel Fetih';
+    if (menuDoctrineChip) menuDoctrineChip.textContent = 'Doktrin Kilitli';
+    if (menuModeChip) menuModeChip.textContent = 'Standart Gezegenler';
+    if (menuFogChip) menuFogChip.textContent = 'Sis Kapalı';
+    if (menuQuickStatusEl) menuQuickStatusEl.textContent = menuState.skirmish.nodeCount + ' gezegen | ' + menuDifficultyLabel(menuState.skirmish.difficulty) + ' | Yalın başlangıç';
     if (menuStagePlaylistLabel) menuStagePlaylistLabel.textContent = summary.stagePlaylistLabel;
     if (menuStageDoctrineLabel) menuStageDoctrineLabel.textContent = summary.stageDoctrineLabel;
 }
@@ -4582,8 +4738,9 @@ function syncMatchHudControls() {
         spdBtn.setAttribute('data-help-disabled', 'Online maçlarda hız sunucu senkronu için sabittir.');
     }
     if (upgradeHudBtn) {
+        upgradeHudBtn.classList.toggle('hidden', !G.mechanics || !G.mechanics.upgrades);
         var upgradeableIds = selectedUpgradeableNodeIds();
-        upgradeHudBtn.disabled = G.state !== 'playing' || !upgradeableIds.length || !(G.rules && G.rules.allowUpgrade);
+        upgradeHudBtn.disabled = G.state !== 'playing' || !upgradeableIds.length || !(G.rules && G.rules.allowUpgrade) || !G.mechanics || !G.mechanics.upgrades;
         var lowestUpgradeCost = Infinity;
         for (var uhi = 0; uhi < upgradeableIds.length; uhi++) {
             lowestUpgradeCost = Math.min(lowestUpgradeCost, upgradeCost(G.nodes[upgradeableIds[uhi]]));
@@ -4596,8 +4753,9 @@ function syncMatchHudControls() {
             : 'Bu modda yükseltme kapalı.');
     }
     if (defenseHudBtn) {
+        defenseHudBtn.classList.toggle('hidden', !G.mechanics || !G.mechanics.defense);
         var defenseIds = selectedOwnedNodeIds();
-        defenseHudBtn.disabled = G.state !== 'playing' || !defenseIds.length;
+        defenseHudBtn.disabled = G.state !== 'playing' || !defenseIds.length || !G.mechanics || !G.mechanics.defense;
         var defendedCount = 0;
         for (var dhi = 0; dhi < defenseIds.length; dhi++) if (G.nodes[defenseIds[dhi]] && G.nodes[defenseIds[dhi]].defense) defendedCount++;
         defenseHudBtn.textContent = defenseIds.length && defendedCount === defenseIds.length ? 'SAVUN · KAPAT' : 'SAVUN · AÇ';
@@ -4606,9 +4764,10 @@ function syncMatchHudControls() {
         defenseHudBtn.setAttribute('data-help-disabled', 'Savunma için önce kendi gezegenlerinden birini seç.');
     }
     if (flowHudBtn) {
+        flowHudBtn.classList.toggle('hidden', !G.mechanics || !G.mechanics.flow);
         var hasOwnedSelection = selectedOwnedNodeIds().length > 0;
         if (!hasOwnedSelection && inp.commandMode) clearCommandMode();
-        flowHudBtn.disabled = G.state !== 'playing' || !hasOwnedSelection;
+        flowHudBtn.disabled = G.state !== 'playing' || !hasOwnedSelection || !G.mechanics || !G.mechanics.flow;
         flowHudBtn.textContent = inp.commandMode === 'flow' ? 'HEDEF SEÇ' : 'FLOW';
         flowHudBtn.title = inp.commandMode === 'flow' ? 'Flow hedefi seç' : 'Seçili kaynaklar için flow hedefi seç';
         flowHudBtn.classList.toggle('active', inp.commandMode === 'flow');
@@ -4816,6 +4975,7 @@ function encounterStatusText() {
 }
 
 function activateDoctrineForPlayer(playerIndex) {
+    if (!G.mechanics || !G.mechanics.doctrines) return false;
     var activation = activateDoctrine(G.doctrines, G.doctrineStates, playerIndex);
     G.doctrineStates = activation.states;
     if (activation.activated && playerIndex === G.human) {
@@ -4845,6 +5005,7 @@ function selectionMetaText() {
         if (humanDoctrineId()) idleParts.push(humanDoctrineStatusText());
         if (G.strategicPulse && G.strategicPulse.active) idleParts.push(pulseBonusSummary());
         if (idleParts.length) return idleParts.join(' | ');
+        if (G.mechanics && G.mechanics.preset === 'primitive') return 'Bir gezegen seç, birlik miktarını karşılaştır ve fetih rotanı kur.';
         return 'Bir gezegen seç: upgrade maliyeti, savunma alanı, asimilasyon, supply ve pulse etkileri burada görünür.';
     }
 
@@ -4853,17 +5014,17 @@ function selectionMetaText() {
         var ownerLabel = node.owner >= 0 ? labelForPlayer(node.owner) : 'Tarafsız';
         var parts = [nodeTypeOf(node).label + ' L' + node.level, ownerLabel];
         if (node.owner === G.human) {
-            if (G.rules && G.rules.allowUpgrade) {
+            if (G.mechanics && G.mechanics.upgrades && G.rules && G.rules.allowUpgrade) {
                 if (isNodeUpgradePending(node, G.tick)) parts.push('Yükseltme: Yükseliyor %' + Math.round(getNodeUpgradeProgress(node, G.tick) * 100) + ' -> L' + node.upgradeTargetLevel);
                 else if (node.level >= NODE_LEVEL_MAX) parts.push('Yükseltme: MAX');
                 else parts.push('Yükseltme: ' + upgradeCost(node));
-            } else {
-                parts.push('Yükseltme kapalı');
             }
-            parts.push(node.defense ? ('Savunma açık | Asimilasyon +' + Math.round((DEFENSE_ASSIM_BONUS - 1) * 100) + '% | Üretim -' + Math.round((1 - DEFENSE_PROD_PENALTY) * 100) + '% | Flow çıkış -' + Math.round((1 - DEFENSE_FLOW_MULT) * 100) + '%') : 'Savunma kapalı');
-            if (node.kind !== 'turret') parts.push(defenseFieldSummary(node));
-            if (node.supplied === true) parts.push('Tedarikli yükseltme -' + Math.round((1 - SUPPLIED_UPGRADE_DISCOUNT) * 100) + '%');
-            if (!isNodeAssimilated(node)) parts.push('Asimilasyon ' + Math.round(clamp(node.assimilationProgress || 0, 0, 1) * 100) + '%');
+            if (G.mechanics && G.mechanics.defense) {
+                parts.push(node.defense ? ('Savunma açık | Asimilasyon +' + Math.round((DEFENSE_ASSIM_BONUS - 1) * 100) + '% | Üretim -' + Math.round((1 - DEFENSE_PROD_PENALTY) * 100) + '% | Flow çıkış -' + Math.round((1 - DEFENSE_FLOW_MULT) * 100) + '%') : 'Savunma kapalı');
+                if (node.kind !== 'turret') parts.push(defenseFieldSummary(node));
+            }
+            if (G.mechanics && G.mechanics.flow && node.supplied === true) parts.push('Tedarikli yükseltme -' + Math.round((1 - SUPPLIED_UPGRADE_DISCOUNT) * 100) + '%');
+            if (G.mechanics && G.mechanics.assimilation && !isNodeAssimilated(node)) parts.push('Asimilasyon ' + Math.round(clamp(node.assimilationProgress || 0, 0, 1) * 100) + '%');
         } else if (node.strategic) {
             parts.push('Stratejik merkez');
         }
@@ -4881,7 +5042,7 @@ function selectionMetaText() {
     var summary = [ids.length + ' seçili'];
     if (!owned.length) return summary.join(' | ');
 
-    if (G.rules && G.rules.allowUpgrade) {
+    if (G.mechanics && G.mechanics.upgrades && G.rules && G.rules.allowUpgrade) {
         var upgrading = owned.filter(function (node) { return isNodeUpgradePending(node, G.tick); });
         if (upgrading.length) summary.push('Yükseliyor x' + upgrading.length);
         var upgradeable = owned.filter(function (node) { return canUpgradeNodeForOwner(node, G.human, G.tick); });
@@ -4896,13 +5057,11 @@ function selectionMetaText() {
         } else {
             summary.push('Yükseltme MAX');
         }
-    } else {
-        summary.push('Yükseltme kapalı');
     }
     var suppliedCount = owned.filter(function (node) { return node.supplied === true; }).length;
     var gateCount = owned.filter(function (node) { return node.gate && isNodeAssimilated(node); }).length;
     var pulseCount = owned.filter(function (node) { return strategicPulseAppliesToNode(node.id); }).length;
-    summary.push('Supply ' + suppliedCount + '/' + owned.length);
+    if (G.mechanics && G.mechanics.flow) summary.push('Supply ' + suppliedCount + '/' + owned.length);
     if (gateCount > 0) summary.push('Gate x' + gateCount);
     if (pulseCount > 0) summary.push('Pulse x' + pulseCount);
     return summary.join(' | ');
@@ -6968,7 +7127,7 @@ function startSinglePlayerGame(opts) {
     opts = opts || {};
     if (net.socket && net.roomCode) net.socket.emit('leaveRoom');
     clearRoomState('');
-    var startConfig = buildSkirmishStartConfig(menuState.skirmish);
+    var startConfig = buildSkirmishStartConfig(menuState.skirmish, { primitive: opts.primitive === true });
     currentCustomMapConfig = startConfig.customMapConfig;
     startConfig.initOptions.sandbox = opts.sandbox === true;
     initGame(startConfig.seed, startConfig.nodeCount, startConfig.difficulty, startConfig.initOptions);
@@ -7080,6 +7239,8 @@ function startCampaignLevel(levelIndex) {
     applyAudioPreference();
     closeScenarioMenu();
     showUI('playing');
+    var progressionInfo = mechanicsProgressionInfo(G.mechanics && G.mechanics.preset);
+    showGameToast(progressionInfo.title + ' · ' + progressionInfo.unlock, { durationMs: 3200 });
     if (startConfig.hintText) {
         setTimeout(function () {
             if (G.campaign.active && G.campaign.levelIndex === idx && G.state === 'playing') showHintToast(startConfig.hintText);
@@ -7127,7 +7288,7 @@ refreshDailyChallengeCard();
 refreshCustomMapStatus();
 if (startBtn) {
     startBtn.addEventListener('click', function () {
-        startSinglePlayerGame();
+        startSinglePlayerGame({ primitive: true });
     });
 }
 if (menuHubDailyBtn) {
@@ -7609,6 +7770,7 @@ function loop(ts) {
         syncHudAssistiveText();
         maybeShowDominanceHint();
         if (doctrineBtn) {
+            doctrineBtn.classList.toggle('hidden', !G.mechanics || !G.mechanics.doctrines);
             var doctrineId = humanDoctrineId();
             var doctrineButtonState = buildDoctrineButtonState({
                 doctrineId: doctrineId,
