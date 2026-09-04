@@ -7,9 +7,11 @@ cd "$ROOT_DIR"
 MODE="${1:-docker}"
 LIVE_URL="${LIVE_URL:-https://solarmax.urgup.keenetic.link/}"
 
+# grep, not rg: the container check already uses grep, and a missing ripgrep made the
+# local and live checks report "bulunamadi" while the deploy had in fact succeeded.
 bundle_from_html() {
     local html="${1:-}"
-    printf '%s' "$html" | rg -o 'assets/game-[^"]+' -m 1 || true
+    printf '%s' "$html" | grep -o 'assets/game-[^"]*' | head -n 1 || true
 }
 
 bundle_from_file() {
@@ -17,7 +19,7 @@ bundle_from_file() {
     if [ ! -f "$path" ]; then
         return 0
     fi
-    rg -o 'assets/game-[^"]+' -m 1 "$path" || true
+    grep -o 'assets/game-[^"]*' "$path" | head -n 1 || true
 }
 
 bundle_from_container() {
