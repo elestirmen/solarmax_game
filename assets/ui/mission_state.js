@@ -55,13 +55,13 @@ export function buildMissionPanelSubtitle(opts) {
         if (level.doctrineId) dailyBits.push('Doktrin: ' + doctrineName(level.doctrineId));
         if (opts.dailyCompleted) dailyBits.push('Durum: Tamamlandı');
         else if ((Number(opts.dailyBestTick) || 0) > 0) dailyBits.push('En iyi: ' + opts.dailyBestTick + ' tick');
-        return dailyBits.filter(Boolean).join(' | ');
+        return dailyBits.filter(Boolean).join(' · ');
     }
 
     var subtitleParts = [level.blurb || ''];
     if (level.playlist) subtitleParts.push('Oyun listesi: ' + playlistName(level.playlist));
     if (level.doctrineId) subtitleParts.push('Doktrin: ' + doctrineName(level.doctrineId));
-    return subtitleParts.filter(Boolean).join(' | ');
+    return subtitleParts.filter(Boolean).join(' · ');
 }
 
 export function pickPrimaryObjectiveRow(rows) {

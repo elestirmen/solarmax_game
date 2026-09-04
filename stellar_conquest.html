@@ -25,14 +25,63 @@
             --bg: #0a0e17;
             --panel-bg: rgba(12, 18, 34, 0.92);
             --panel-border: rgba(80, 140, 255, 0.2);
-            --accent: #4a8eff;
-            --accent-glow: rgba(74, 142, 255, 0.35);
+            /* Chrome accent is player one's map colour, so the interface and the board
+               agree on what "yours" looks like. */
+            --accent: #3d8bfd;
+            --accent-glow: rgba(61, 139, 253, 0.35);
             --text: #c8d6e5;
             --text-dim: #6b7d96;
             --success: #27ae60;
             --danger: #e74c3c;
             --font: 'Outfit', system-ui, sans-serif;
-            --radius: 8px
+            --radius: 8px;
+
+            /* One spacing scale for every panel, so gaps line up across the HUD instead
+               of each block inventing its own padding. */
+            --sp-1: 4px;
+            --sp-2: 6px;
+            --sp-3: 8px;
+            --sp-4: 12px;
+            --sp-5: 16px;
+            --sp-6: 24px;
+
+            --r-sm: 6px;
+            --r-md: 10px;
+            --r-lg: 14px;
+            --r-pill: 999px;
+
+            /* Panel surfaces, lightest on top of darkest, used in this order everywhere. */
+            --surface-1: rgba(8, 13, 24, 0.62);
+            --surface-2: rgba(255, 255, 255, 0.045);
+            --surface-3: rgba(255, 255, 255, 0.08);
+            --border-soft: rgba(118, 162, 255, 0.14);
+            --border-strong: rgba(118, 162, 255, 0.3);
+
+            /* Type scale: label < body < value < title. */
+            --fs-micro: 0.58rem;
+            --fs-label: 0.64rem;
+            --fs-body: 0.72rem;
+            --fs-value: 0.82rem;
+            --fs-title: 0.95rem;
+
+            /* Semantic tones. Every "good / caution / bad / informational" state in the
+               HUD uses one of these four and nothing else. */
+            --tone-up: #4ade80;
+            --tone-notice: #7dd3fc;
+            --tone-warn: #f7b955;
+            --tone-danger: #ff6b6b;
+
+            --owner-self: #7cb2ff;
+            --owner-rival: #ff8f8f;
+            --owner-neutral: #9aa3b2;
+
+            --shadow-panel: 0 10px 30px rgba(2, 6, 16, 0.55);
+            --focus-ring: 0 0 0 2px rgba(61, 139, 253, 0.55);
+        }
+
+        :focus-visible {
+            outline: none;
+            box-shadow: var(--focus-ring);
         }
 
         html {
@@ -364,6 +413,12 @@
             min-width: 340px;
             max-height: min(92vh, 900px);
             overflow-y: auto;
+            /* The panel scrolls, so it says so: a fade at the bottom edge and a visible
+               scrollbar. Content used to be cut off with no cue that more was below. */
+            mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 28px), transparent 100%);
+            -webkit-mask-image: linear-gradient(180deg, #000 0, #000 calc(100% - 28px), transparent 100%);
+            scrollbar-width: thin;
+            scrollbar-color: rgba(120, 165, 255, 0.35) transparent;
             text-align: center;
             box-shadow: 0 28px 80px rgba(4, 8, 20, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.02);
             position: relative;
@@ -406,6 +461,36 @@
             margin-top: 14px;
             padding-top: 12px;
             border-top: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .menu-panel::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .menu-panel::-webkit-scrollbar-thumb {
+            background: rgba(120, 165, 255, 0.32);
+            border-radius: var(--r-pill);
+        }
+
+        .menu-panel::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        /* On a settings or lobby panel the wordmark hands ~130px of vertical space to
+           branding that the form below needs. It shrinks instead of pushing content out
+           of view. */
+        .menu-panel.is-subpanel .game-title {
+            font-size: 1.9rem;
+            margin-bottom: 0;
+        }
+
+        .menu-panel.is-subpanel .game-title::before {
+            opacity: 0.35;
+        }
+
+        .menu-panel.is-subpanel .tagline {
+            margin-bottom: 18px;
+            opacity: 0.7;
         }
 
         .game-title {
@@ -493,9 +578,49 @@
             transition: border-color .2s
         }
 
+        /* Native select chrome is the one place the interface looked like a form rather
+           than a game, so the arrow is drawn to match the rest of the panel. */
+        .menu-field select {
+            appearance: none;
+            -webkit-appearance: none;
+            padding-right: 34px;
+            background-image:
+                linear-gradient(45deg, transparent 50%, rgba(200, 214, 229, 0.85) 50%),
+                linear-gradient(135deg, rgba(200, 214, 229, 0.85) 50%, transparent 50%);
+            background-position:
+                calc(100% - 18px) calc(50% + 2px),
+                calc(100% - 13px) calc(50% + 2px);
+            background-size: 5px 5px, 5px 5px;
+            background-repeat: no-repeat;
+            cursor: pointer;
+        }
+
+        .menu-field input[type="text"]:hover,
+        .menu-field select:hover {
+            border-color: var(--border-strong);
+        }
+
         .menu-field input[type="text"]:focus,
         .menu-field select:focus {
             border-color: var(--accent)
+        }
+
+        .menu-field.is-locked label,
+        .menu-field select:disabled,
+        .menu-field.is-locked .menu-field-hint {
+            opacity: 0.5;
+        }
+
+        .menu-field select:disabled {
+            cursor: not-allowed;
+        }
+
+        .menu-field-hint {
+            margin-top: 6px;
+            color: var(--text-dim);
+            font-size: .74rem;
+            line-height: 1.35;
+            min-height: 1.35em;
         }
 
         .seed-row {
@@ -1610,23 +1735,38 @@
             max-width: 34ch;
         }
 
+        /* What waits inside the multiplayer panel, as labels. They used to be tall boxes
+           with dim left-aligned text, which read as three disabled buttons on a card that
+           is itself the button. */
         .menu-multiplayer-path {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--sp-2);
             width: 100%;
-            margin-top: 18px;
+            margin-top: var(--sp-4);
         }
 
         .menu-multiplayer-path span {
-            min-height: 54px;
-            padding: 10px 12px;
-            border-radius: 12px;
+            display: inline-flex;
+            align-items: center;
+            gap: var(--sp-2);
+            padding: 3px 10px 3px 8px;
+            border-radius: var(--r-pill);
             border: 1px solid rgba(126, 198, 255, 0.18);
             background: rgba(255, 255, 255, 0.035);
-            color: #dff3ff;
-            font-size: .72rem;
-            line-height: 1.35;
+            color: #cfe6f7;
+            font-size: var(--fs-micro);
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .menu-multiplayer-path span::before {
+            content: '';
+            width: 4px;
+            height: 4px;
+            border-radius: 50%;
+            background: rgba(126, 198, 255, 0.75);
         }
 
         .menu-overview-card-live .menu-overview-kicker {
@@ -1803,7 +1943,8 @@
             background: rgba(74, 142, 255, 0.2);
             border: 1px solid rgba(118, 162, 255, 0.28);
             color: #eef4ff;
-            font-family: 'Orbitron', var(--font);
+            font-family: var(--font);
+            font-variant-numeric: tabular-nums;
             font-size: .68rem;
             font-weight: 700;
         }
@@ -2057,20 +2198,39 @@
             }
         }
 
+        /* One grid, three tracks: send control / selection readout / commands. Fixed
+           track widths keep the panels from resizing as their contents change, which is
+           what made the old flex layout jitter mid-match. */
         #hud {
             position: fixed;
             bottom: 0;
             left: 0;
             right: 0;
-            display: flex;
+            display: grid;
+            grid-template-columns: 232px minmax(0, 1fr) 400px;
             align-items: stretch;
-            justify-content: space-between;
-            gap: 8px;
-            padding: 6px 10px;
+            gap: var(--sp-3);
+            padding: var(--sp-3) var(--sp-4) calc(var(--sp-3) + env(safe-area-inset-bottom, 0px));
             background: var(--panel-bg);
             border-top: 1px solid var(--panel-border);
             z-index: 50;
-            font-size: .78rem
+            font-size: var(--fs-body);
+        }
+
+        /* Shared panel chrome: identical border, fill, radius and padding for all three. */
+        #hudLeft,
+        #hudCenter,
+        #hudRight {
+            display: flex;
+            flex-direction: column;
+            gap: var(--sp-2);
+            min-width: 0;
+            padding: var(--sp-3);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--r-md);
+            background:
+                linear-gradient(180deg, var(--surface-2), rgba(255, 255, 255, 0.018)),
+                var(--surface-1);
         }
 
         #hud.hidden {
@@ -2078,17 +2238,7 @@
         }
 
         #hudLeft {
-            display: flex;
-            flex: 0 1 220px;
-            flex-direction: column;
-            gap: 4px;
-            min-width: 0;
-            padding: 6px 8px;
-            border: 1px solid rgba(118, 162, 255, 0.14);
-            border-radius: 10px;
-            background:
-                linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
-                rgba(8, 13, 24, 0.62)
+            justify-content: flex-start;
         }
 
         .hud-block-title {
@@ -2170,40 +2320,48 @@
             cursor: pointer;
         }
 
+        .send-quick-btn:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: var(--border-strong);
+        }
+
         .send-quick-btn.active {
-            background: rgba(74, 142, 255, 0.28);
-            border-color: rgba(74, 142, 255, 0.45);
+            background: rgba(61, 139, 253, 0.3);
+            border-color: rgba(61, 139, 253, 0.55);
+            color: #f2f7ff;
+            font-weight: 600;
+        }
+
+        /* The percentage alone is not the whole story: a Relay pushes more per order and
+           a world always keeps one ship back, so the panel states the real figure. */
+        .hud-send-preview {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: var(--sp-2);
+            margin-top: auto;
+            padding-top: var(--sp-2);
+            border-top: 1px solid rgba(118, 162, 255, 0.12);
+        }
+
+        .hud-send-preview-value {
+            color: #eaf1ff;
+            font-size: var(--fs-body);
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .hud-send-preview-value.is-idle {
+            color: var(--text-dim);
+            font-weight: 400;
         }
 
         #hudRight {
-            display: flex;
-            flex: 1 1 260px;
-            flex-direction: column;
-            gap: 4px;
             justify-content: flex-start;
-            min-width: 0;
-            padding: 6px 8px;
-            border: 1px solid rgba(118, 162, 255, 0.14);
-            border-radius: 10px;
-            background:
-                linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
-                rgba(8, 13, 24, 0.62)
         }
 
         #hudCenter {
-            display: flex;
-            flex-direction: column;
-            flex: 1 1 300px;
-            align-items: stretch;
-            gap: 4px;
-            min-width: 0;
-            max-width: min(52vw, 560px);
-            padding: 6px 8px;
-            border: 1px solid rgba(118, 162, 255, 0.14);
-            border-radius: 10px;
-            background:
-                linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.018)),
-                rgba(8, 13, 24, 0.62);
+            justify-content: flex-start;
         }
 
         .hud-center-top {
@@ -2223,16 +2381,115 @@
             font-size: .68rem;
         }
 
-        #hudMeta {
-            color: #edf4ff;
-            font-size: .66rem;
-            line-height: 1.28;
-            text-align: left;
-            min-height: 1.5em;
-            padding: 4px 7px;
+        /* Selection readout: a title row, a stat grid and at most two notes. The grid is
+           what replaced the old single pipe-separated sentence. */
+        .hud-selection {
+            display: flex;
+            flex-direction: column;
+            gap: var(--sp-2);
+            padding: var(--sp-2) var(--sp-3);
             border: 1px solid rgba(118, 162, 255, 0.12);
-            border-radius: 7px;
+            border-radius: var(--r-sm);
             background: rgba(255, 255, 255, 0.035);
+        }
+
+        .hud-sel-head {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: var(--sp-3);
+        }
+
+        .hud-sel-title {
+            color: #f2f7ff;
+            font-size: var(--fs-value);
+            font-weight: 600;
+            letter-spacing: .01em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .hud-owner-tag {
+            flex: 0 0 auto;
+            padding: 1px var(--sp-2);
+            border-radius: var(--r-pill);
+            border: 1px solid currentColor;
+            font-size: var(--fs-micro);
+            font-weight: 600;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            color: var(--owner-neutral);
+        }
+
+        .hud-owner-tag.tone-self {
+            color: var(--owner-self);
+        }
+
+        .hud-owner-tag.tone-rival {
+            color: var(--owner-rival);
+        }
+
+        /* Auto-fit columns: two stats sit side by side, five wrap to a second row, and
+           the panel height only changes in whole rows. */
+        .hud-stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+            gap: var(--sp-1) var(--sp-3);
+        }
+
+        .hud-stat-grid:empty {
+            display: none;
+        }
+
+        .hud-stat {
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+            min-width: 0;
+        }
+
+        .hud-stat-label {
+            color: var(--text-dim);
+            font-size: var(--fs-micro);
+            letter-spacing: .07em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .hud-stat-value {
+            color: #eaf1ff;
+            font-size: var(--fs-body);
+            font-weight: 600;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .hud-stat.tone-up .hud-stat-value {
+            color: var(--tone-up);
+        }
+
+        .hud-stat.tone-notice .hud-stat-value {
+            color: var(--tone-notice);
+        }
+
+        .hud-stat.tone-warn .hud-stat-value {
+            color: var(--tone-warn);
+        }
+
+        .hud-sel-notes {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            color: var(--text-dim);
+            font-size: var(--fs-micro);
+            line-height: 1.35;
+        }
+
+        .hud-sel-notes:empty {
+            display: none;
         }
 
         .hud-hint-line,
@@ -2300,6 +2557,40 @@
         .node-hover-tip-stats:empty {
             display: none;
         }
+        /* Forecast row: the verdict on the left, the arithmetic behind it on the right.
+           It carries the card's tone colour so a bad attack is obvious before the click. */
+        .node-hover-tip-forecast {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: var(--sp-3);
+            margin-top: var(--sp-2);
+            padding: var(--sp-1) var(--sp-2);
+            border-radius: var(--r-sm);
+            background: rgba(255, 255, 255, 0.05);
+            border-left: 2px solid currentColor;
+            color: var(--text-dim);
+        }
+        .node-hover-tip-forecast-label {
+            font-family: 'Orbitron', var(--font);
+            font-size: .62rem;
+            font-weight: 700;
+            letter-spacing: .1em;
+            color: currentColor;
+            white-space: nowrap;
+        }
+        .node-hover-tip-forecast-summary {
+            color: #dbe6fb;
+            font-size: .66rem;
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
+        }
+        .node-hover-tip.forecast-advantage .node-hover-tip-forecast { color: var(--tone-up); }
+        .node-hover-tip.forecast-friendly .node-hover-tip-forecast { color: var(--tone-notice); }
+        .node-hover-tip.forecast-move .node-hover-tip-forecast { color: var(--tone-notice); }
+        .node-hover-tip.forecast-warning .node-hover-tip-forecast { color: var(--tone-warn); }
+        .node-hover-tip.forecast-danger .node-hover-tip-forecast { color: var(--tone-danger); }
+        .node-hover-tip.forecast-blocked .node-hover-tip-forecast { color: var(--tone-danger); }
         .node-hover-tip-body {
             margin-top: 6px;
             padding-top: 6px;
@@ -2385,7 +2676,8 @@
             border: 1px solid rgba(118, 162, 255, 0.22);
             background: rgba(74, 142, 255, 0.18);
             color: #eef4ff;
-            font-family: 'Orbitron', var(--font);
+            font-family: var(--font);
+            font-variant-numeric: tabular-nums;
             font-size: .6rem;
             letter-spacing: .06em;
         }
@@ -2397,23 +2689,19 @@
             line-height: 1.3;
         }
 
+        /* Every command lives in one uniform 3-column grid, so a button is the same size
+           wherever it sits. The old layout packed six narrow buttons into row one and
+           three wide ones into row two, which read as an accident rather than a choice.
+           The groups stay in the markup (mobile switching and the help wiring use them)
+           but contribute their children straight to the shared grid. */
         .hud-actions-wrap {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: var(--sp-1);
         }
 
         .hud-action-group {
-            display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
-            gap: 4px;
-        }
-
-        /* Geniş masaüstü: ana komutlar tek sarı — dikey yükseklik düşer */
-        @media (min-width: 1100px) {
-            .hud-actions-wrap > .hud-action-group:first-child {
-                grid-template-columns: repeat(6, minmax(0, 1fr));
-            }
+            display: contents;
         }
 
         .hud-action-tip {
@@ -2430,28 +2718,40 @@
 
         #hudRight button {
             width: 100%;
-            min-height: 32px;
-            padding: 5px 7px;
-            background: rgba(255, 255, 255, 0.06);
-            border: 1px solid var(--panel-border);
-            border-radius: 6px;
+            min-height: 34px;
+            padding: var(--sp-1) var(--sp-2);
+            background: var(--surface-3);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--r-sm);
             color: var(--text);
             cursor: pointer;
-            font-size: .68rem
+            font-size: var(--fs-label);
+            font-weight: 600;
+            letter-spacing: .05em;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            transition: background .12s ease, border-color .12s ease, color .12s ease;
         }
 
-        #hudRight button:hover {
-            background: rgba(255, 255, 255, 0.12)
+        #hudRight button:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.14);
+            border-color: var(--border-strong);
         }
 
+        /* A disabled command reads as unavailable, not as low-priority: no border, no
+           hover, and the dimmest text in the scale. */
         #hudRight button:disabled {
-            opacity: 0.45;
+            background: rgba(255, 255, 255, 0.02);
+            border-color: rgba(118, 162, 255, 0.07);
+            color: rgba(139, 155, 178, 0.55);
             cursor: not-allowed;
         }
 
         #hudRight button.active {
-            background: rgba(74, 142, 255, 0.28);
-            border-color: rgba(74, 142, 255, 0.45);
+            background: rgba(61, 139, 253, 0.3);
+            border-color: rgba(61, 139, 253, 0.55);
+            color: #f2f7ff;
         }
 
         #hudRight .hud-mobile-action {
@@ -2487,13 +2787,15 @@
             box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
         }
 
-        #hudRight button[data-importance="primary"] {
-            background: rgba(74, 142, 255, 0.12);
-            border-color: rgba(74, 142, 255, 0.24);
+        #hudRight button[data-importance="primary"]:not(:disabled) {
+            background: rgba(61, 139, 253, 0.14);
+            border-color: rgba(61, 139, 253, 0.28);
             color: #e8f1ff;
         }
 
-        #hudRight button[data-importance="meta"] {
+        #hudRight button[data-importance="meta"]:not(:disabled) {
+            background: rgba(255, 255, 255, 0.035);
+            border-color: rgba(118, 162, 255, 0.1);
             color: var(--text-dim);
         }
 
@@ -2509,10 +2811,12 @@
 
         #powerSidebar {
             position: fixed;
-            top: 112px;
+            top: 152px;
             right: 12px;
             width: 180px;
-            max-height: 42vh;
+            /* Sized off the real viewport so the status chips at the bottom are never
+               scrolled out of sight on short screens. */
+            max-height: calc(var(--app-vvh, 100vh) - 320px);
             overflow-y: auto;
             padding: 10px;
             background: var(--panel-bg);
@@ -2538,21 +2842,123 @@
         #powerList {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: var(--sp-2);
         }
 
+        /* Global match state - pulse, barrier, mutator, doctrine - sits with the other
+           always-on information instead of being appended to the selection sentence. */
+        .match-status-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: var(--sp-1);
+            margin-top: var(--sp-3);
+            padding-top: var(--sp-3);
+            border-top: 1px solid rgba(118, 162, 255, 0.12);
+        }
+
+        .match-status-chips:empty {
+            display: none;
+        }
+
+        .match-chip {
+            display: inline-flex;
+            align-items: baseline;
+            gap: var(--sp-1);
+            max-width: 100%;
+            padding: 2px var(--sp-2);
+            border-radius: var(--r-pill);
+            border: 1px solid rgba(118, 162, 255, 0.16);
+            background: rgba(255, 255, 255, 0.04);
+            font-size: var(--fs-micro);
+            line-height: 1.5;
+        }
+
+        .match-chip-label {
+            color: var(--text-dim);
+            letter-spacing: .05em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .match-chip-value {
+            color: #e6eefc;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .match-chip.tone-up {
+            border-color: rgba(74, 222, 128, 0.32);
+        }
+
+        .match-chip.tone-up .match-chip-value {
+            color: var(--tone-up);
+        }
+
+        .match-chip.tone-warn {
+            border-color: rgba(247, 185, 85, 0.32);
+        }
+
+        .match-chip.tone-warn .match-chip-value {
+            color: var(--tone-warn);
+        }
+
+        .match-chip.tone-notice {
+            border-color: rgba(125, 211, 252, 0.3);
+        }
+
+        .match-chip.tone-notice .match-chip-value {
+            color: var(--tone-notice);
+        }
+
+        /* Two lines per player: name + power, then a share bar. The bar is the point -
+           a column of bare numbers made it hard to see how close the match actually was. */
         .power-row {
             display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 8px;
-            padding: 6px 7px;
-            border-radius: 6px;
+            flex-direction: column;
+            gap: var(--sp-1);
+            padding: var(--sp-2) var(--sp-2);
+            border-radius: var(--r-sm);
             background: rgba(255, 255, 255, 0.04);
         }
 
+        .power-row-top {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: var(--sp-3);
+        }
+
         .power-row.self {
-            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+            background: rgba(61, 139, 253, 0.1);
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+        }
+
+        .power-row.self .power-name {
+            color: #eaf1ff;
+            font-weight: 600;
+        }
+
+        .power-share {
+            height: 3px;
+            border-radius: var(--r-pill);
+            background: rgba(255, 255, 255, 0.08);
+            overflow: hidden;
+        }
+
+        .power-share > span {
+            display: block;
+            height: 100%;
+            border-radius: inherit;
+            transition: width .32s ease;
+        }
+
+        .power-nodes {
+            color: var(--text-dim);
+            font-size: var(--fs-micro);
+            font-variant-numeric: tabular-nums;
+            white-space: nowrap;
         }
 
         .power-row.dead {
@@ -2921,7 +3327,8 @@
             border: 1px solid rgba(118, 162, 255, 0.22);
             background: rgba(74, 142, 255, 0.18);
             color: #eef4ff;
-            font-family: 'Orbitron', var(--font);
+            font-family: var(--font);
+            font-variant-numeric: tabular-nums;
             font-size: .62rem;
         }
 
@@ -3101,7 +3508,7 @@
         .stats-row.emphasis { color: #d9f6e7; }
         .stats-label { color: var(--text-dim); }
         .stats-value { color: var(--text); font-weight: 600; }
-        .minimap { position: fixed; top: 12px; right: 12px; width: 140px; height: 90px; border: 1px solid rgba(120,165,255,0.42); border-radius: var(--radius); overflow: hidden; z-index: 45; background: rgba(8,12,21,0.92); box-shadow: 0 8px 26px rgba(2,6,16,0.55), inset 0 0 22px rgba(74,142,255,0.07); }
+        .minimap { position: fixed; top: 12px; right: 12px; width: 204px; height: 128px; border: 1px solid rgba(120,165,255,0.32); border-radius: var(--r-lg); overflow: hidden; z-index: 45; background: rgba(8,12,21,0.92); box-shadow: var(--shadow-panel), inset 0 0 22px rgba(61,139,253,0.06); }
         .minimap canvas { width: 100%; height: 100%; display: block; }
         .ping-display { margin-left: 12px; font-size: .75rem; color: var(--text-dim); }
         body.theme-light { --bg: #e8ecf4; --panel-bg: rgba(220,228,240,0.95); --panel-border: rgba(80,100,140,0.3); --text: #2a3548; --text-dim: #5a6a82; }
@@ -3670,19 +4077,11 @@
                 display: inline-flex;
             }
 
-            .hud-actions-wrap > .hud-action-group:first-child {
-                grid-template-columns: repeat(3, minmax(0, 1fr));
-            }
-
             #hudRight button {
                 width: 100%;
                 min-height: 44px;
                 padding: 10px 6px;
                 font-size: 0.74rem;
-            }
-
-            .hud-action-group {
-                grid-template-columns: repeat(3, minmax(0, 1fr));
             }
 
             .hud-action-tip {
@@ -3695,7 +4094,7 @@
                 left: 8px;
                 right: max(8px, calc(92px + env(safe-area-inset-right)));
                 width: auto;
-                max-height: min(20dvh, 160px);
+                max-height: min(24dvh, 190px);
                 border-radius: 16px;
                 padding: 8px;
                 z-index: 53;
@@ -3705,6 +4104,12 @@
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
                 gap: 4px;
+            }
+
+            /* On a phone the share bar already answers "how close is this?", so the
+               per-player planet count is dropped rather than clipped. */
+            .power-nodes {
+                display: none;
             }
 
             #powerTitle {
@@ -3844,10 +4249,6 @@
                 display: none;
             }
 
-            .hud-actions-wrap > .hud-action-group:first-child {
-                grid-template-columns: repeat(6, minmax(0, 1fr));
-            }
-
             #hudRight button {
                 min-height: 34px;
                 font-size: 0.66rem;
@@ -3972,10 +4373,6 @@
                 font-size: 0.62rem;
             }
 
-            .hud-action-group {
-                gap: 4px;
-            }
-
             .hud-hint-line,
             .hud-action-tip {
                 font-size: 0.64rem;
@@ -3987,7 +4384,7 @@
             }
 
             #powerSidebar {
-                max-height: min(17dvh, 132px);
+                max-height: min(22dvh, 168px);
                 padding: 7px 8px;
             }
 
@@ -4145,7 +4542,8 @@
 
         .match-phase-label,
         .match-clock {
-            font-family: 'Orbitron', var(--font);
+            font-family: var(--font);
+            font-variant-numeric: tabular-nums;
             font-size: .65rem;
             font-weight: 700;
             letter-spacing: .1em;
@@ -4203,10 +4601,6 @@
         .minimap canvas {
             cursor: crosshair;
             touch-action: none;
-        }
-
-        #hudRight .hud-action-group:last-child {
-            grid-template-columns: repeat(3, minmax(0, 1fr));
         }
 
         @media (min-width: 721px) {
@@ -4269,9 +4663,6 @@
             #powerList { margin-top: 7px; }
             #campaignMissionHud:not(.hidden) + #powerSidebar:not(.hidden) {
                 top: calc(max(8px, env(safe-area-inset-top)) + min(26dvh, 210px) + 10px);
-            }
-            #hudRight .hud-action-group:last-child {
-                grid-template-columns: repeat(3, minmax(0, 1fr));
             }
             #hudRight button { letter-spacing: .01em; }
         }
@@ -4345,7 +4736,7 @@
                                 <span id="menuModeChip" class="menu-hero-chip">Gelişmiş</span>
                                 <span id="menuFogChip" class="menu-hero-chip">Sis Kapalı</span>
                             </div>
-                            <div id="menuQuickStatus" class="menu-landing-status">16 gezegen | Normal | Standart akış hazır</div>
+                            <div id="menuQuickStatus" class="menu-landing-status">16 gezegen · Normal · Temel Fetih</div>
                         </div>
                     </div>
                     <div id="menuStagePlaylistLabel" style="display:none">OYUN LİSTESİ // STANDART</div>
@@ -4415,15 +4806,15 @@
                         <div class="menu-flow-step">
                             <span class="menu-flow-step-index">2</span>
                             <div class="menu-flow-step-copy">
-                                <strong>Tempoyu seç</strong>
-                                <span>Zorluk, playlist ve doctrine ile maç kimliğini netleştir.</span>
+                                <strong>Sistemleri seç</strong>
+                                <span>Temel fetihten tam spektruma: hangi mekanikler açık olacak.</span>
                             </div>
                         </div>
                         <div class="menu-flow-step">
                             <span class="menu-flow-step-index">3</span>
                             <div class="menu-flow-step-copy">
-                                <strong>Başlat</strong>
-                                <span>Direkt başlat: yalnızca standart gezegenler ve temel fetih. İleri sistemler seferde kademeli açılır.</span>
+                                <strong>Tempoyu belirle</strong>
+                                <span>Zorluk, oyun listesi ve doktrin ile maç kimliğini netleştir.</span>
                             </div>
                         </div>
                     </div>
@@ -4442,6 +4833,11 @@
                                 <span id="nodeCountLabel">16</span>
                             </div>
                         </div>
+                        <div id="menuMechanicsField" class="menu-field menu-field-span-2">
+                            <label for="mechanicsSelect">Sistemler</label>
+                            <select id="mechanicsSelect"></select>
+                            <p id="mechanicsHint" class="menu-field-hint">Standart gezegenler · üretim · filo · fetih</p>
+                        </div>
                         <div id="menuDifficultyField" class="menu-field">
                             <label for="difficultySelect">Zorluk</label>
                             <select id="difficultySelect">
@@ -4459,23 +4855,12 @@
                         </div>
                         <div class="menu-field">
                             <label for="playlistSelect">Oyun Listesi</label>
-                            <select id="playlistSelect">
-                                <option value="standard" selected>Standart</option>
-                                <option value="chaos">Kaos</option>
-                                <option value="ironman">Ironman</option>
-                                <option value="puzzle">Bulmaca Sektörü</option>
-                                <option value="zen">Zen</option>
-                                <option value="frontier">Frontier</option>
-                            </select>
+                            <select id="playlistSelect" data-options="playlist"></select>
                         </div>
-                        <div class="menu-field">
+                        <div id="menuDoctrineField" class="menu-field">
                             <label for="doctrineSelect">Doktrin</label>
-                            <select id="doctrineSelect">
-                                <option value="auto" selected>Playlist Varsayılanı</option>
-                                <option value="logistics">Lojistik</option>
-                                <option value="assimilation">Asimilasyon</option>
-                                <option value="siege">Kuşatma</option>
-                            </select>
+                            <select id="doctrineSelect" data-options="doctrine"></select>
+                            <p id="doctrineHint" class="menu-field-hint"></p>
                         </div>
                     </div>
                     <div id="menuFogField" class="tune-toggle" style="margin-top:10px"><label>Savaş Sisi</label><label class="switch"><input
@@ -4615,23 +5000,11 @@
                         </div>
                         <div class="menu-field">
                             <label for="multiPlaylistSelect">Oyun Listesi</label>
-                            <select id="multiPlaylistSelect">
-                                <option value="standard" selected>Standart</option>
-                                <option value="chaos">Kaos</option>
-                                <option value="ironman">Ironman</option>
-                                <option value="puzzle">Puzzle</option>
-                                <option value="zen">Zen</option>
-                                <option value="frontier">Frontier</option>
-                            </select>
+                            <select id="multiPlaylistSelect" data-options="playlist"></select>
                         </div>
                         <div class="menu-field">
                             <label for="multiDoctrineSelect">Doktrin</label>
-                            <select id="multiDoctrineSelect">
-                                <option value="auto" selected>Doktrin Otomatik</option>
-                                <option value="logistics">Lojistik</option>
-                                <option value="assimilation">Asimilasyon</option>
-                                <option value="siege">Kuşatma</option>
-                            </select>
+                            <select id="multiDoctrineSelect" data-options="doctrine"></select>
                         </div>
                         <div class="menu-field">
                             <label for="multiSeedInput">Harita Tohumu</label>
@@ -4799,7 +5172,7 @@
                     <h3>4) Flow ve park filosu</h3>
                     <p><b>Flow</b>, iki dünya arasında düzenli otomatik birlik taşır — tek seferlik tıklama saldırısı değildir. <b>Park filosu</b> boş uzayda birikim yapıp tek dalgada vurmak içindir.</p>
                     <ul>
-                        <li><b>Dalga boyutu:</b> Kaynak nüfusunun her döngüde yaklaşık <b>%8’i</b> akar (ayarlanabilir aralık). Kaynak zayıflayınca akış doğal olarak incelir.</li>
+                        <li><b>Dalga boyutu:</b> Kaynak nüfusunun her döngüde yaklaşık <b><span data-sim="flowFractionPct">%8</span>’i</b> akar (ayarlanabilir aralık). Kaynak zayıflayınca akış doğal olarak incelir.</li>
                         <li><b>Savunma ve flow:</b> Savunma açık bir dünyadan giden flow zayıflar; tam sayıları seçili gezegen satırında görürsün.</li>
                         <li><b>Ne zaman aç:</b> Uzun hat, asimilasyonu bitmiş cephe beslemesi, solucan deliği veya relay omurgası.</li>
                         <li><b>Ne zaman kapat:</b> Hedef dolu, cephe kaydı veya yeni fetihte garnizon erimesi — açık bırakmak ekonomiyi boşaltır.</li>
@@ -4813,7 +5186,7 @@
                     <h3>5) Asimilasyon ve cephe</h3>
                     <p>Fetih sonrası dünya hemen “senin” değildir: kısa kilit, ardından dolum çubuğu ile asimilasyon. Çubuk dolunca üretim, kapı ve savunma alanı tam güçlenir.</p>
                     <ul>
-                        <li><b>Kilit (~6 sn @30 Hz):</b> Üretim kapalı, savunma alanı yok, kapı kullanılamaz.</li>
+                        <li><b>Kilit (<span data-sim="assimLockSeconds">~6 sn</span>):</b> Üretim kapalı, savunma alanı yok, kapı kullanılamaz.</li>
                         <li><b>Dolum:</b> Kilit bitince kısmi kontrol; yüzde 100 olunca tüm bonuslar açılır.</li>
                         <li><b>Garnizon:</b> Üzerinde duran birlik ne kadar kalabalıksa asimilasyon o kadar hızlanır; agresif gönderim eritir ve yavaşlatır.</li>
                         <li><b>Savunma + asimilasyon:</b> Savunma açıkken asimilasyon hızlanır; buna karşılık üretim ve flow çıkışı ceza yer (HUD’da net yazar).</li>
@@ -4827,12 +5200,13 @@
                 <div class="tutorial-section" id="tut-savas">
                     <h3>6) Savaş, tedarik, kapasite</h3>
                     <ul>
-                        <li><b>Savunma modu (özet):</b> Düello ve garnizonda yaklaşık <b>%14</b> dayanıklılık artışı; asimilasyonda ~<b>%6</b> hız bonusu; üretim hızı ~<b>%40</b> kesilir. Aynı dünyadan giden <b>flow</b> dalgaları belirgin şekilde zayıflar — tam oran seçili gezegen satırında.</li>
+                        <li><b>Savunma modu (özet):</b> Garnizon dayanıklılığı <b><span data-sim="defenseBonusPct">%14</span></b> artar, asimilasyon <b><span data-sim="defenseAssimPct">%6</span></b> hızlanır; karşılığında üretim <b><span data-sim="defenseProdPct">%40</span></b>, aynı dünyadan çıkan flow dalgaları <b><span data-sim="defenseFlowPct">%28</span></b> düşer.</li>
                         <li><b>Savunma alanı:</b> Asimile dünyanın çevresinde düşman filosunu yavaşça eritir; tek başına tüm orduları durdurmaz.</li>
                         <li><b>Taret:</b> Uzun menzil, yüksek DPS; tek dalga yerine birikim veya çok yönlü baskı.</li>
-                        <li><b>Tedarik:</b> Omurgaya (ör. ~220 birim mesafe) bağlı değilsen üretim ciddi düşer; tedarik dışı yükseltme indirimi vardır.</li>
-                        <li><b>Kapasite gerginliği:</b> Toplam birlik kapasiteye yaklaşınca (~%82+) üretim yumuşar; stoğu cephe veya flow’a çevir.</li>
+                        <li><b>Tedarik:</b> Omurgaya (<span data-sim="supplyDistance">~220 birim</span> mesafe) bağlı değilsen üretim <span data-sim="isolatedPenaltyPct">%40</span> düşer; tedarik altında yükseltme indirimi vardır.</li>
+                        <li><b>Kapasite gerginliği:</b> Toplam birlik kapasitenin <span data-sim="capStrainPct">%90</span>’ını geçince üretim yumuşar; stoğu cephe veya flow’a çevir.</li>
                         <li><b>Seviye:</b> 2–3. seviye üretim, tavan ve dayanıklılığı büyütür; mümkünse tedarik altında yap.</li>
+                        <li><b>Güneş patlaması:</b> Tam spektrum maçlarında dönemsel olay. Önce <span data-sim="flareWarnSeconds">~10 sn</span> uyarı gelir, sonra patlama <b>yoldaki filoların</b> <span data-sim="flareLossPct">%60</span>’ını siler — gezegen garnizonlarına dokunmaz. Uyarıyı görünce büyük dalgayı bekletmek, uçuşta yakalanmaktan iyidir.</li>
                         <li><b>Zafer:</b> Serbest maçta rakibin tüm dünyaları ve aktif filoları silinir.</li>
                         <li><b>Kampanya / özel:</b> Görev metni ilerlemeyi anlatır; bölüm sonu genelde yine tam eliminasyon ister — paneli oku.</li>
                     </ul>
@@ -4842,9 +5216,9 @@
                     <h3>7) Playlist ve doktrin</h3>
                     <ul>
                         <li><b>Standart:</b> Varsayılan kurallar. Harita tohumu oyunun kimliğini belirler.</li>
-                        <li><b>Chaos:</b> Daha hızlı tempo, daha sert baskı ve genelde kuşatma odaklı açılışlar üretir.</li>
+                        <li><b>Kaos:</b> Daha hızlı tempo, daha sert baskı ve genelde kuşatma odaklı açılışlar üretir.</li>
                         <li><b>Ironman:</b> Sis, karartma ve daha sert ekonomiyle hata payını azaltır.</li>
-                        <li><b>Puzzle Sector:</b> Daha küçük, daha okunur ve objective odaklı sektörler sunar.</li>
+                        <li><b>Bulmaca Sektörü:</b> Daha küçük, daha okunur ve hedef odaklı sektörler sunar.</li>
                         <li><b>Zen:</b> Daha yavaş açılış ve daha sakin ritim verir; sistemi öğrenmek için uygundur.</li>
                         <li><b>Frontier:</b> Daha büyük sektör, daha fazla baskı noktası ve çoğu zaman birden fazla objective içerir.</li>
                     </ul>
@@ -4854,7 +5228,7 @@
                         <li><b>Kuşatma:</b> Savunmalı hedefleri ve turret hatlarını kırmaya odaklanır. Ekonomisi biraz daha serttir.</li>
                         <li><b>Aktif kullanım:</b> Doktrinin aktif becerisi <b>Q</b> veya <b>DOC</b> düğmesiyle açılır. Süre ve bekleme durumu HUD'da görünür.</li>
                     </ul>
-                    <div class="tutorial-tip"><strong>Seçim mantığı:</strong> Öğrenirken <b>Zen + Lojistik</b>, objective odaklı senaryolarda <b>Puzzle + Asimilasyon</b>, savunmalı hatları kırarken <b>Frontier/Chaos + Kuşatma</b> iyi başlangıç kombinasyonlarıdır.</div>
+                    <div class="tutorial-tip"><strong>Seçim mantığı:</strong> Öğrenirken <b>Zen + Lojistik</b>, hedef odaklı senaryolarda <b>Bulmaca Sektörü + Asimilasyon</b>, savunmalı hatları kırarken <b>Frontier/Kaos + Kuşatma</b> iyi başlangıç kombinasyonlarıdır.</div>
                 </div>
 
                 <div class="tutorial-section" id="tut-gezegenler">
@@ -4979,6 +5353,7 @@
         <div id="matchPhaseHint" class="match-phase-hint">Yakın nötrleri bağla, ilk üretim omurganı kur.</div>
         <div id="powerTitle">SEKTÖR GÜCÜ</div>
         <div id="powerList"></div>
+        <div id="matchStatusChips" class="match-status-chips" aria-live="polite"></div>
     </div>
     <div id="chatFeed" class="chat-feed hidden" aria-live="polite">
         <div class="chat-feed-meta">
@@ -4995,6 +5370,10 @@
     <div id="nodeHoverTip" class="node-hover-tip hidden" aria-hidden="true">
         <div id="nodeHoverTipTitle" class="node-hover-tip-title">Core</div>
         <div id="nodeHoverTipStats" class="node-hover-tip-stats"></div>
+        <div id="nodeHoverTipForecast" class="node-hover-tip-forecast hidden">
+            <span id="nodeHoverTipForecastLabel" class="node-hover-tip-forecast-label"></span>
+            <span id="nodeHoverTipForecastSummary" class="node-hover-tip-forecast-summary"></span>
+        </div>
         <div id="nodeHoverTipBody" class="node-hover-tip-body">Referans tip: üretim, savunma ve kapasite dengeli. Öğrenme ve genel cephe için güvenli varsayılan.</div>
     </div>
     <div id="hud" class="hidden" data-mobile-panel="commands" data-mobile-expanded="false">
@@ -5010,6 +5389,10 @@
                 <button type="button" class="send-quick-btn" data-send-pct="75">75%</button>
                 <button type="button" class="send-quick-btn" data-send-pct="100">100%</button>
             </div>
+            <div id="hudSendPreview" class="hud-send-preview">
+                <span class="hud-stat-label">Gönderilecek</span>
+                <span id="hudSendPreviewValue" class="hud-send-preview-value">Kaynak seç</span>
+            </div>
         </div>
         <div id="hudMobileTabs" class="hud-mobile-tabs" aria-label="Mobil HUD panelleri">
             <button type="button" id="hudMobileCommandsBtn" class="hud-mobile-tab active" aria-controls="hudRight" aria-pressed="true">KOMUT</button>
@@ -5018,7 +5401,14 @@
         <div id="hudCenter">
             <div class="hud-block-heading"><span class="hud-block-title">Durum</span><span id="hudContextBadge" class="hud-context-badge">Hazır</span></div>
             <div id="hudTelemetryRow" class="hud-center-top"><span id="hudTick">00:00 · NORMAL</span><span id="hudCap">Kapasite 0/0</span><span id="pingDisplay" class="ping-display"></span></div>
-            <span id="hudMeta">Seçili dünya: yükseltme, asimilasyon ve modlar burada özetlenir.</span>
+            <div id="hudSelection" class="hud-selection">
+                <div class="hud-sel-head">
+                    <span id="hudSelTitle" class="hud-sel-title">Seçim yok</span>
+                    <span id="hudSelOwner" class="hud-owner-tag hidden"></span>
+                </div>
+                <div id="hudSelStats" class="hud-stat-grid"></div>
+                <div id="hudSelNotes" class="hud-sel-notes"></div>
+            </div>
             <div id="hudHintLine" class="hud-hint-line">Sol tıkla kendi gezegenini seç; hedefe tıkla veya sağ tıkla savunma / flow.</div>
             <div id="hudCoachRow" class="hud-coach-row" aria-live="polite"></div>
             <div id="hudAdvisorCard" class="hud-advisor-card hidden" aria-live="polite">

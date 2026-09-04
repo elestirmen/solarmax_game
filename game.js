@@ -1,10 +1,10 @@
 /* ============================================================
-   Stellar Conquest Ã¢â‚¬â€œ Complete Game (Plain JavaScript)
+   Stellar Conquest – Complete Game (Plain JavaScript)
    No build tools needed. Open stellar_conquest.html directly.
    v2: Orbital warriors, fleet trails, enhanced visuals
    ============================================================ */
 
-import { computeSendCount } from './assets/sim/dispatch_math.js';
+import { computeSendCount, toSendFraction } from './assets/sim/dispatch_math.js';
 import { applyTurretDamage } from './assets/sim/turret.js';
 import { shouldStartDragSend, resolveRightClickAction } from './assets/sim/input_policy.js';
 import { controlsBarrierForOwner, isDispatchAllowed, syncBarrierGateNodes } from './assets/sim/barrier.js';
@@ -13,10 +13,10 @@ import { applyDefenseFieldDamage, getDefenseFieldStats } from './assets/sim/defe
 import { computePlayerUnitCount, computeGlobalCap } from './assets/sim/cap.js';
 import { computeOwnershipMetrics, computeSupplyConnected as computeSupplyConnectedState, computePowerByPlayer as computePowerByPlayerState, getPlayerCapitalId, dominanceAttackMultiplier } from './assets/sim/state_metrics.js';
 import { stepNodeEconomy } from './assets/sim/node_economy.js';
-import { activateDoctrine, buildDoctrineLoadout, canActivateDoctrine, doctrineActiveName, doctrineCooldownSummary, doctrineModifiers, doctrineName, doctrineSummary, ensureDoctrineStates, tickDoctrineStates } from './assets/sim/doctrine.js';
+import { activateDoctrine, buildDoctrineLoadout, canActivateDoctrine, doctrineActiveName, doctrineCooldownSummary, doctrineModifiers, doctrineName, doctrineOptionList, doctrineSummary, doctrineTradeLine, ensureDoctrineStates, tickDoctrineStates } from './assets/sim/doctrine.js';
 import { buildEncounterState, encounterHint, encounterName, encounterSummary, stepEncounterState } from './assets/sim/encounters.js';
 import { getRulesetConfig, normalizeRulesetMode, normalizeNodeKindForRuleset } from './assets/sim/ruleset.js';
-import { getMechanicsConfig, mechanicsProgressionInfo } from './assets/sim/mechanics.js';
+import { getMechanicsConfig, mechanicsOptionList, mechanicsProgressionInfo } from './assets/sim/mechanics.js';
 import { computeFriendlyReinforcementRoom } from './assets/sim/reinforcement.js';
 import { buildFleetSpawnProfile, getFleetUnitSpacingT, hashMix, pickNodeKindForRadius, tunedNodeRadiusForKind } from './assets/sim/shared_config.js';
 import { beginNodeUpgrade, getNodeUpgradeProgress, getNodeUpgradeVisualLevel, isNodeUpgradePending, normalizeNodeUpgradeState, resolvePendingNodeUpgrades } from './assets/sim/node_upgrade.js';
@@ -38,7 +38,7 @@ import { describeCampaignObjectives, evaluateCampaignObjectives } from './assets
 import { buildCustomMapExport, normalizeCustomMapConfig } from './assets/sim/custom_map.js';
 import { resolveMatchEndState } from './assets/sim/end_state.js';
 import { todayDateKey } from './assets/sim/match_manifest.js';
-import { playlistName, resolvePlaylistConfig } from './assets/sim/playlists.js';
+import { playlistName, playlistOptionList, resolvePlaylistConfig } from './assets/sim/playlists.js';
 import { attachGameInputController, createInputState, reconcileInputStateAfterAuthoritativeSync } from './assets/app/input_controller.js';
 import { runAiAndWrapTickPhase, runCombatTickPhase, runEconomyTickPhase, runOnlineTickSyncPhase } from './assets/app/game_tick_phases.js';
 import { renderMarqueeLayer, renderMinimapLayer, renderWorldLayers } from './assets/app/render_layers.js';
@@ -53,13 +53,17 @@ import { buildDispatchForecast } from './assets/ui/command_preview.js';
 import { buildTacticalStatus, formatMatchTime } from './assets/ui/tactical_status.js';
 import { applyLobbyControlState, buildLobbyListStatus, buildRoomStatusSummary, getLobbyControlState, renderRoomPlayers, setRoomStatusState } from './assets/ui/lobby_ui.js';
 import { buildDoctrineButtonState, buildHudCapText, buildHudTickText, buildPingDisplayText } from './assets/ui/match_hud.js';
-import { MENU_PANEL_META, buildMenuHeroSummary, buildMenuLobbyMeta, clampMenuNodeCount, createInitialMenuState as createMenuState, menuBackTarget, menuDifficultyLabel, normalizeMenuDifficulty, normalizeMenuDoctrine, normalizeMenuPanel, normalizeMenuPlaylist, normalizeMenuRoomType, normalizeMenuRulesMode, normalizeMenuSeed } from './assets/ui/menu_state.js';
+import { MENU_PANEL_META, buildMenuHeroSummary, buildMenuLobbyMeta, clampMenuNodeCount, createInitialMenuState as createMenuState, menuBackTarget, menuDifficultyLabel, menuMechanicsLabel, normalizeMenuDifficulty, normalizeMenuDoctrine, normalizeMenuMechanics, normalizeMenuPanel, normalizeMenuPlaylist, normalizeMenuRoomType, normalizeMenuRulesMode, normalizeMenuSeed } from './assets/ui/menu_state.js';
 import { buildMissionPanelSubtitle, buildMissionPanelTitle, pickPrimaryObjectiveRow, resolveMissionDefinition, resolveMissionMode } from './assets/ui/mission_state.js';
 import { applyRoomTypeUiState, getRoomTypeUiState } from './assets/ui/room_type_ui.js';
 import { renderLeaderboardUI, renderMissionPanel, renderRoomListUI, renderStatRows } from './assets/ui/renderers.js';
+import { buildSelectionSummary, buildWorldStatusChips } from './assets/ui/selection_summary.js';
 import {
     AI_ARCHETYPES as SHARED_AI_ARCHETYPES,
     DIFFICULTY_PRESETS as SHARED_DIFFICULTY_PRESETS,
+    FOG_COLOR as SHARED_FOG_COLOR,
+    NEUTRAL_COLOR as SHARED_NEUTRAL_COLOR,
+    NODE_BODY_TYPE_BLEND as SHARED_NODE_BODY_TYPE_BLEND,
     NODE_TYPE_DEFS as SHARED_NODE_TYPE_DEFS,
     PLAYER_COLORS as SHARED_PLAYER_COLORS,
     SIM_CONSTANTS,
@@ -75,7 +79,7 @@ import {
     upgradeCost as sharedUpgradeCost,
 } from './assets/app/client_rules.js';
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ CONSTANTS Ã¢â€â‚¬Ã¢â€â‚¬
+// ── CONSTANTS ──
 var TICK_DT = SIM_CONSTANTS.TICK_DT, BASE_PROD = SIM_CONSTANTS.BASE_PROD, MAX_UNITS = SIM_CONSTANTS.MAX_UNITS,
     NODE_RMIN = 18, NODE_RMAX = 36, NODE_MINDIST = 100, NEUTRAL_MAX = 20,
     FLEET_SPEED = SIM_CONSTANTS.FLEET_SPEED, POOL_SZ = 2000, FLOW_FRAC = SIM_CONSTANTS.FLOW_FRAC,
@@ -84,7 +88,7 @@ var TICK_DT = SIM_CONSTANTS.TICK_DT, BASE_PROD = SIM_CONSTANTS.BASE_PROD, MAX_UN
     ZOOM_MIN = 0.3, ZOOM_MAX = 3.0, ZOOM_SPD = 0.1,
     MAP_W = 1600, MAP_H = 1000, MAP_PAD = 80,
     BEZ_CURV = SIM_CONSTANTS.BEZ_CURV, BEZ_SEG = SIM_CONSTANTS.BEZ_SEG, PULSE_SPD = 0.6,
-    COLORS_BG = '#080c15', COL_NEUTRAL = '#5a6272', COL_FOG = '#2e3340',
+    COLORS_BG = '#080c15', COL_NEUTRAL = SHARED_NEUTRAL_COLOR, COL_FOG = SHARED_FOG_COLOR,
     COL_GRID = 'rgba(255,255,255,0.025)', COL_GLOW = 'rgba(255,255,255,0.35)',
     PLAYER_COLORS = SHARED_PLAYER_COLORS,
     TRAIL_LEN = SIM_CONSTANTS.TRAIL_LEN, MAX_ORBIT_SQUADS = 10, MAX_ORBIT_SHIPS_PER_SQUAD = 5, ORBIT_UNITS_PER_VISIBLE_SHIP = 3, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 14, ORBIT_MAX_RINGS = 4,
@@ -157,12 +161,12 @@ var NODE_KIND_TEXTURE_SEEDS = {
 var AI_ARCHETYPES = SHARED_AI_ARCHETYPES;
 var DIFFICULTY_PRESETS = SHARED_DIFFICULTY_PRESETS;
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ SPACE BACKDROP (background) Ã¢â€â‚¬Ã¢â€â‚¬
+// ── SPACE BACKDROP (background) ──
 var stars = [];
 var spaceNebulas = [];
 var spaceDustBands = [];
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ SEEDED RNG Ã¢â€â‚¬Ã¢â€â‚¬
+// ── SEEDED RNG ──
 function RNG(s) { this.s = s | 0; if (!this.s) this.s = 1; }
 RNG.prototype.next = function () { var t = this.s += 0x6d2b79f5; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 RNG.prototype.nextInt = function (a, b) { return a + Math.floor(this.next() * (b - a + 1)); };
@@ -238,9 +242,44 @@ var grad2 = new Float64Array([1,1,-1,1,1,-1,-1,-1,1,0,-1,0,1,0,-1,0,0,1,0,-1,0,1
 function createNoise2D(rnd) { rnd = rnd || Math.random; var perm = buildPermTable(rnd), gx = new Float64Array(perm).map(function(v){return grad2[(v%12)*2];}), gy = new Float64Array(perm).map(function(v){return grad2[(v%12)*2+1];}); var F2=0.5*(Math.sqrt(3)-1), G2=(3-Math.sqrt(3))/6; return function(x,y){ var s=(x+y)*F2, i=Math.floor(x+s)|0, j=Math.floor(y+s)|0, t=(i+j)*G2, X0=i-t, Y0=j-t, x0=x-X0, y0=y-Y0; var i1,j1; x0>y0?(i1=1,j1=0):(i1=0,j1=1); var x1=x0-i1+G2, y1=y0-j1+G2, x2=x0-1+2*G2, y2=y0-1+2*G2; var ii=i&255, jj=j&255; var n0=0,n1=0,n2=0; var t0=0.5-x0*x0-y0*y0; if(t0>=0){var gi=ii+perm[jj]; t0*=t0; n0=t0*t0*(gx[gi]*x0+gy[gi]*y0);} var t1=0.5-x1*x1-y1*y1; if(t1>=0){var gi=ii+i1+perm[jj+j1]; t1*=t1; n1=t1*t1*(gx[gi]*x1+gy[gi]*y1);} var t2=0.5-x2*x2-y2*y2; if(t2>=0){var gi=ii+1+perm[jj+1]; t2*=t2; n2=t2*t2*(gx[gi]*x2+gy[gi]*y2);} return 70*(n0+n1+n2); }; }
 function createSeededNoise(seed) { var rng = new RNG(seed); return createNoise2D(function () { return rng.next(); }); }
 function fbm(noise2D, x, y, octaves, persistence) { octaves = octaves || 4; persistence = persistence || 0.5; var total = 0, freq = 1, amp = 1, maxV = 0; for (var i = 0; i < octaves; i++) { total += noise2D(x * freq, y * freq) * amp; maxV += amp; amp *= persistence; freq *= 2; } return total / maxV; }
+// Surface art is deliberately close to greyscale: the planet's colour is applied per
+// owner at draw time (see the 'color' composite in drawNodesLayer), so a world's hue
+// always answers "whose is it?" rather than "what class is it?". A little of the class
+// tint survives so a Forge still reads warm and a Relay still reads cool up close.
+var PLANET_SURFACE_CHROMA = 0.26;
+var PLANET_SURFACE_PROFILES = {
+    core: { dark: [8, 31, 70], mid: [23, 91, 145], light: [102, 181, 199] },
+    forge: { dark: [44, 11, 10], mid: [119, 35, 18], light: [235, 101, 40] },
+    bulwark: { dark: [24, 33, 45], mid: [65, 82, 99], light: [139, 157, 174] },
+    relay: { dark: [5, 39, 57], mid: [16, 102, 117], light: [83, 205, 191] },
+    nexus: { dark: [31, 15, 63], mid: [91, 45, 132], light: [181, 103, 207] },
+};
+var planetSurfaceProfileCache = {};
+
+function rgbTowardLuma(rgb, keepChroma) {
+    var luma = rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
+    return [
+        luma + (rgb[0] - luma) * keepChroma,
+        luma + (rgb[1] - luma) * keepChroma,
+        luma + (rgb[2] - luma) * keepChroma,
+    ];
+}
+
+function planetSurfaceProfile(kind) {
+    if (planetSurfaceProfileCache[kind]) return planetSurfaceProfileCache[kind];
+    var base = PLANET_SURFACE_PROFILES[kind] || PLANET_SURFACE_PROFILES.core;
+    var muted = {
+        dark: rgbTowardLuma(base.dark, PLANET_SURFACE_CHROMA),
+        mid: rgbTowardLuma(base.mid, PLANET_SURFACE_CHROMA),
+        light: rgbTowardLuma(base.light, PLANET_SURFACE_CHROMA),
+    };
+    planetSurfaceProfileCache[kind] = muted;
+    return muted;
+}
+
 function getPlanetTexture(id, radius, kind) {
     kind = kind || 'core';
-    var cacheKey = 'premium-v3:' + id + ':' + Math.round((Number(radius) || 0) * 10) + ':' + kind;
+    var cacheKey = 'premium-v4:' + id + ':' + Math.round((Number(radius) || 0) * 10) + ':' + kind;
     if (planetTexCache[cacheKey]) return planetTexCache[cacheKey];
     var scale = 2, size = Math.max(8, Math.ceil(radius * 2 * scale)), r = size * 0.5, cx = r, cy = r;
     var canvas = document.createElement('canvas'); canvas.width = size; canvas.height = size;
@@ -248,14 +287,7 @@ function getPlanetTexture(id, radius, kind) {
     var kindSeed = NODE_KIND_TEXTURE_SEEDS[kind] || NODE_KIND_TEXTURE_SEEDS.core;
     var noise2D = createSeededNoise(id * 12345 + kindSeed * 41);
     var noiseDetail = createSeededNoise(id * 67890 + kindSeed * 67);
-    var profiles = {
-        core: { dark: [8, 31, 70], mid: [23, 91, 145], light: [102, 181, 199] },
-        forge: { dark: [44, 11, 10], mid: [119, 35, 18], light: [235, 101, 40] },
-        bulwark: { dark: [24, 33, 45], mid: [65, 82, 99], light: [139, 157, 174] },
-        relay: { dark: [5, 39, 57], mid: [16, 102, 117], light: [83, 205, 191] },
-        nexus: { dark: [31, 15, 63], mid: [91, 45, 132], light: [181, 103, 207] }
-    };
-    var profile = profiles[kind] || profiles.core;
+    var profile = planetSurfaceProfile(kind);
 
     function mixChannel(a, b, amount) {
         return a + (b - a) * clamp(amount, 0, 1);
@@ -346,11 +378,11 @@ function getPlanetTexture(id, radius, kind) {
     ctx.restore(); planetTexCache[cacheKey] = canvas; return canvas;
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ VECTOR Ã¢â€â‚¬Ã¢â€â‚¬
+// ── VECTOR ──
 function dist(a, b) { var dx = b.x - a.x, dy = b.y - a.y; return Math.sqrt(dx * dx + dy * dy); }
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ BEZIER Ã¢â€â‚¬Ã¢â€â‚¬
+// ── BEZIER ──
 function bezCP(s, t, c) {
     c = c || BEZ_CURV; var dx = t.x - s.x, dy = t.y - s.y, mx = s.x + dx * 0.5, my = s.y + dy * 0.5,
         len = Math.sqrt(dx * dx + dy * dy), nx, ny; if (len < 0.01) { nx = 0; ny = 0; } else { nx = -dy / len; ny = dx / len; }
@@ -383,7 +415,7 @@ function normalizeDispatchOrder(srcIdsOrData, tgtId, pct) {
         fleetIds: Array.isArray(raw.fleetIds) ? raw.fleetIds.slice() : [],
         tgtId: normalizedTargetId,
         targetPoint: normalizePointTarget(raw.targetPoint !== undefined ? raw.targetPoint : raw.point),
-        pct: clamp(typeof raw.pct === 'number' ? raw.pct : Number(raw.percent !== undefined ? raw.percent : raw.pct), 0.05, 1),
+        pct: toSendFraction(raw.pct !== undefined ? raw.pct : raw.percent),
     };
 }
 
@@ -430,7 +462,7 @@ function fleetSelectionRadius(fleet) {
     return clamp(7 + Math.sqrt(count) * 1.3, 9, 20);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ FLEET POOL (with trail + lateral offset for swarm) Ã¢â€â‚¬Ã¢â€â‚¬
+// ── FLEET POOL (with trail + lateral offset for swarm) ──
 function mkFleet() {
     return {
         id: 0, active: false, owner: -1, count: 0, srcId: -1, tgtId: -1, t: 0, speed: 0, arcLen: 1, cpx: 0, cpy: 0, x: 0, y: 0,
@@ -444,7 +476,7 @@ var pool = [];
 for (var i = 0; i < POOL_SZ; i++)pool.push(mkFleet());
 function acquireFleet() { for (var i = 0; i < pool.length; i++) { if (!pool[i].active) return pool[i]; } var f = mkFleet(); pool.push(f); return f; }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ GAME STATE Ã¢â€â‚¬Ã¢â€â‚¬
+// ── GAME STATE ──
 var G = {
     state: 'mainMenu', winner: -1, tick: 0, speed: 1, rng: null, seed: 42, diff: 'normal',
     rulesMode: 'advanced', rules: getRulesetConfig('advanced'),
@@ -631,7 +663,7 @@ var net = {
 
 var pendingAuthoritativeState = null;
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ FOG Ã¢â€â‚¬Ã¢â€â‚¬
+// ── FOG ──
 function initFog(pc, nc) { var v = [], ls = []; for (var p = 0; p < pc; p++) { v.push({}); var a = []; for (var n = 0; n < nc; n++)a.push({ tick: -1, owner: -1, units: 0 }); ls.push(a); } return { vis: v, ls: ls }; }
 function updateVis(fog, pi, nodes, tick) {
     fog.vis[pi] = {}; var owned = [];
@@ -754,7 +786,7 @@ function showMatchIntro() {
     if (G.daily && G.daily.active) title = 'GÜNLÜK OPERASYON';
     else if (G.campaign && G.campaign.active) {
         var level = currentCampaignLevel();
-        title = level ? ('BÖLÜM ' + level.id + ' · ' + polishTurkishText(level.name)) : 'KAMPANYA OPERASYONU';
+        title = level ? ('BÖLÜM ' + level.id + ' · ' + (level.name || '')) : 'KAMPANYA OPERASYONU';
     } else if (net.online) title = 'CANLI SEKTÖR';
     else if (G.sandbox) title = 'SANDBOX';
     else if (G.mechanics && G.mechanics.preset === 'primitive') title = 'TEMEL FETİH';
@@ -762,7 +794,7 @@ function showMatchIntro() {
     var objective = 'Sektörü genişlet · rakip çekirdeklerini etkisizleştir';
     if (G.mechanics && G.mechanics.preset === 'primitive') objective = 'Standart gezegenleri fethet · üretimini büyüt · rakibi saf dışı bırak';
     var objectiveRow = pickPrimaryObjectiveRow(currentCampaignObjectiveRows());
-    if (objectiveRow && objectiveRow.label) objective = polishTurkishText(objectiveRow.label);
+    if (objectiveRow && objectiveRow.label) objective = objectiveRow.label;
     else if (G.mapFeature && G.mapFeature.type === 'barrier') objective = 'GATE kontrolünü al · asimilasyonu tamamla · karşı cepheyi aç';
     else if (G.mapFeature && G.mapFeature.type === 'wormhole') objective = 'Solucan deliği köprüsünü kullan · iki cepheyi aynı anda yönet';
 
@@ -884,7 +916,7 @@ function triggerSolarFlareBlastFeedback(opts) {
     var hit = Number.isFinite(opts.hit) ? Math.max(0, Math.floor(opts.hit)) : null;
     var lost = Number.isFinite(opts.lost) ? Math.max(0, Math.floor(opts.lost)) : null;
     G.solarFlareFx.blastFlash = 1.05;
-    // Map-wide cataclysm Ã¢â‚¬â€ a modest jolt, scaled gently with fleets caught.
+    // Map-wide cataclysm — a modest jolt, scaled gently with fleets caught.
     addScreenShake(hit !== null && hit > 0 ? Math.min(13, 7 + hit) : 6);
     enqueueShockwave(MAP_W * 0.5, MAP_H * 0.5, {
         radius: 120,
@@ -1108,6 +1140,7 @@ function applyCustomMapDefinition(customMap) {
             owner: rawNode.owner,
             units: rawNode.units,
             prodAcc: rawNode.prodAcc || 0,
+            combatAcc: 0,
             maxUnits: MAX_UNITS,
             visionR: VISION_R + rawNode.radius * 2,
             selected: false,
@@ -1177,7 +1210,7 @@ function applyCustomMapDefinition(customMap) {
     }
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ INIT GAME Ã¢â€â‚¬Ã¢â€â‚¬
+// ── INIT GAME ──
 function initGame(seedStr, nc, diff, opts) {
     opts = opts || {};
     var keepTuning = !!opts.keepTuning;
@@ -1325,7 +1358,12 @@ function initGame(seedStr, nc, diff, opts) {
     stepEncounterState(G);
     G.fog = initFog(G.players.length, G.nodes.length);
     for (var p = 0; p < G.players.length; p++) updateVis(G.fog, p, G.nodes, 0);
+    // Cached HUD render keys belong to the previous match; clear them so the first frame
+    // of a new one repaints instead of reusing stale panels.
     powerRenderKey = '';
+    selectionPanelKey = '';
+    sendPreviewKey = '';
+    worldStatusChipKey = '';
     G.powerByPlayer = computePowerByPlayer();
     G.strategicPulse = currentStrategicPulse(0);
     G.strategicPulse.announcedCycle = -1;
@@ -1346,7 +1384,7 @@ function genMap(nc) {
         var x = G.rng.nextFloat(MAP_PAD, MAP_W - MAP_PAD), y = G.rng.nextFloat(MAP_PAD, MAP_H - MAP_PAD), r = G.rng.nextFloat(NODE_RMIN, NODE_RMAX);
         var ok = true; for (var i = 0; i < G.nodes.length; i++)if (dist({ x: x, y: y }, G.nodes[i].pos) < minDist) { ok = false; break; }
         if (ok) {
-            var node = { id: placed, pos: { x: x, y: y }, radius: r, owner: -1, units: G.rng.nextInt(2, NEUTRAL_MAX), prodAcc: 0, maxUnits: MAX_UNITS, visionR: VISION_R + r * 2, selected: false, kind: 'core', level: 1, defense: false, strategic: false, gate: false };
+            var node = { id: placed, pos: { x: x, y: y }, radius: r, owner: -1, units: G.rng.nextInt(2, NEUTRAL_MAX), prodAcc: 0, combatAcc: 0, maxUnits: MAX_UNITS, visionR: VISION_R + r * 2, selected: false, kind: 'core', level: 1, defense: false, strategic: false, gate: false };
             initNodeKind(node);
             node.maxUnits = nodeCapacity(node);
             node.units = Math.min(node.units, Math.max(2, Math.floor(node.maxUnits * 0.4)));
@@ -1356,7 +1394,7 @@ function genMap(nc) {
     }
     while (placed < nc) {
         var fx = G.rng.nextFloat(MAP_PAD, MAP_W - MAP_PAD), fy = G.rng.nextFloat(MAP_PAD, MAP_H - MAP_PAD), fr = G.rng.nextFloat(NODE_RMIN, NODE_RMAX);
-        var fn = { id: placed, pos: { x: fx, y: fy }, radius: fr, owner: -1, units: G.rng.nextInt(2, NEUTRAL_MAX), prodAcc: 0, maxUnits: MAX_UNITS, visionR: VISION_R + fr * 2, selected: false, kind: 'core', level: 1, defense: false, strategic: false, gate: false };
+        var fn = { id: placed, pos: { x: fx, y: fy }, radius: fr, owner: -1, units: G.rng.nextInt(2, NEUTRAL_MAX), prodAcc: 0, combatAcc: 0, maxUnits: MAX_UNITS, visionR: VISION_R + fr * 2, selected: false, kind: 'core', level: 1, defense: false, strategic: false, gate: false };
         initNodeKind(fn);
         fn.maxUnits = nodeCapacity(fn);
         fn.units = Math.min(fn.units, Math.max(2, Math.floor(fn.maxUnits * 0.4)));
@@ -1435,7 +1473,7 @@ function genMap(nc) {
     }
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ DISPATCH Ã¢â€â‚¬Ã¢â€â‚¬
+// ── DISPATCH ──
 function createDispatchedFleetLocal(owner, params) {
     params = params || {};
     var count = Math.max(0, Math.floor(Number(params.count) || 0));
@@ -1640,7 +1678,7 @@ function dispatch(owner, srcIds, tgtId, pct) {
     return didSend;
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ COMBAT Ã¢â€â‚¬Ã¢â€â‚¬
+// ── COMBAT ──
 function spawnParticles(x, y, count, color, isCapture, opts) {
     opts = opts || {};
     var dirX = Number(opts.dirX);
@@ -1805,8 +1843,8 @@ function enqueueShockwave(x, y, opts) {
     if (G.shockwaves.length > 80) G.shockwaves = G.shockwaves.slice(-72);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ SCREEN SHAKE Ã¢â€â‚¬Ã¢â€â‚¬
-// Purely visual, client-side only Ã¢â‚¬â€ never touched by the deterministic sim
+// ── SCREEN SHAKE ──
+// Purely visual, client-side only — never touched by the deterministic sim
 // or the state hash, so it is safe in single-player and multiplayer alike.
 var screenShake = { mag: 0, ox: 0, oy: 0 };
 var prefersReducedMotion = (function () {
@@ -1824,7 +1862,7 @@ function advanceScreenShake(dt) {
         screenShake.mag = 0; screenShake.ox = 0; screenShake.oy = 0;
         return;
     }
-    // Exponential decay Ã¢â‚¬â€ ~0.7s settle for a strong hit, ~0.4s for a light one.
+    // Exponential decay — ~0.7s settle for a strong hit, ~0.4s for a light one.
     screenShake.mag *= Math.pow(0.0018, Math.min(dt, 0.05));
     var ang = Math.random() * Math.PI * 2;
     screenShake.ox = Math.cos(ang) * screenShake.mag;
@@ -1908,7 +1946,7 @@ function triggerNodeUpgradeCompleteFeedback(node, opts) {
 }
 
 // Confirmation puff on the source planets/fleets the instant the human
-// issues a send order Ã¢â‚¬â€ purely cosmetic, fired only on explicit player input
+// issues a send order — purely cosmetic, fired only on explicit player input
 // (never for AI or flow-link dispatches), so it cannot affect the sim.
 function triggerDispatchLaunchFeedback(sourceIds, fleetIds) {
     var humanColor = G.players[G.human] ? G.players[G.human].color : '#9fd0ff';
@@ -2017,7 +2055,7 @@ function applyImpactFeedback(impacts) {
     }
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ FLOW LINKS Ã¢â€â‚¬Ã¢â€â‚¬
+// ── FLOW LINKS ──
 function addFlow(owner, srcId, tgtId) {
     if (!G.mechanics || !G.mechanics.flow) return false;
     srcId = Math.floor(Number(srcId));
@@ -2054,7 +2092,7 @@ function upgradeNode(owner, nodeId) {
     return true;
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ AI Ã¢â€â‚¬Ã¢â€â‚¬
+// ── AI ──
 function aiDecide(pi) {
     var commands = decideAiCommands(G, pi);
     return commands.filter(function (command) {
@@ -2078,7 +2116,17 @@ function applyPlayerCommand(playerIndex, type, data) {
     });
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ TICK Ã¢â€â‚¬Ã¢â€â‚¬
+// ── TICK ──
+// Doctrine plus the late-game dominance ramp, in one place. The combat tick and the
+// dispatch forecast both call this, so what the HUD predicts is what the fight uses.
+function attackMultiplierFor(owner, targetNode) {
+    var modifiers = doctrineModifiers(G.doctrines, G.doctrineStates, owner);
+    var mult = modifiers.attackMult;
+    if (targetNode && targetNode.kind === 'turret') mult *= modifiers.turretAttackMult;
+    mult *= dominanceAttackMultiplier(G.nodes, owner);
+    return mult;
+}
+
 function gameTick(runtimeOpts) {
     runtimeOpts = runtimeOpts || {};
     if (G.state !== 'playing') return;
@@ -2182,13 +2230,7 @@ function gameTick(runtimeOpts) {
             nodeTypeOf: nodeTypeOf,
             nodeLevelDefMult: nodeLevelDefMult,
             nodeCapacity: nodeCapacity,
-            attackMultiplier: function (owner, targetNode) {
-                var modifiers = doctrineModifiers(G.doctrines, G.doctrineStates, owner);
-                var mult = modifiers.attackMult;
-                if (targetNode && targetNode.kind === 'turret') mult *= modifiers.turretAttackMult;
-                mult *= dominanceAttackMultiplier(G.nodes, owner);
-                return mult;
-            },
+            attackMultiplier: attackMultiplierFor,
             defenseMultiplier: function () {
                 return 1;
             },
@@ -2245,14 +2287,14 @@ function checkEnd() {
     }
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ COLOR UTILS Ã¢â€â‚¬Ã¢â€â‚¬
+// ── COLOR UTILS ──
 function hexRgb(h) { var r = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(h); return r ? { r: parseInt(r[1], 16), g: parseInt(r[2], 16), b: parseInt(r[3], 16) } : null; }
 function lighten(h, a) { var c = hexRgb(h); return c ? 'rgb(' + Math.min(255, c.r + a) + ',' + Math.min(255, c.g + a) + ',' + Math.min(255, c.b + a) + ')' : h; }
 function darken(h, a) { var c = hexRgb(h); return c ? 'rgb(' + Math.max(0, c.r - a) + ',' + Math.max(0, c.g - a) + ',' + Math.max(0, c.b - a) + ')' : h; }
 function hexToRgba(h, a) { var c = hexRgb(h); return c ? 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',' + a + ')' : h; }
 function blendHex(a, b, t) { var ca = hexRgb(a), cb = hexRgb(b); if (!ca || !cb) return a; t = Math.max(0, Math.min(1, t)); return '#' + [0,1,2].map(function(i){ var v = Math.round((i===0?ca.r:i===1?ca.g:ca.b) * (1-t) + (i===0?cb.r:i===1?cb.g:cb.b) * t); return ('0' + Math.max(0,Math.min(255,v)).toString(16)).slice(-2); }).join(''); }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ RENDERING Ã¢â€â‚¬Ã¢â€â‚¬
+// ── RENDERING ──
 function drawScreenBackdrop(ctx, cv, tick) {
     var baseGrad = ctx.createLinearGradient(0, 0, 0, cv.height);
     baseGrad.addColorStop(0, '#091322');
@@ -3503,7 +3545,7 @@ function drawContestedFronts(ctx, territorySets, tick) {
         ctx.fillStyle = 'rgba(255,178,92,' + (0.06 + pulse * 0.05) + ')';
         ctx.fill();
 
-        // Pulsing hazard ring Ã¢â‚¬â€ the unmistakable "front line" read.
+        // Pulsing hazard ring — the unmistakable "front line" read.
         ctx.beginPath();
         ctx.arc(front.x, front.y, front.radius * (0.72 + pulse * 0.1), 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(255,224,150,' + (0.34 + pulse * 0.2) + ')';
@@ -3640,6 +3682,7 @@ function render(ctx, cv, tick) {
             mapHeight: MAP_H,
             solarFlare: solarFlareCfg(),
             nodeTypeDefs: NODE_TYPE_DEFS,
+            nodeBodyTypeBlend: SHARED_NODE_BODY_TYPE_BLEND,
         },
         helpers: {
             drawWorldBackdrop: drawWorldBackdrop,
@@ -3681,11 +3724,16 @@ function render(ctx, cv, tick) {
         constants: {
             mapWidth: MAP_W,
             mapHeight: MAP_H,
+            mapPadding: MAP_PAD,
             nodeTypeDefs: NODE_TYPE_DEFS,
+            colNeutral: COL_NEUTRAL,
+            colFog: COL_FOG,
         },
         helpers: {
             blendHex: blendHex,
             nodeTypeOf: nodeTypeOf,
+            hexToRgba: hexToRgba,
+            fleetVis: fleetVis,
         },
     });
     drawSolarFlareScreenOverlay(ctx, cv, G.tick);
@@ -3734,7 +3782,6 @@ function drawMapFeature(ctx, tick) {
         var maxY = G.cam.y + halfViewH + viewPad;
         var openForHuman = controlsBarrierForOwner({ barrier: barrier, owner: G.human, nodes: G.nodes });
         var cuts = [];
-        var segments = [{ y0: minY, y1: maxY }];
         var gateIds = Array.isArray(barrier.gateIds) ? barrier.gateIds : [];
         for (var gi = 0; gi < gateIds.length; gi++) {
             var gate = G.nodes[gateIds[gi]];
@@ -3743,6 +3790,20 @@ function drawMapFeature(ctx, tick) {
             cuts.push({ y0: gate.pos.y - gap, y1: gate.pos.y + gap, node: gate });
         }
         cuts.sort(function (a, b) { return a.y0 - b.y0; });
+
+        // Gates are the openings in the wall, so the wall has to stop at them. Drawing
+        // one unbroken span straight through its own gates is what made the barrier read
+        // as a stray line across the screen instead of a structure you have to breach.
+        var segments = [];
+        var wallCursor = minY;
+        for (var cgi = 0; cgi < cuts.length; cgi++) {
+            var cut = cuts[cgi];
+            if (cut.y1 <= wallCursor) continue;
+            if (cut.y0 > wallCursor) segments.push({ y0: wallCursor, y1: Math.min(cut.y0, maxY) });
+            wallCursor = Math.max(wallCursor, cut.y1);
+            if (wallCursor >= maxY) break;
+        }
+        if (wallCursor < maxY) segments.push({ y0: wallCursor, y1: maxY });
 
         try {
             ctx.save();
@@ -3807,29 +3868,44 @@ function drawMapFeature(ctx, tick) {
             }
 
             var spinePulse = 0.7 + 0.3 * Math.sin(tick * 0.05 + bx * 0.012);
-            ctx.beginPath();
-            ctx.moveTo(bx, minY);
-            ctx.lineTo(bx, maxY);
-            ctx.strokeStyle = 'rgba(255,110,90,' + (openForHuman ? 0.08 : 0.2 + spinePulse * 0.08) + ')';
-            ctx.lineWidth = openForHuman ? 5.4 : 11.5;
-            ctx.stroke();
-
-            ctx.beginPath();
-            ctx.moveTo(bx, minY);
-            ctx.lineTo(bx, maxY);
-            ctx.strokeStyle = 'rgba(255,248,232,' + (openForHuman ? 0.14 : 0.54) + ')';
-            ctx.lineWidth = openForHuman ? 1.25 : 2.2;
-            ctx.stroke();
-
-            if (!openForHuman) {
+            for (var sj = 0; sj < segments.length; sj++) {
+                var spine = segments[sj];
                 ctx.beginPath();
-                ctx.moveTo(bx - 5.5, minY);
-                ctx.lineTo(bx - 5.5, maxY);
-                ctx.moveTo(bx + 5.5, minY);
-                ctx.lineTo(bx + 5.5, maxY);
-                ctx.strokeStyle = 'rgba(255,120,92,0.1)';
-                ctx.lineWidth = 1.05;
+                ctx.moveTo(bx, spine.y0);
+                ctx.lineTo(bx, spine.y1);
+                ctx.strokeStyle = 'rgba(255,110,90,' + (openForHuman ? 0.08 : 0.2 + spinePulse * 0.08) + ')';
+                ctx.lineWidth = openForHuman ? 5.4 : 11.5;
                 ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(bx, spine.y0);
+                ctx.lineTo(bx, spine.y1);
+                ctx.strokeStyle = 'rgba(255,248,232,' + (openForHuman ? 0.14 : 0.54) + ')';
+                ctx.lineWidth = openForHuman ? 1.25 : 2.2;
+                ctx.stroke();
+
+                if (!openForHuman) {
+                    ctx.beginPath();
+                    ctx.moveTo(bx - 5.5, spine.y0);
+                    ctx.lineTo(bx - 5.5, spine.y1);
+                    ctx.moveTo(bx + 5.5, spine.y0);
+                    ctx.lineTo(bx + 5.5, spine.y1);
+                    ctx.strokeStyle = 'rgba(255,120,92,0.1)';
+                    ctx.lineWidth = 1.05;
+                    ctx.stroke();
+                }
+
+                // Cap each span so the wall terminates on a lip at every gate mouth.
+                for (var capI = 0; capI < 2; capI++) {
+                    var capY = capI === 0 ? spine.y0 : spine.y1;
+                    if (Math.abs(capY - minY) < 0.5 || Math.abs(capY - maxY) < 0.5) continue;
+                    ctx.beginPath();
+                    ctx.moveTo(bx - 9, capY);
+                    ctx.lineTo(bx + 9, capY);
+                    ctx.strokeStyle = 'rgba(255,215,170,' + (openForHuman ? 0.18 : 0.5) + ')';
+                    ctx.lineWidth = 1.6;
+                    ctx.stroke();
+                }
             }
             ctx.restore();
 
@@ -3908,7 +3984,7 @@ function drawMapFeature(ctx, tick) {
     }
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ INPUT Ã¢â€â‚¬Ã¢â€â‚¬
+// ── INPUT ──
 var inp = createInputState();
 function s2w(sx, sy) { return { x: (sx - cv.width / 2) / G.cam.zoom + G.cam.x, y: (sy - cv.height / 2) / G.cam.zoom + G.cam.y }; }
 function touchScreenPos(touch) {
@@ -4209,7 +4285,7 @@ function applyCommandModeTarget(nodeId) {
     return true;
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ DOM Ã¢â€â‚¬Ã¢â€â‚¬
+// ── DOM ──
 var cv = document.getElementById('gameCanvas'), ctx = cv.getContext('2d');
 var $ = function (id) { return document.getElementById(id); };
 var mainMenu = $('mainMenu'), pauseOv = $('pauseOverlay'), goOv = $('gameOverOverlay'), hud = $('hud'), tunePanel = $('tuningPanel'), tuneOpen = $('tuneOpenBtn');
@@ -4232,6 +4308,8 @@ var hostControls = $('hostControls'), leaveRoomBtn = $('leaveRoomBtn');
 var customMapStatusEl = $('customMapStatus');
 var contentCampaignProgressEl = $('contentCampaignProgress'), contentCampaignMissionEl = $('contentCampaignMission'), contentCampaignStartBtn = $('contentCampaignStartBtn');
 var menuSeedChip = $('menuSeedChip'), menuPlaylistChip = $('menuPlaylistChip'), menuDoctrineChip = $('menuDoctrineChip'), menuModeChip = $('menuModeChip'), menuFogChip = $('menuFogChip');
+var mechanicsSel = $('mechanicsSelect'), mechanicsHintEl = $('mechanicsHint'), doctrineHintEl = $('doctrineHint');
+var menuDoctrineField = $('menuDoctrineField'), menuFogFieldEl = $('menuFogField');
 var menuQuickStatusEl = $('menuQuickStatus'), menuStagePlaylistLabel = $('menuStagePlaylistLabel'), menuStageDoctrineLabel = $('menuStageDoctrineLabel');
 var menuDailySpotlightTitle = $('menuDailySpotlightTitle'), menuDailySpotlightCopy = $('menuDailySpotlightCopy'), menuCampaignSpotlightTitle = $('menuCampaignSpotlightTitle'), menuCampaignSpotlightCopy = $('menuCampaignSpotlightCopy');
 var menuHubDailyBtn = $('menuHubDailyBtn'), menuHubCampaignBtn = $('menuHubCampaignBtn'), menuContentCardMeta = $('menuContentCardMeta'), menuMultiCardMeta = $('menuMultiCardMeta');
@@ -4240,7 +4318,37 @@ var howToPlayOv = $('howToPlayOverlay');
 var closeHowToPlayBtn = $('closeHowToPlayBtn');
 var pauseHowToPlayBtn = $('pauseHowToPlayBtn');
 
+/**
+ * Fill every [data-sim] slot in the help text from the live constants.
+ *
+ * Hand-written numbers in a tutorial go stale the first time a value is tuned - the
+ * capacity strain figure was still quoting 82% long after the constant moved to 90%.
+ * Reading them from SIM_CONSTANTS means the help cannot disagree with the game.
+ */
+function fillSimHelpValues() {
+    var pct = function (value) { return '%' + Math.round(value * 100); };
+    var values = {
+        flowFractionPct: pct(FLOW_FRAC),
+        assimLockSeconds: '~' + Math.round(ASSIM_LOCK_TICKS / TICK_RATE) + ' sn',
+        supplyDistance: '~' + Math.round(SUPPLY_DIST) + ' birim',
+        isolatedPenaltyPct: pct(1 - ISOLATED_PROD_PENALTY),
+        capStrainPct: pct(CAP_SOFT_START),
+        defenseBonusPct: pct(DEFENSE_BONUS - 1),
+        defenseAssimPct: pct(DEFENSE_ASSIM_BONUS - 1),
+        defenseProdPct: pct(1 - DEFENSE_PROD_PENALTY),
+        defenseFlowPct: pct(1 - DEFENSE_FLOW_MULT),
+        flareWarnSeconds: '~' + Math.round(SOLAR_FLARE_WARN_TICKS / TICK_RATE) + ' sn',
+        flareLossPct: pct(1 - SOLAR_FLARE_FLEET_SURVIVAL),
+    };
+    var slots = document.querySelectorAll('[data-sim]');
+    for (var i = 0; i < slots.length; i++) {
+        var value = values[slots[i].getAttribute('data-sim')];
+        if (value !== undefined) slots[i].textContent = value;
+    }
+}
+
 function openHowToPlayModal() {
+    fillSimHelpValues();
     if (howToPlayOv) howToPlayOv.classList.remove('hidden');
 }
 function closeHowToPlayModal() {
@@ -4271,15 +4379,19 @@ var roomStatusEl = $('roomStatus'), roomPlayersEl = $('roomPlayers'), roomListEl
 var chatFeedEl = $('chatFeed'), chatMessagesEl = $('chatMessages'), chatPingDisplayEl = $('chatPingDisplay');
 var pauseTitleEl = $('pauseTitle'), pauseHintEl = $('pauseHint'), resumeBtn = $('resumeBtn'), quitBtn = $('quitBtn');
 var goTitle = $('gameOverTitle'), goMsg = $('gameOverMsg'), goStatsEl = $('gameOverStats'), restartBtn = $('restartBtn'), nextLevelBtn = $('nextLevelBtn');
-var hudTelemetryRow = $('hudTelemetryRow'), hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), hudCap = $('hudCap'), hudMeta = $('hudMeta'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
+var hudTelemetryRow = $('hudTelemetryRow'), hudTick = $('hudTick'), hudPct = $('hudPercent'), sendPctIn = $('sendPercent'), hudCap = $('hudCap'), pauseBtn = $('pauseBtn'), spdBtn = $('speedBtn');
+var hudSelTitle = $('hudSelTitle'), hudSelOwner = $('hudSelOwner'), hudSelStats = $('hudSelStats'), hudSelNotes = $('hudSelNotes');
+var hudSendPreviewValue = $('hudSendPreviewValue');
 var hudContextBadge = $('hudContextBadge'), hudHintLine = $('hudHintLine'), hudCoachRow = $('hudCoachRow'), hudActionTip = $('hudActionTip');
 var hudCommandHintBadge = $('hudCommandHintBadge'), hudMobileCommandsBtn = $('hudMobileCommandsBtn'), hudMobileStatusBtn = $('hudMobileStatusBtn');
 var hudAdvisorCard = $('hudAdvisorCard'), hudAdvisorTitle = $('hudAdvisorTitle'), hudAdvisorBody = $('hudAdvisorBody');
 var nodeHoverTip = $('nodeHoverTip'), nodeHoverTipTitle = $('nodeHoverTipTitle'), nodeHoverTipBody = $('nodeHoverTipBody'), nodeHoverTipStats = $('nodeHoverTipStats');
+var nodeHoverTipForecast = $('nodeHoverTipForecast'), nodeHoverTipForecastLabel = $('nodeHoverTipForecastLabel'), nodeHoverTipForecastSummary = $('nodeHoverTipForecastSummary');
 var doctrineBtn = $('doctrineBtn'), upgradeHudBtn = $('upgradeHudBtn'), defenseHudBtn = $('defenseHudBtn'), flowHudBtn = $('flowHudBtn'), focusMapBtn = $('focusMapBtn');
 var commandModeBanner = $('commandModeBanner');
 var sendPctQuickBtns = Array.prototype.slice.call(document.querySelectorAll('.send-quick-btn'));
 var powerSidebar = $('powerSidebar'), powerListEl = $('powerList'), matchPhaseLabel = $('matchPhaseLabel'), matchClockEl = $('matchClock'), matchShareFill = $('matchShareFill'), matchPhaseHint = $('matchPhaseHint');
+var matchStatusChipsEl = $('matchStatusChips');
 var minimapEl = $('minimap'), minimapCanvasEl = $('minimapCanvas');
 var matchIntroEl = $('matchIntro'), matchIntroEyebrow = $('matchIntroEyebrow'), matchIntroTitle = $('matchIntroTitle'), matchIntroMeta = $('matchIntroMeta'), matchIntroObjective = $('matchIntroObjective');
 var scenarioOv = $('scenarioOverlay'), scenarioStartBtn = $('scenarioStartBtn'), scenarioCloseBtn = $('scenarioCloseBtn'), scenarioProgressEl = $('scenarioProgress'), scenarioBubbleListEl = $('scenarioBubbleList'), scenarioMissionEl = $('scenarioMission');
@@ -4310,16 +4422,46 @@ var menuPanelViews = {
 function setMenuLobbyMeta(text) {
     if (menuMultiCardMeta) menuMultiCardMeta.textContent = text || 'Lobi taraması bekleniyor';
 }
+/**
+ * Keep the landing chips honest.
+ *
+ * These used to be hard-coded to "Temel Fetih / Doktrin Kilitli / Standart Gezegenler"
+ * while the customise panel quietly started a full-spectrum match, so the summary said
+ * one thing and the match did another.
+ */
 function refreshMenuHeroSummary() {
-    var summary = buildMenuHeroSummary(menuState.skirmish);
+    var sk = menuState.skirmish;
+    var summary = buildMenuHeroSummary(sk);
+    var mechanics = getMechanicsConfig(sk.mechanicsPreset);
+    var mechanicsName = menuMechanicsLabel(sk.mechanicsPreset);
     if (menuSeedChip) menuSeedChip.textContent = summary.seedChip;
-    if (menuPlaylistChip) menuPlaylistChip.textContent = 'Temel Fetih';
-    if (menuDoctrineChip) menuDoctrineChip.textContent = 'Doktrin Kilitli';
-    if (menuModeChip) menuModeChip.textContent = 'Standart Gezegenler';
-    if (menuFogChip) menuFogChip.textContent = 'Sis Kapalı';
-    if (menuQuickStatusEl) menuQuickStatusEl.textContent = menuState.skirmish.nodeCount + ' gezegen | ' + menuDifficultyLabel(menuState.skirmish.difficulty) + ' | Yalın başlangıç';
+    if (menuPlaylistChip) menuPlaylistChip.textContent = mechanics.doctrines ? summary.playlistChip : 'Standart Akış';
+    if (menuDoctrineChip) menuDoctrineChip.textContent = mechanics.doctrines ? summary.doctrineChip : 'Doktrin Kilitli';
+    if (menuModeChip) menuModeChip.textContent = mechanicsName;
+    if (menuFogChip) menuFogChip.textContent = sk.mechanicsPreset === 'primitive' ? 'Sis Kapalı' : summary.fogChip;
+    if (menuQuickStatusEl) menuQuickStatusEl.textContent = summary.quickStatus;
     if (menuStagePlaylistLabel) menuStagePlaylistLabel.textContent = summary.stagePlaylistLabel;
     if (menuStageDoctrineLabel) menuStageDoctrineLabel.textContent = summary.stageDoctrineLabel;
+    if (startBtn) startBtn.textContent = mechanicsName + ' Başlat';
+}
+
+/** Options a tier does not run are disabled rather than silently ignored. */
+function syncMechanicsFieldAvailability() {
+    var sk = menuState.skirmish;
+    var mechanics = getMechanicsConfig(sk.mechanicsPreset);
+    var info = mechanicsProgressionInfo(sk.mechanicsPreset);
+    if (mechanicsHintEl) mechanicsHintEl.textContent = info.unlock;
+    if (mechanicsSel) mechanicsSel.value = sk.mechanicsPreset;
+    if (doctrineSel) doctrineSel.disabled = !mechanics.doctrines;
+    if (playlistSel) playlistSel.disabled = !mechanics.doctrines;
+    if (gameModeSel) gameModeSel.disabled = !mechanics.upgrades;
+    if (menuFogCb) menuFogCb.disabled = sk.mechanicsPreset === 'primitive';
+    if (menuDoctrineField) menuDoctrineField.classList.toggle('is-locked', !mechanics.doctrines);
+    if (doctrineHintEl) {
+        doctrineHintEl.textContent = !mechanics.doctrines
+            ? 'Bu sistem katmanında doktrin yok.'
+            : (sk.doctrineId === 'auto' ? 'Oyun listesi kendi doktrinini seçer.' : doctrineTradeLine(sk.doctrineId, 'passive'));
+    }
 }
 var menuState = createMenuState({
     skirmish: {
@@ -4374,6 +4516,7 @@ function applySkirmishMenuState() {
     if (gameModeSel) gameModeSel.value = sk.rulesMode;
     if (multiModeSel) multiModeSel.value = sk.rulesMode;
     if (menuFogCb) menuFogCb.checked = !!sk.fogEnabled;
+    syncMechanicsFieldAvailability();
     refreshMenuHeroSummary();
 }
 function applyMultiplayerMenuState() {
@@ -4395,6 +4538,7 @@ function updateSkirmishMenuState(patch) {
     if (patch.playlist !== undefined) menuState.skirmish.playlist = normalizeMenuPlaylist(patch.playlist);
     if (patch.doctrineId !== undefined) menuState.skirmish.doctrineId = normalizeMenuDoctrine(patch.doctrineId);
     if (patch.rulesMode !== undefined) menuState.skirmish.rulesMode = normalizeMenuRulesMode(patch.rulesMode);
+    if (patch.mechanicsPreset !== undefined) menuState.skirmish.mechanicsPreset = normalizeMenuMechanics(patch.mechanicsPreset);
     if (patch.fogEnabled !== undefined) menuState.skirmish.fogEnabled = !!patch.fogEnabled;
     applySkirmishMenuState();
 }
@@ -4420,6 +4564,9 @@ function setMenuPanel(panel, opts) {
         if (view) view.classList.toggle('hidden', key !== next);
     }
     if (menuSubHeader) menuSubHeader.classList.toggle('hidden', next === 'hub');
+    // Sub-panels trade wordmark height for form space so their content is not clipped.
+    var menuPanelEl = mainMenu ? mainMenu.querySelector('.menu-panel') : null;
+    if (menuPanelEl) menuPanelEl.classList.toggle('is-subpanel', next !== 'hub');
     if (menuSectionTitle) menuSectionTitle.textContent = next === 'hub' ? '' : MENU_PANEL_META[next].title;
     if (menuSectionCopy) menuSectionCopy.textContent = next === 'hub' ? '' : MENU_PANEL_META[next].copy;
     if (menuBackBtn) menuBackBtn.dataset.target = menuBackTarget(next);
@@ -4428,6 +4575,7 @@ function setMenuPanel(panel, opts) {
     resetMainMenuScroll();
 }
 
+populateOptionSelects();
 applyMenuStateToInputs();
 setMenuLobbyMeta(buildMenuLobbyMeta({ connected: false }));
 var uiPrefs = loadUiPrefs();
@@ -4533,6 +4681,9 @@ function ensureNodeHoverTipElements() {
     if (!nodeHoverTipTitle) nodeHoverTipTitle = $('nodeHoverTipTitle');
     if (!nodeHoverTipBody) nodeHoverTipBody = $('nodeHoverTipBody');
     if (!nodeHoverTipStats) nodeHoverTipStats = $('nodeHoverTipStats');
+    if (!nodeHoverTipForecast) nodeHoverTipForecast = $('nodeHoverTipForecast');
+    if (!nodeHoverTipForecastLabel) nodeHoverTipForecastLabel = $('nodeHoverTipForecastLabel');
+    if (!nodeHoverTipForecastSummary) nodeHoverTipForecastSummary = $('nodeHoverTipForecastSummary');
     return !!(nodeHoverTip && nodeHoverTipTitle && nodeHoverTipBody);
 }
 function hideNodeHoverTip() {
@@ -4613,6 +4764,8 @@ function dispatchForecastForTarget(targetNode) {
         humanIndex: G.human,
         incomingFriendlyUnits: incomingFriendlyUnits,
         blocked: allBlocked,
+        tuneDef: G.tune ? G.tune.def : undefined,
+        attackMult: attackMultiplierFor(G.human, targetNode),
     });
 }
 function nodeHoverTipOptsForNode(node) {
@@ -4671,6 +4824,13 @@ function syncNodeHoverTip() {
     var tip = buildNodeHoverTip(nodeHoverTipOptsForNode(node));
     nodeHoverTipTitle.textContent = tip.title;
     if (nodeHoverTipStats) nodeHoverTipStats.textContent = tip.stats || '';
+    if (nodeHoverTipForecast) {
+        nodeHoverTipForecast.classList.toggle('hidden', !tip.forecast);
+        if (tip.forecast) {
+            nodeHoverTipForecastLabel.textContent = tip.forecast.label;
+            nodeHoverTipForecastSummary.textContent = tip.forecast.summary;
+        }
+    }
     nodeHoverTipBody.textContent = tip.body;
     nodeHoverTip.classList.remove('forecast-advantage', 'forecast-friendly', 'forecast-warning', 'forecast-danger', 'forecast-blocked', 'forecast-move');
     if (tip.forecastTone) nodeHoverTip.classList.add('forecast-' + tip.forecastTone);
@@ -4899,7 +5059,7 @@ function defenseFieldCfg() {
 function defenseFieldSummary(node) {
     var stats = getDefenseFieldStats(node, defenseFieldCfg());
     if (!stats.active) return 'Savunma alanı kapalı: asimilasyon tamamlanınca açılır';
-    return 'Savunma alanı: r' + Math.round(stats.range) + ' | düşman filo ' + stats.dps.toFixed(1) + '/s erir';
+    return 'Savunma alanı: r' + Math.round(stats.range) + ' · düşman filo ' + stats.dps.toFixed(1) + '/s erir';
 }
 
 function barrierGateNodes() {
@@ -4933,45 +5093,9 @@ function barrierGatePromptText() {
     return 'Barrier aktif: ' + barrierGateObjectiveText() + '. Geçiş, fetih yetmez; asimilasyon tamamlanınca açılır.';
 }
 
-function barrierGateStatusText() {
-    var gates = barrierGateNodes();
-    if (!gates.length) return 'Barrier aktif ama GATE gezegeni bulunamadı.';
-    var parts = [];
-    for (var i = 0; i < gates.length; i++) {
-        var gate = gates[i];
-        var ownerText = gate.owner < 0 ? 'Tarafsız' : labelForPlayer(gate.owner);
-        var statusText = gate.owner >= 0 ? (isNodeAssimilated(gate) ? 'hazır, geçit açık' : 'asimile oluyor, geçit kapalı') : 'boş, önce fethet';
-        parts.push(barrierGateLabel(i, gates.length) + ': ' + ownerText + ' ' + statusText);
-    }
-    return 'Barrier | ' + parts.join(' | ');
-}
-
 function humanDoctrineId() {
     if (!Array.isArray(G.doctrines) || !G.doctrines.length) return '';
     return G.doctrines[G.human] || '';
-}
-
-function humanDoctrineStatusText() {
-    var doctrineId = humanDoctrineId();
-    if (!doctrineId) return '';
-    return doctrineName(doctrineId) + ' | ' + doctrineCooldownSummary(G.doctrines, G.doctrineStates, G.human);
-}
-
-function encounterStatusText() {
-    if (!Array.isArray(G.encounters) || !G.encounters.length) return '';
-    var parts = [];
-    for (var i = 0; i < G.encounters.length; i++) {
-        var encounter = G.encounters[i];
-        var node = G.nodes[encounter.nodeId];
-        if (!node) continue;
-        var ownerText = node.owner < 0 ? 'Tarafsız' : labelForPlayer(node.owner);
-        if (encounter.type === 'relay_core') {
-            parts.push(encounterName(encounter) + ': ' + ownerText + (isNodeAssimilated(node) ? ' | hat açık' : ' | asimilasyon bekliyor'));
-        } else if (encounter.type === 'mega_turret') {
-            parts.push(encounterName(encounter) + ': ' + ownerText + ' | kuşatma hedefi');
-        }
-    }
-    return parts.join(' | ');
 }
 
 function activateDoctrineForPlayer(playerIndex) {
@@ -4991,81 +5115,271 @@ function triggerHumanDoctrine() {
     return activateDoctrineForPlayer(G.human);
 }
 
-function selectionMetaText() {
-    if (!hudMeta || !inp) return '';
-    if (inp.commandMode === 'flow') return 'FLOW modu aktif: hedef gezegene dokun ya da tıkla.';
-    var ids = Array.from(inp.sel || []).filter(function (id) { return !!G.nodes[id]; });
-    if (!ids.length) {
-        /* Hover aciklamasi yuzuyen #nodeHoverTip ile; burada tekrar etme. */
-        if (hoveredNodeForTip()) return '';
-        var idleParts = [];
-        if (G.mapFeature && G.mapFeature.type === 'barrier') idleParts.push(barrierGateStatusText());
-        if (G.mapMutator && G.mapMutator.type !== 'none') idleParts.push('Mutatör: ' + mapMutatorName(G.mapMutator));
-        if (G.encounters && G.encounters.length) idleParts.push(encounterStatusText());
-        if (humanDoctrineId()) idleParts.push(humanDoctrineStatusText());
-        if (G.strategicPulse && G.strategicPulse.active) idleParts.push(pulseBonusSummary());
-        if (idleParts.length) return idleParts.join(' | ');
-        if (G.mechanics && G.mechanics.preset === 'primitive') return 'Bir gezegen seç, birlik miktarını karşılaştır ve fetih rotanı kur.';
-        return 'Bir gezegen seç: upgrade maliyeti, savunma alanı, asimilasyon, supply ve pulse etkileri burada görünür.';
-    }
+/** Flatten a live node into the plain view the selection panel understands. */
+function selectionNodeView(node) {
+    var isSelf = node.owner === G.human;
+    var view = {
+        kindLabel: nodeTypeOf(node).label,
+        level: Math.max(1, Math.floor(Number(node.level) || 1)),
+        owner: node.owner,
+        ownerLabel: node.owner >= 0 ? labelForPlayer(node.owner) : 'Tarafsız',
+        isSelf: isSelf,
+        units: node.units,
+        maxUnits: node.maxUnits,
+        supplied: node.supplied === true,
+        assimilation: node.assimilationProgress === undefined ? 1 : node.assimilationProgress,
+        strategic: !!node.strategic,
+        pulse: strategicPulseAppliesToNode(node.id),
+        encounterName: node.encounterType ? encounterName(node.encounterType) : '',
+    };
 
-    if (ids.length === 1) {
-        var node = G.nodes[ids[0]];
-        var ownerLabel = node.owner >= 0 ? labelForPlayer(node.owner) : 'Tarafsız';
-        var parts = [nodeTypeOf(node).label + ' L' + node.level, ownerLabel];
-        if (node.owner === G.human) {
-            if (G.mechanics && G.mechanics.upgrades && G.rules && G.rules.allowUpgrade) {
-                if (isNodeUpgradePending(node, G.tick)) parts.push('Yükseltme: Yükseliyor %' + Math.round(getNodeUpgradeProgress(node, G.tick) * 100) + ' -> L' + node.upgradeTargetLevel);
-                else if (node.level >= NODE_LEVEL_MAX) parts.push('Yükseltme: MAX');
-                else parts.push('Yükseltme: ' + upgradeCost(node));
-            }
-            if (G.mechanics && G.mechanics.defense) {
-                parts.push(node.defense ? ('Savunma açık | Asimilasyon +' + Math.round((DEFENSE_ASSIM_BONUS - 1) * 100) + '% | Üretim -' + Math.round((1 - DEFENSE_PROD_PENALTY) * 100) + '% | Flow çıkış -' + Math.round((1 - DEFENSE_FLOW_MULT) * 100) + '%') : 'Savunma kapalı');
-                if (node.kind !== 'turret') parts.push(defenseFieldSummary(node));
-            }
-            if (G.mechanics && G.mechanics.flow && node.supplied === true) parts.push('Tedarikli yükseltme -' + Math.round((1 - SUPPLIED_UPGRADE_DISCOUNT) * 100) + '%');
-            if (G.mechanics && G.mechanics.assimilation && !isNodeAssimilated(node)) parts.push('Asimilasyon ' + Math.round(clamp(node.assimilationProgress || 0, 0, 1) * 100) + '%');
-        } else if (node.strategic) {
-            parts.push('Stratejik merkez');
-        }
-        if (node.gate) parts.push(node.owner === G.human && isNodeAssimilated(node) ? 'GATE ready: geçit açık' : 'GATE: bariyeri aşıp diğer tarafa geçişi açar');
-        if (node.encounterType) parts.push(encounterName(node.encounterType));
-        if (strategicPulseAppliesToNode(node.id)) parts.push(pulseBonusSummary());
-        else if (node.strategic) parts.push('Stratejik merkez: pulse buraya döndüğünde üretim, hız, asimilasyon ve kapasite bonusu gelir');
-        if (G.mapMutator && G.mapMutator.type !== 'none' && isPointInsideMapMutator({ point: node.pos, mapMutator: G.mapMutator })) {
-            parts.push(mapMutatorName(G.mapMutator));
-        }
-        return parts.join(' | ');
-    }
+    if (node.gate) view.gate = { open: isSelf && isNodeAssimilated(node) };
 
-    var owned = ids.map(function (id) { return G.nodes[id]; }).filter(function (node) { return node.owner === G.human; });
-    var summary = [ids.length + ' seçili'];
-    if (!owned.length) return summary.join(' | ');
-
-    if (G.mechanics && G.mechanics.upgrades && G.rules && G.rules.allowUpgrade) {
-        var upgrading = owned.filter(function (node) { return isNodeUpgradePending(node, G.tick); });
-        if (upgrading.length) summary.push('Yükseliyor x' + upgrading.length);
-        var upgradeable = owned.filter(function (node) { return canUpgradeNodeForOwner(node, G.human, G.tick); });
-        if (upgradeable.length) {
-            var minCost = Infinity, maxCost = 0;
-            for (var i = 0; i < upgradeable.length; i++) {
-                var cost = upgradeCost(upgradeable[i]);
-                if (cost < minCost) minCost = cost;
-                if (cost > maxCost) maxCost = cost;
-            }
-            summary.push('Yükseltme ' + minCost + (maxCost !== minCost ? ('-' + maxCost) : ''));
+    if (isSelf && G.rules && G.rules.allowUpgrade) {
+        if (isNodeUpgradePending(node, G.tick)) {
+            view.upgrade = {
+                pending: true,
+                progress: getNodeUpgradeProgress(node, G.tick),
+                targetLevel: node.upgradeTargetLevel,
+            };
+        } else if (node.level >= NODE_LEVEL_MAX) {
+            view.upgrade = { maxed: true };
         } else {
-            summary.push('Yükseltme MAX');
+            var cost = upgradeCost(node);
+            view.upgrade = { cost: cost, affordable: Math.floor(node.units) > cost };
         }
     }
-    var suppliedCount = owned.filter(function (node) { return node.supplied === true; }).length;
-    var gateCount = owned.filter(function (node) { return node.gate && isNodeAssimilated(node); }).length;
-    var pulseCount = owned.filter(function (node) { return strategicPulseAppliesToNode(node.id); }).length;
-    if (G.mechanics && G.mechanics.flow) summary.push('Supply ' + suppliedCount + '/' + owned.length);
-    if (gateCount > 0) summary.push('Gate x' + gateCount);
-    if (pulseCount > 0) summary.push('Pulse x' + pulseCount);
-    return summary.join(' | ');
+
+    if (isSelf) {
+        view.defense = { on: !!node.defense };
+        if (node.kind !== 'turret') {
+            var field = getDefenseFieldStats(node, defenseFieldCfg());
+            if (field.active) view.defense.field = field;
+        }
+    }
+
+    if (G.mapMutator && G.mapMutator.type !== 'none' && isPointInsideMapMutator({ point: node.pos, mapMutator: G.mapMutator })) {
+        view.mutatorName = mapMutatorName(G.mapMutator);
+    }
+
+    return view;
 }
+
+function currentSelectionSummary() {
+    var ids = inp && inp.sel ? Array.from(inp.sel).filter(function (id) { return !!G.nodes[id]; }) : [];
+    var fleetIds = inp && inp.selFleets ? Array.from(inp.selFleets) : [];
+    var fleets = [];
+    for (var i = 0; i < fleetIds.length; i++) {
+        var fleet = findHoldingFleetById(fleetIds[i]);
+        if (fleet && fleet.owner === G.human) fleets.push({ count: fleet.count });
+    }
+    var idleHint = G.mechanics && G.mechanics.preset === 'primitive'
+        ? 'Bir gezegen seç, birlik sayılarını karşılaştır ve fetih rotanı kur.'
+        : 'Bir gezegen seç: garnizon, yükseltme, tedarik ve savunma değerleri burada görünür.';
+    return buildSelectionSummary({
+        commandMode: inp ? inp.commandMode : '',
+        nodes: ids.map(function (id) { return selectionNodeView(G.nodes[id]); }),
+        fleets: fleets,
+        mechanics: G.mechanics || {},
+        idleHint: hoveredNodeForTip() ? '' : idleHint,
+    });
+}
+
+var selectionPanelKey = '';
+
+function renderSelectionPanel() {
+    if (!hudSelTitle) return;
+    var summary = currentSelectionSummary();
+
+    // The panel is rebuilt from DOM nodes rather than a single string, so it only runs
+    // when something in the readout actually changed - this is called every frame.
+    var nextKey = summary.kind + '|' + summary.title + '|' + summary.owner + '|' + summary.ownerTone + '|'
+        + summary.stats.map(function (stat) { return stat.label + ':' + stat.value + ':' + (stat.tone || ''); }).join(',')
+        + '|' + summary.notes.join('~');
+    if (nextKey === selectionPanelKey) return;
+    selectionPanelKey = nextKey;
+
+    hudSelTitle.textContent = summary.title;
+    if (hudSelOwner) {
+        hudSelOwner.textContent = summary.owner;
+        hudSelOwner.classList.toggle('hidden', !summary.owner);
+        hudSelOwner.classList.remove('tone-self', 'tone-rival', 'tone-neutral');
+        hudSelOwner.classList.add('tone-' + summary.ownerTone);
+    }
+
+    if (hudSelStats) {
+        var statsFrag = document.createDocumentFragment();
+        for (var i = 0; i < summary.stats.length; i++) {
+            var stat = summary.stats[i];
+            var statEl = document.createElement('div');
+            statEl.className = 'hud-stat' + (stat.tone ? ' tone-' + stat.tone : '');
+            var labelEl = document.createElement('span');
+            labelEl.className = 'hud-stat-label';
+            labelEl.textContent = stat.label;
+            var valueEl = document.createElement('span');
+            valueEl.className = 'hud-stat-value';
+            valueEl.textContent = stat.value;
+            statEl.appendChild(labelEl);
+            statEl.appendChild(valueEl);
+            statsFrag.appendChild(statEl);
+        }
+        hudSelStats.replaceChildren(statsFrag);
+    }
+
+    if (hudSelNotes) {
+        var notesFrag = document.createDocumentFragment();
+        for (var n = 0; n < summary.notes.length; n++) {
+            var noteEl = document.createElement('span');
+            noteEl.textContent = summary.notes[n];
+            notesFrag.appendChild(noteEl);
+        }
+        hudSelNotes.replaceChildren(notesFrag);
+    }
+}
+
+/**
+ * How many ships the current order would actually move.
+ *
+ * The percentage on its own does not answer this: a world always holds one ship back,
+ * and a source's class flow multiplier scales the order (a Relay pushes ~45% more than
+ * the slider says). Showing the resolved figure keeps the control honest.
+ */
+function selectionSendPreview() {
+    if (!inp) return { available: 0, sending: 0, sources: 0 };
+    var pct = toSendFraction(inp.sendPct);
+    var available = 0;
+    var sending = 0;
+    var sources = 0;
+
+    var sourceIds = selectedOwnedNodeIds();
+    for (var i = 0; i < sourceIds.length; i++) {
+        var node = G.nodes[sourceIds[i]];
+        if (!node) continue;
+        sources++;
+        available += Math.max(0, Math.floor(Number(node.units) || 0));
+        sending += computeSendCount({ srcUnits: node.units, pct: pct, flowMult: nodeTypeOf(node).flow }).sendCount;
+    }
+
+    var fleetIds = inp.selFleets ? Array.from(inp.selFleets) : [];
+    for (var f = 0; f < fleetIds.length; f++) {
+        var fleet = findHoldingFleetById(fleetIds[f]);
+        if (!fleet || fleet.owner !== G.human) continue;
+        sources++;
+        available += Math.max(0, Math.floor(Number(fleet.count) || 0));
+        sending += computeFleetSendCount(fleet.count, pct);
+    }
+
+    return { available: available, sending: sending, sources: sources };
+}
+
+var sendPreviewKey = '';
+
+function renderSendPreview() {
+    if (!hudSendPreviewValue) return;
+    var preview = selectionSendPreview();
+    var nextKey = preview.sources + ':' + preview.sending + '/' + preview.available;
+    if (nextKey === sendPreviewKey) return;
+    sendPreviewKey = nextKey;
+    if (!preview.sources) {
+        hudSendPreviewValue.textContent = 'Kaynak seç';
+        hudSendPreviewValue.classList.add('is-idle');
+        return;
+    }
+    hudSendPreviewValue.classList.remove('is-idle');
+    hudSendPreviewValue.textContent = preview.sending + ' / ' + preview.available + ' birlik';
+}
+
+function currentWorldStatusChips() {
+    var pulseNode = G.strategicPulse && G.nodes ? G.nodes[G.strategicPulse.nodeId] : null;
+    var pulseOwner = pulseNode ? pulseNode.owner : -1;
+    var doctrineId = humanDoctrineId();
+    var doctrineMods = doctrineId ? doctrineModifiers(G.doctrines, G.doctrineStates, G.human) : null;
+
+    var barrier = null;
+    if (G.mapFeature && G.mapFeature.type === 'barrier') {
+        var gates = barrierGateNodes();
+        barrier = {
+            gates: gates.map(function (gate, index) {
+                var open = gate.owner >= 0 && isNodeAssimilated(gate);
+                var ownerText = gate.owner < 0 ? 'Tarafsız' : labelForPlayer(gate.owner);
+                return {
+                    label: barrierGateLabel(index, gates.length),
+                    open: open && gate.owner === G.human,
+                    statusText: ownerText + ' · ' + (gate.owner < 0 ? 'önce fethet' : (open ? 'geçit açık' : 'asimile oluyor')),
+                };
+            }),
+        };
+    }
+
+    var encounters = [];
+    if (Array.isArray(G.encounters)) {
+        for (var i = 0; i < G.encounters.length; i++) {
+            var encounter = G.encounters[i];
+            var node = G.nodes[encounter.nodeId];
+            if (!node) continue;
+            encounters.push({
+                name: encounterName(encounter),
+                ownerLabel: node.owner < 0 ? 'Tarafsız' : labelForPlayer(node.owner),
+                isSelf: node.owner === G.human,
+                statusText: encounter.type === 'relay_core'
+                    ? (isNodeAssimilated(node) ? 'Hat açık' : 'Asimilasyon bekliyor')
+                    : 'Kuşatma hedefi',
+            });
+        }
+    }
+
+    return buildWorldStatusChips({
+        pulse: G.strategicPulse && G.strategicPulse.active ? {
+            active: true,
+            ownerLabel: pulseOwner < 0 ? 'Tarafsız' : labelForPlayer(pulseOwner),
+            isSelf: pulseOwner === G.human,
+            seconds: Math.max(1, Math.ceil((G.strategicPulse.remainingTicks || 0) / TICK_RATE)),
+            detail: pulseBonusSummary(),
+        } : null,
+        barrier: barrier,
+        mutatorName: G.mapMutator && G.mapMutator.type !== 'none' ? mapMutatorName(G.mapMutator) : '',
+        encounters: encounters,
+        doctrine: doctrineMods ? {
+            label: doctrineMods.label,
+            statusText: doctrineCooldownSummary(G.doctrines, G.doctrineStates, G.human),
+            active: doctrineMods.active,
+            tradeLine: doctrineTradeLine(doctrineId, doctrineMods.active ? 'active' : 'passive'),
+        } : null,
+    });
+}
+
+var worldStatusChipKey = '';
+
+function renderWorldStatusChips() {
+    if (!matchStatusChipsEl) return;
+    var chips = currentWorldStatusChips();
+    var nextKey = chips.map(function (chip) {
+        return chip.id + ':' + chip.label + ':' + chip.value + ':' + (chip.tone || '');
+    }).join('|');
+    if (nextKey === worldStatusChipKey) return;
+    worldStatusChipKey = nextKey;
+
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < chips.length; i++) {
+        var chip = chips[i];
+        var chipEl = document.createElement('span');
+        chipEl.className = 'match-chip' + (chip.tone ? ' tone-' + chip.tone : '');
+        if (chip.title) chipEl.title = chip.title;
+        var labelEl = document.createElement('span');
+        labelEl.className = 'match-chip-label';
+        labelEl.textContent = chip.label;
+        chipEl.appendChild(labelEl);
+        if (chip.value) {
+            var valueEl = document.createElement('span');
+            valueEl.className = 'match-chip-value';
+            valueEl.textContent = chip.value;
+            chipEl.appendChild(valueEl);
+        }
+        frag.appendChild(chipEl);
+    }
+    matchStatusChipsEl.replaceChildren(frag);
+}
+
 function syncHudAssistiveText() {
     pruneSelectedFleetIds();
     var commandMode = inp ? inp.commandMode : '';
@@ -5164,19 +5478,33 @@ function updatePowerSidebar() {
     if (!powerSidebar || !powerListEl || !G.players || !G.players.length) return;
     var rows = [];
     var rawPowers = [];
+    var totalPower = 0;
+    var totalNodes = G.nodes ? G.nodes.length : 0;
     for (var i = 0; i < G.players.length; i++) {
         var ply = G.players[i] || {};
-        rawPowers.push(Math.max(0, Number((G.powerByPlayer && G.powerByPlayer[i]) || 0)));
+        var power = Math.max(0, Number((G.powerByPlayer && G.powerByPlayer[i]) || 0));
+        rawPowers.push(power);
+        totalPower += power;
         rows.push({
             idx: i,
             name: labelForPlayer(i),
             color: ply.color || COL_NEUTRAL,
             alive: ply.alive !== false,
             self: i === G.human,
-            power: Math.max(0, Math.round((G.powerByPlayer && G.powerByPlayer[i]) || 0))
+            nodes: countOwnedNodes(i),
+            power: Math.max(0, Math.round(power)),
         });
     }
-    rows.sort(function (a, b) { if (b.power !== a.power) return b.power - a.power; return a.idx - b.idx; });
+    // Ranked by strength, except the player is always the first row: their own standing
+    // is the number they look at most, and hunting for it in a shifting list is friction.
+    rows.sort(function (a, b) {
+        if (a.self !== b.self) return a.self ? -1 : 1;
+        if (b.power !== a.power) return b.power - a.power;
+        return a.idx - b.idx;
+    });
+    for (var ri = 0; ri < rows.length; ri++) {
+        rows[ri].share = totalPower > 0 ? rows[ri].power / totalPower : 0;
+    }
 
     var tactical = buildTacticalStatus({
         tick: G.tick,
@@ -5185,10 +5513,12 @@ function updatePowerSidebar() {
         humanIndex: G.human,
         humanPower: rawPowers[G.human],
         ownedNodes: countOwnedNodes(G.human),
-        totalNodes: G.nodes ? G.nodes.length : 0,
+        totalNodes: totalNodes,
     });
 
-    var nextKey = rows.map(function (r) { return r.idx + ':' + r.power + ':' + (r.alive ? 1 : 0) + ':' + r.name; }).join('|') + '|phase:' + tactical.id + ':' + tactical.time + ':' + tactical.powerPercent;
+    var nextKey = rows.map(function (r) {
+        return r.idx + ':' + r.power + ':' + r.nodes + ':' + Math.round(r.share * 100) + ':' + (r.alive ? 1 : 0) + ':' + r.name;
+    }).join('|') + '|phase:' + tactical.id + ':' + tactical.time + ':' + tactical.powerPercent;
     if (nextKey === powerRenderKey) return;
     powerRenderKey = nextKey;
 
@@ -5201,10 +5531,13 @@ function updatePowerSidebar() {
     powerSidebar.setAttribute('aria-label', tactical.label + ', maç süresi ' + tactical.time + ', sektör gücü yüzde ' + tactical.powerPercent);
 
     var frag = document.createDocumentFragment();
-    for (var ri = 0; ri < rows.length; ri++) {
-        var row = rows[ri];
+    for (var rj = 0; rj < rows.length; rj++) {
+        var row = rows[rj];
         var rowEl = document.createElement('div');
         rowEl.className = 'power-row' + (row.self ? ' self' : '') + (row.alive ? '' : ' dead');
+
+        var topEl = document.createElement('div');
+        topEl.className = 'power-row-top';
 
         var playerEl = document.createElement('div');
         playerEl.className = 'power-player';
@@ -5223,8 +5556,24 @@ function updatePowerSidebar() {
 
         playerEl.appendChild(dotEl);
         playerEl.appendChild(nameEl);
-        rowEl.appendChild(playerEl);
-        rowEl.appendChild(valEl);
+        topEl.appendChild(playerEl);
+        topEl.appendChild(valEl);
+        rowEl.appendChild(topEl);
+
+        var shareEl = document.createElement('div');
+        shareEl.className = 'power-share';
+        var fillEl = document.createElement('span');
+        fillEl.style.width = Math.round(row.share * 100) + '%';
+        fillEl.style.background = row.color;
+        shareEl.appendChild(fillEl);
+        rowEl.appendChild(shareEl);
+
+        var nodesEl = document.createElement('div');
+        nodesEl.className = 'power-nodes';
+        nodesEl.textContent = row.nodes + (totalNodes > 0 ? '/' + totalNodes : '') + ' gezegen · %' + Math.round(row.share * 100);
+        rowEl.appendChild(nodesEl);
+
+        rowEl.setAttribute('aria-label', row.name + ': güç ' + row.power + ', ' + row.nodes + ' gezegen, sektör payı yüzde ' + Math.round(row.share * 100));
         frag.appendChild(rowEl);
     }
     powerListEl.replaceChildren(frag);
@@ -5299,11 +5648,11 @@ function currentCampaignObjectiveRows() {
 }
 
 function currentMissionPanelTitle(level) {
-    var title = polishTurkishText(buildMissionPanelTitle(level, currentMissionMode()));
+    var title = buildMissionPanelTitle(level, currentMissionMode());
     if (level && level.phaseTitle) {
         var phaseIndex = G.missionState ? (Number(G.missionState.phaseIndex) || 0) + 1 : 1;
         var phaseCount = G.missionScript && Array.isArray(G.missionScript.phases) ? G.missionScript.phases.length : phaseIndex;
-        title += ' | Faz ' + phaseIndex + '/' + phaseCount + ': ' + polishTurkishText(level.phaseTitle);
+        title += ' · Faz ' + phaseIndex + '/' + phaseCount + ': ' + level.phaseTitle;
     }
     return title;
 }
@@ -5315,8 +5664,7 @@ function currentMissionPanelSubtitle(level) {
         dailyCompleted: G.daily.completed,
         dailyBestTick: G.daily.bestTick,
     });
-    subtitle = polishTurkishText(subtitle);
-    if (level && level.phaseBlurb) return [polishTurkishText(level.phaseBlurb), subtitle].filter(Boolean).join(' | ');
+    if (level && level.phaseBlurb) return [level.phaseBlurb, subtitle].filter(Boolean).join(' · ');
     return subtitle;
 }
 
@@ -5333,7 +5681,7 @@ function refreshCampaignMissionPanels() {
                 title: currentMissionPanelTitle(level),
                 subtitle: currentMissionPanelSubtitle(level),
                 items: rows.map(function (row) {
-                    return { label: polishTurkishText(row.label), progressText: row.progressText, complete: row.complete, failed: row.failed, optional: row.optional };
+                    return { label: row.label, progressText: row.progressText, complete: row.complete, failed: row.failed, optional: row.optional };
                 }),
             });
         }
@@ -5491,6 +5839,7 @@ function captureSyncSnapshot() {
                 owner: node.owner,
                 units: node.units,
                 prodAcc: node.prodAcc || 0,
+                combatAcc: node.combatAcc || 0,
                 level: node.level,
                 kind: node.kind,
                 defense: !!node.defense,
@@ -6694,7 +7043,46 @@ if (playlistSel) playlistSel.addEventListener('change', function () { updateSkir
 if (multiPlaylistSel) multiPlaylistSel.addEventListener('change', function () { updateSkirmishMenuState({ playlist: multiPlaylistSel.value }); });
 if (doctrineSel) doctrineSel.addEventListener('change', function () { updateSkirmishMenuState({ doctrineId: doctrineSel.value }); });
 if (multiDoctrineSel) multiDoctrineSel.addEventListener('change', function () { updateSkirmishMenuState({ doctrineId: multiDoctrineSel.value }); });
+// Playlist and doctrine names live in the sim definitions. Filling the selects from
+// there stops the menu, the lobby and the HUD from each carrying their own copy - which
+// is how "Chaos", "Kaos" and "Puzzle Sector" ended up naming the same three playlists.
+function populateOptionSelects() {
+    var groups = {
+        playlist: playlistOptionList().map(function (item) {
+            return { id: item.id, label: item.label };
+        }),
+        doctrine: [{ id: 'auto', label: 'Oyun Listesi Varsayılanı' }].concat(doctrineOptionList().map(function (item) {
+            return { id: item.id, label: item.label };
+        })),
+    };
+    var selects = document.querySelectorAll('select[data-options]');
+    for (var i = 0; i < selects.length; i++) {
+        var select = selects[i];
+        var options = groups[select.getAttribute('data-options')];
+        if (!options) continue;
+        var frag = document.createDocumentFragment();
+        for (var o = 0; o < options.length; o++) {
+            var option = document.createElement('option');
+            option.value = options[o].id;
+            option.textContent = options[o].label;
+            frag.appendChild(option);
+        }
+        select.replaceChildren(frag);
+    }
+}
 if (gameModeSel) gameModeSel.addEventListener('change', function () { updateSkirmishMenuState({ rulesMode: gameModeSel.value }); });
+// The systems select is built from the mechanics ladder itself, so a new tier shows up in
+// the menu without a second list to keep in step.
+if (mechanicsSel) {
+    var mechanicsOptions = mechanicsOptionList();
+    for (var mi = 0; mi < mechanicsOptions.length; mi++) {
+        var mechanicsOption = document.createElement('option');
+        mechanicsOption.value = mechanicsOptions[mi].id;
+        mechanicsOption.textContent = mechanicsOptions[mi].name;
+        mechanicsSel.appendChild(mechanicsOption);
+    }
+    mechanicsSel.addEventListener('change', function () { updateSkirmishMenuState({ mechanicsPreset: mechanicsSel.value }); });
+}
 if (multiModeSel) multiModeSel.addEventListener('change', function () { updateSkirmishMenuState({ rulesMode: multiModeSel.value }); });
 if (menuFogCb) menuFogCb.addEventListener('change', function () { updateSkirmishMenuState({ fogEnabled: !!menuFogCb.checked }); });
 if (multiRoomTypeIn) multiRoomTypeIn.addEventListener('change', function () { updateMultiplayerMenuState({ roomType: multiRoomTypeIn.value }); });
@@ -6848,81 +7236,6 @@ function syncDailyChallengeState(challenge) {
 function todayDailyChallenge() {
     return serverDailyChallenge || buildDailyChallenge(todayDateKey(DAILY_CHALLENGE_TIMEZONE));
 }
-function polishTurkishText(value) {
-    if (value === undefined || value === null) return '';
-    var text = String(value);
-    var replacements = [
-        ['node\'larini', 'gezegenlerini'],
-        ['node\'larina', 'gezegenlerine'],
-        ['node\'lara', 'gezegenlere'],
-        ['node\'larda', 'gezegenlerde'],
-        ['node\'u', 'gezegeni'],
-        ['node\'da', 'gezegende'],
-        ['node', 'gezegen'],
-        ['Node', 'Gezegen'],
-        ['Acilis', 'Açılış'],
-        ['acilis', 'açılış'],
-        ['Hatti', 'Hattı'],
-        ['Cizgisi', 'Çizgisi'],
-        ['Yildiz', 'Yıldız'],
-        ['Koprusu', 'Köprüsü'],
-        ['Cift', 'Çift'],
-        ['Cekim', 'Çekim'],
-        ['Cukuru', 'Çukuru'],
-        ['Gecis', 'Geçiş'],
-        ['Uc', 'Üç'],
-        ['Dort', 'Dört'],
-        ['Ilk', 'İlk'],
-        ['Iki', 'İki'],
-        ['Fog', 'Sis'],
-        ['Gorev', 'Görev'],
-        ['Gunluk', 'Günlük'],
-        ['Mutator', 'Mutatör'],
-        ['kontrolunu', 'kontrolünü'],
-        ['kontrolu', 'kontrolü'],
-        ['baslangic', 'başlangıç'],
-        ['genisliyor', 'genişliyor'],
-        ['genisleme', 'genişleme'],
-        ['genislemeyi', 'genişlemeyi'],
-        ['Hizli', 'Hızlı'],
-        ['hizli', 'hızlı'],
-        ['Hiz', 'Hız'],
-        ['hiz', 'hız'],
-        ['yonde', 'yönde'],
-        ['acik', 'açık'],
-        ['acildiginda', 'açıldığında'],
-        ['acarsan', 'açarsan'],
-        ['savunmayi', 'savunmayı'],
-        ['savunma alani', 'savunma alanı'],
-        ['aldigin', 'aldığın'],
-        ['aldiginda', 'aldığında'],
-        ['dondugunde', 'döndüğünde'],
-        ['yakin', 'yakın'],
-        ['farki', 'farkı'],
-        ['baglayip', 'bağlayıp'],
-        ['bagla', 'bağla'],
-        ['zayif', 'zayıf'],
-        ['uretmez', 'üretmez'],
-        ['uret', 'üret'],
-        ['pahaliya', 'pahalıya'],
-        ['dusurulur', 'düşürülür'],
-        ['once', 'önce'],
-        ['ele gecir', 'ele geçir'],
-        ['altinda', 'altında'],
-        ['gorunurluk', 'görünürlük'],
-        ['kopru', 'köprü'],
-        ['ayni', 'aynı'],
-        ['sikistirir', 'sıkıştırır'],
-        ['Gorus', 'Görüş'],
-        ['gorus', 'görüş'],
-        ['saldiri', 'saldırı'],
-        ['pahali', 'pahalı'],
-    ];
-    for (var i = 0; i < replacements.length; i++) {
-        text = text.split(replacements[i][0]).join(replacements[i][1]);
-    }
-    return text;
-}
 function campaignFeatureName(feature) {
     if (!feature) return 'Standart';
     if (typeof feature === 'string') {
@@ -6957,7 +7270,7 @@ function campaignSystemsSummary(level) {
     if (rulesMode === 'advanced') parts.push('Supply altındaki gezegen daha ucuza upgrade olur');
     if (level && level.encounters && level.encounters.length) parts.push('Encounterlar hedef akışını değiştirir');
     if (level && level.doctrineId) parts.push('Doktrin açılışta oyunun temposunu belirler');
-    return parts.join(' | ');
+    return parts.join(' · ');
 }
 function campaignFeatureHint(level) {
     var feature = level ? level.mapFeature : null;
@@ -6969,26 +7282,26 @@ function campaignFeatureHint(level) {
     return 'Standart harita: supply zinciri, pulse zamanı ve savunma alanı kullanımı maçın temposunu belirler.';
 }
 function campaignLevelSummary(level) {
-    return 'Bölüm ' + level.id + ': ' + polishTurkishText(level.name) + '\n' +
-        polishTurkishText(level.blurb) + '\n' +
-        'Gezegen: ' + level.nc + ' | AI: ' + level.aiCount + ' | Zorluk: ' + menuDifficultyLabel(level.diff) +
+    return 'Bölüm ' + level.id + ': ' + level.name + '\n' +
+        level.blurb + '\n' +
+        'Gezegen: ' + level.nc + ' · AI: ' + level.aiCount + ' · Zorluk: ' + menuDifficultyLabel(level.diff) +
         ' | Düzen: ' + campaignLayoutName(level) +
         ' | Özellik: ' + campaignFeatureName(level.mapFeature) +
         ' | Mutatör: ' + campaignMutatorName(level.mapMutator || 'none') +
         ' | Oyun Listesi: ' + playlistName(level.playlist || 'standard') +
         (level.doctrineId ? (' | Doktrin: ' + doctrineName(level.doctrineId)) : '') +
         (level.fog ? ' | Sis Açık' : ' | Sis Kapalı') + '\n' +
-        'Harita Dersi: ' + polishTurkishText(campaignFeatureHint(level)) + '\n' +
-        'Mutatör: ' + polishTurkishText(mapMutatorHint(level.mapMutator || 'none')) + '\n' +
+        'Harita Dersi: ' + campaignFeatureHint(level) + '\n' +
+        'Mutatör: ' + mapMutatorHint(level.mapMutator || 'none') + '\n' +
         'Encounter: ' + encounterSummary(level.encounters || []) + '\n' +
         'Sistemler: ' + campaignSystemsSummary(level) + '\n' +
-        'Hedefler: ' + polishTurkishText(describeCampaignObjectives(level, { tickRate: TICK_RATE })) + '\n' +
-        'Plan: ' + polishTurkishText(level.hint || 'Harita temposunu pulse, supply ve savunma alanı ile yönet.');
+        'Hedefler: ' + describeCampaignObjectives(level, { tickRate: TICK_RATE }) + '\n' +
+        'Plan: ' + (level.hint || 'Harita temposunu pulse, supply ve savunma alanı ile yönet.');
 }
 function refreshDailyChallengeCard() {
     var challenge = todayDailyChallenge();
     var progress = getDailyChallengeProgress(challenge.key);
-    var subtitle = challenge.key + ' | ' + challenge.blurb + (progress.completed ? ' | Temizlendi' : (progress.bestTick > 0 ? ' | En iyi: ' + progress.bestTick + ' tick' : ' | Henüz temizlenmedi'));
+    var subtitle = challenge.key + ' · ' + challenge.blurb + (progress.completed ? ' | Temizlendi' : (progress.bestTick > 0 ? ' | En iyi: ' + progress.bestTick + ' tick' : ' | Henüz temizlenmedi'));
     var items = evaluateCampaignObjectives(challenge, {
         tick: 0,
         didWin: false,
@@ -6998,7 +7311,7 @@ function refreshDailyChallengeCard() {
         encounters: challenge.encounters || [],
         humanIndex: 0,
     }, { tickRate: TICK_RATE }).map(function (row) {
-        return { label: polishTurkishText(row.label), progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
+        return { label: row.label, progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
     });
     if (dailyChallengeCard) {
         renderMissionPanel(dailyChallengeCard, {
@@ -7019,9 +7332,9 @@ function refreshCustomMapStatus() {
     }
     customMapStatusEl.textContent =
         'Hazır özel harita: ' + currentCustomMapConfig.name +
-        ' | ' + currentCustomMapConfig.nodes.length + ' gezegen' +
-        ' | ' + currentCustomMapConfig.playerCount + ' oyuncu' +
-        ' | ' + campaignFeatureName(currentCustomMapConfig.mapFeature) +
+        ' · ' + currentCustomMapConfig.nodes.length + ' gezegen' +
+        ' · ' + currentCustomMapConfig.playerCount + ' oyuncu' +
+        ' · ' + campaignFeatureName(currentCustomMapConfig.mapFeature) +
         ' | Mutatör: ' + campaignMutatorName(currentCustomMapConfig.mapMutator || 'none') +
         ' | Oyun listesi: ' + playlistName(currentCustomMapConfig.playlist || 'standard') +
         (currentCustomMapConfig.doctrineId ? (' | Doktrin: ' + doctrineName(currentCustomMapConfig.doctrineId)) : '') +
@@ -7046,8 +7359,8 @@ function refreshCampaignUI() {
     applyCampaignLevelSelection(campaignSelectedLevel);
 
     if (scenarioProgressEl) {
-        scenarioProgressEl.textContent = 'Geçilen: ' + completed + ' / ' + CAMPAIGN_LEVELS.length + '  |  Açılan: ' + unlocked + ' / ' + CAMPAIGN_LEVELS.length +
-            (CAMPAIGN_LEVELS.length > 28 ? '  |  Tüm numaralar: grid veya paneli kaydır' : '');
+        scenarioProgressEl.textContent = 'Geçilen: ' + completed + ' / ' + CAMPAIGN_LEVELS.length + ' · Açılan: ' + unlocked + ' / ' + CAMPAIGN_LEVELS.length +
+            (CAMPAIGN_LEVELS.length > 28 ? ' · Tüm bölümler için listeyi kaydır' : '');
     }
     if (scenarioBubbleListEl) {
         scenarioBubbleListEl.replaceChildren();
@@ -7062,7 +7375,7 @@ function refreshCampaignUI() {
             if (i < completed) bubble.classList.add('done');
             if (i === campaignSelectedLevel) bubble.classList.add('selected');
             var status = i < completed ? 'Geçildi' : (i < unlocked ? 'Açık' : 'Kilitli');
-            bubble.title = 'Bölüm ' + lvl.id + ' - ' + polishTurkishText(lvl.name) + ' (' + status + ')';
+            bubble.title = 'Bölüm ' + lvl.id + ' · ' + lvl.name + ' (' + status + ')';
             if (i < unlocked) {
                 (function (idx) {
                     bubble.addEventListener('click', function () {
@@ -7079,8 +7392,8 @@ function refreshCampaignUI() {
     var selected = CAMPAIGN_LEVELS[campaignSelectedLevel];
     var selectedDone = campaignSelectedLevel < completed;
     var missionData = {
-        title: 'Bölüm ' + selected.id + ': ' + polishTurkishText(selected.name),
-        subtitle: polishTurkishText(selected.blurb) + ' | AI ' + selected.aiCount + ' | ' + menuDifficultyLabel(selected.diff) + ' | ' + campaignLayoutName(selected) + ' | ' + campaignFeatureName(selected.mapFeature) + ' | Mutatör: ' + campaignMutatorName(selected.mapMutator || 'none') + ' | Oyun Listesi: ' + playlistName(selected.playlist || 'standard') + (selected.doctrineId ? (' | Doktrin: ' + doctrineName(selected.doctrineId)) : '') + ' | ' + (selectedDone ? 'Durum: Geçildi' : 'Durum: Hazır'),
+        title: 'Bölüm ' + selected.id + ': ' + selected.name,
+        subtitle: selected.blurb + ' · AI ' + selected.aiCount + ' · ' + menuDifficultyLabel(selected.diff) + ' · ' + campaignLayoutName(selected) + ' · ' + campaignFeatureName(selected.mapFeature) + ' · Mutatör: ' + campaignMutatorName(selected.mapMutator || 'none') + ' · Oyun Listesi: ' + playlistName(selected.playlist || 'standard') + (selected.doctrineId ? (' · Doktrin: ' + doctrineName(selected.doctrineId)) : '') + ' · ' + (selectedDone ? 'Geçildi' : 'Hazır'),
         items: evaluateCampaignObjectives(selected, {
             tick: 0,
             didWin: false,
@@ -7090,20 +7403,20 @@ function refreshCampaignUI() {
             encounters: selected.encounters || [],
             humanIndex: 0,
         }, { tickRate: TICK_RATE }).map(function (row) {
-            return { label: polishTurkishText(row.label), progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
+            return { label: row.label, progressText: row.optional ? 'Bonus' : 'Ana', optional: row.optional };
         }),
     };
     if (scenarioMissionEl) renderMissionPanel(scenarioMissionEl, missionData);
     if (contentCampaignMissionEl) renderMissionPanel(contentCampaignMissionEl, missionData);
     if (contentCampaignProgressEl) {
-        contentCampaignProgressEl.textContent = 'Geçilen: ' + completed + ' / ' + CAMPAIGN_LEVELS.length + ' | Açılan: ' + unlocked + ' / ' + CAMPAIGN_LEVELS.length + ' | Seçili: Bölüm ' + selected.id;
+        contentCampaignProgressEl.textContent = 'Geçilen: ' + completed + ' / ' + CAMPAIGN_LEVELS.length + ' · Açılan: ' + unlocked + ' / ' + CAMPAIGN_LEVELS.length + ' · Seçili: Bölüm ' + selected.id;
     }
-    if (menuCampaignSpotlightTitle) menuCampaignSpotlightTitle.textContent = 'Bölüm ' + selected.id + ': ' + polishTurkishText(selected.name);
+    if (menuCampaignSpotlightTitle) menuCampaignSpotlightTitle.textContent = 'Bölüm ' + selected.id + ': ' + selected.name;
     if (menuCampaignSpotlightCopy) {
-        menuCampaignSpotlightCopy.textContent = polishTurkishText(selected.blurb) + ' | ' + (selectedDone ? 'Geçildi' : 'Hazır') + ' | AI ' + selected.aiCount + ' | ' + playlistName(selected.playlist || 'standard');
+        menuCampaignSpotlightCopy.textContent = selected.blurb + ' · ' + (selectedDone ? 'Geçildi' : 'Hazır') + ' · AI ' + selected.aiCount + ' · ' + playlistName(selected.playlist || 'standard');
     }
     if (menuContentCardMeta) {
-        menuContentCardMeta.textContent = 'Seçili görev // Bölüm ' + selected.id + ' | ' + (selectedDone ? 'Geçildi' : 'Hazır');
+        menuContentCardMeta.textContent = 'Seçili görev // Bölüm ' + selected.id + ' · ' + (selectedDone ? 'Geçildi' : 'Hazır');
     }
     if (scenarioStartBtn) scenarioStartBtn.textContent = 'Bölüm ' + selected.id + ' Başlat';
     if (contentCampaignStartBtn) contentCampaignStartBtn.textContent = 'Bölüm ' + selected.id + ' Başlat';
@@ -7288,7 +7601,7 @@ refreshDailyChallengeCard();
 refreshCustomMapStatus();
 if (startBtn) {
     startBtn.addEventListener('click', function () {
-        startSinglePlayerGame({ primitive: true });
+        startSinglePlayerGame();
     });
 }
 if (menuHubDailyBtn) {
@@ -7597,7 +7910,7 @@ var tuningBackdropEl = $('tuningBackdrop');
 if (tuningBackdropEl) tuningBackdropEl.addEventListener('click', closeTuningPanel);
 if (menuFogCb) menuFogCb.addEventListener('change', function () { tuneFogCb.checked = menuFogCb.checked; });
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ CANVAS MOUSE Ã¢â€â‚¬Ã¢â€â‚¬
+// ── CANVAS MOUSE ──
 attachGameInputController({
     canvas: cv,
     windowTarget: window,
@@ -7676,7 +7989,7 @@ attachGameInputController({
     },
 });
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ GAME LOOP Ã¢â€â‚¬Ã¢â€â‚¬
+// ── GAME LOOP ──
 var acc = 0, lastT = 0, prevSt = 'mainMenu';
 function loop(ts) {
     var rawDt = Math.min((ts - lastT) / 1000, 0.1); lastT = ts;
@@ -7766,7 +8079,9 @@ function loop(ts) {
                 strainThreshold: CAP_SOFT_START,
             });
         }
-        if (hudMeta) hudMeta.textContent = selectionMetaText();
+        renderSelectionPanel();
+        renderSendPreview();
+        renderWorldStatusChips();
         syncHudAssistiveText();
         maybeShowDominanceHint();
         if (doctrineBtn) {

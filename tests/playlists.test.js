@@ -68,5 +68,5 @@ test('resolvePlaylistConfig lets explicit tune keys override playlist tune defau
 });
 
 test('playlistName returns a readable label', function () {
-    assert.equal(playlistName('puzzle'), 'Puzzle Sector');
+    assert.equal(playlistName('puzzle'), 'Bulmaca Sektörü');
 });

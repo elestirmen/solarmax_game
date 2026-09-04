@@ -99,15 +99,28 @@ export function campaignMechanicsPreset(levelIndex) {
     return 'advanced';
 }
 
+// Ladder order, simplest first. The campaign walks it one rung at a time; the skirmish
+// menu offers the same rungs so a free match can be as spare or as loaded as the player
+// wants instead of jumping from "nothing on" straight to "everything on".
+export var MECHANICS_LADDER = ['primitive', 'anomaly', 'logistics', 'economy', 'frontier', 'advanced'];
+
+export function mechanicsOptionList() {
+    return MECHANICS_LADDER.map(function (preset) {
+        var info = mechanicsProgressionInfo(preset);
+        return { id: preset, name: info.name, title: info.title, unlock: info.unlock };
+    });
+}
+
 export function mechanicsProgressionInfo(preset) {
     var normalized = normalizeMechanicsPreset(preset);
+    // `title` is the campaign unlock banner; `name` is the short form menus use.
     var labels = {
-        primitive: { title: 'TEMEL FETİH', unlock: 'Standart gezegenler · üretim · filo · fetih' },
-        anomaly: { title: 'ANOMALİLER AÇILDI', unlock: 'Solucan deliği ve özel harita yapıları' },
-        logistics: { title: 'LOJİSTİK AÇILDI', unlock: 'Otomatik flow hatları ve rota ekonomisi' },
-        economy: { title: 'EKONOMİ AÇILDI', unlock: 'Gezegen sınıfları ve yükseltmeler' },
-        frontier: { title: 'CEPHE SİSTEMLERİ AÇILDI', unlock: 'Savunma, asimilasyon ve güç alanları' },
-        advanced: { title: 'TAM SPEKTRUM', unlock: 'Stratejik pulse, doktrinler ve küresel olaylar' },
+        primitive: { name: 'Temel Fetih', title: 'TEMEL FETİH', unlock: 'Standart gezegenler · üretim · filo · fetih' },
+        anomaly: { name: 'Anomaliler', title: 'ANOMALİLER AÇILDI', unlock: 'Solucan deliği ve özel harita yapıları' },
+        logistics: { name: 'Lojistik', title: 'LOJİSTİK AÇILDI', unlock: 'Otomatik flow hatları ve rota ekonomisi' },
+        economy: { name: 'Ekonomi', title: 'EKONOMİ AÇILDI', unlock: 'Gezegen sınıfları ve yükseltmeler' },
+        frontier: { name: 'Cephe Sistemleri', title: 'CEPHE SİSTEMLERİ AÇILDI', unlock: 'Savunma, asimilasyon ve güç alanları' },
+        advanced: { name: 'Tam Spektrum', title: 'TAM SPEKTRUM', unlock: 'Stratejik pulse, doktrinler ve küresel olaylar' },
     };
     return Object.assign({ preset: normalized }, labels[normalized]);
 }

@@ -73,10 +73,26 @@ export var SIM_CONSTANTS = {
     BEZ_SEG: 20,
 };
 
-export var PLAYER_COLORS = ['#4a8eff', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'];
+// Ownership is the single most important read on the map, so the palette is picked for
+// separation first: each hue is ~60 degrees from its neighbours, all six sit at a similar
+// lightness on the dark backdrop, and the last two slots avoid the red/green pair that
+// colour-blind players struggle to tell apart.
+export var PLAYER_COLORS = ['#3d8bfd', '#ff5c5c', '#2fd8a3', '#ffb02e', '#b06cff', '#ff6ec7'];
+
+// Unclaimed worlds read as "nobody's": near-achromatic, so no player hue can be mistaken
+// for a neutral and no neutral can be mistaken for a player.
+export var NEUTRAL_COLOR = '#868d99';
+export var FOG_COLOR = '#2e3340';
+
+// How far a planet's body may drift from its owner's hue toward its class accent. Kept
+// low on purpose: class identity is carried by the rim and the glyph, not by the fill,
+// so a Forge and a Relay held by the same player still read as the same colour.
+export var NODE_BODY_TYPE_BLEND = { core: 0.08, owned: 0.16, neutral: 0.14 };
 
 export var NODE_TYPE_DEFS = {
-    core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#78a9ff' },
+    // Core is the baseline class, so its accent is deliberately achromatic: a blue
+    // accent competed with player one's blue and made neutral cores look claimed.
+    core: { label: 'Core', prod: 1.0, def: 1.0, cap: 1.0, flow: 1.0, speed: 1.0, color: '#c3ccdb' },
     forge: { label: 'Forge', prod: 1.44, def: 0.84, cap: 0.87, flow: 1.08, speed: 1.0, color: '#ff8a4c' },
     bulwark: { label: 'Bulwark', prod: 0.72, def: 1.4, cap: 1.18, flow: 0.86, speed: 0.93, color: '#b9d0e7' },
     relay: { label: 'Relay', prod: 0.86, def: 0.92, cap: 0.8, flow: 1.45, speed: 1.42, color: '#43e6d1' },

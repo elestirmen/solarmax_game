@@ -1,5 +1,6 @@
+import { garrisonDefenseMultiplier } from './combat_math.js';
 import { resolveFriendlyArrival } from './reinforcement.js';
-import { getFleetUnitSpacingT } from './shared_config.js';
+import { SIM_CONSTANTS, getFleetUnitSpacingT, nodeLevelDefMult as sharedNodeLevelDefMult, nodeTypeOf as sharedNodeTypeOf } from './shared_config.js';
 import { getMapMutatorSpeedMultiplier } from './mutator.js';
 import { isPointInsideFriendlyTerritory } from './territory.js';
 import { clearNodeUpgradeState } from './node_upgrade.js';
@@ -383,8 +384,11 @@ export function resolveCombatOutcome(params) {
     var callbacks = params.callbacks || {};
     var constants = params.constants || {};
 
-    var nodeTypeOf = typeof callbacks.nodeTypeOf === 'function' ? callbacks.nodeTypeOf : function () { return { def: 1 }; };
-    var nodeLevelDefMult = typeof callbacks.nodeLevelDefMult === 'function' ? callbacks.nodeLevelDefMult : function () { return 1; };
+    // Fallbacks are the shipped rules, not neutral stand-ins. A missing callback used to
+    // silently drop a world's class and level defence, which quietly made every fortified
+    // target easier than the design says it is.
+    var nodeTypeOf = typeof callbacks.nodeTypeOf === 'function' ? callbacks.nodeTypeOf : sharedNodeTypeOf;
+    var nodeLevelDefMult = typeof callbacks.nodeLevelDefMult === 'function' ? callbacks.nodeLevelDefMult : sharedNodeLevelDefMult;
     var nodeCapacity = typeof callbacks.nodeCapacity === 'function' ? callbacks.nodeCapacity : function (node) { return Number(node.maxUnits) || 0; };
     var attackMultiplier = typeof callbacks.attackMultiplier === 'function' ? callbacks.attackMultiplier : function () {
         return 1;
@@ -396,19 +400,29 @@ export function resolveCombatOutcome(params) {
     var defenseBonus = Number(constants.defenseBonus);
     var assimLockTicks = Number(constants.assimLockTicks);
 
-    if (!Number.isFinite(turretCaptureResist) || turretCaptureResist <= 0) turretCaptureResist = 1;
-    if (!Number.isFinite(defenseBonus) || defenseBonus <= 0) defenseBonus = 1;
-    if (!Number.isFinite(assimLockTicks) || assimLockTicks < 0) assimLockTicks = 0;
+    if (!Number.isFinite(turretCaptureResist) || turretCaptureResist <= 0) turretCaptureResist = SIM_CONSTANTS.TURRET_CAPTURE_RESIST;
+    if (!Number.isFinite(defenseBonus) || defenseBonus <= 0) defenseBonus = SIM_CONSTANTS.DEFENSE_BONUS;
+    if (!Number.isFinite(assimLockTicks) || assimLockTicks < 0) assimLockTicks = SIM_CONSTANTS.ASSIM_LOCK_TICKS;
 
     var targetOwnerBefore = targetNode.owner;
     var humanInvolved = fleet.owner === humanIndex || targetOwnerBefore === humanIndex;
-    var defMult = (targetOwnerBefore >= 0 ? Number(tune.def) || 1 : 1) * (Number(nodeTypeOf(targetNode).def) || 1) * (Number(nodeLevelDefMult(targetNode)) || 1);
-    if (targetNode.kind === 'turret') defMult *= turretCaptureResist * Math.max(0.5, Number(targetNode.turretCaptureResistMult) || 1);
-    if (targetNode.defense) defMult *= defenseBonus;
-    defMult *= Math.max(0.4, Number(defenseMultiplier(targetOwnerBefore, targetNode)) || 1);
+    var defMult = garrisonDefenseMultiplier({
+        node: targetNode,
+        tuneDef: tune.def,
+        typeDef: nodeTypeOf(targetNode).def,
+        levelDefMult: nodeLevelDefMult(targetNode),
+        turretCaptureResist: turretCaptureResist,
+        defenseBonus: defenseBonus,
+        extraMultiplier: defenseMultiplier(targetOwnerBefore, targetNode),
+    });
 
-    var atk = (Number(fleet.count) || 0) * Math.max(0.4, Number(attackMultiplier(fleet.owner, targetNode)) || 1);
-    var def = (Number(targetNode.units) || 0) * defMult;
+    var atkMult = Math.max(0.4, Number(attackMultiplier(fleet.owner, targetNode)) || 1);
+    var arrivingShips = Math.max(0, Math.floor(Number(fleet.count) || 0));
+    var garrisonShips = Math.max(0, Math.floor(Number(targetNode.units) || 0));
+    // Strength is what decides the fight; ships are what the board holds. Keeping the
+    // two separate means multipliers can never mint or delete ships (see below).
+    var atk = arrivingShips * atkMult;
+    var def = garrisonShips * defMult;
     var color = players[fleet.owner] ? players[fleet.owner].color : '#fff';
     var captured = atk > def;
     var impactDir = fleetTravelDirection(fleet, targetNode, params.nodes);
@@ -449,8 +463,14 @@ export function resolveCombatOutcome(params) {
     var audio = [];
 
     if (captured) {
+        // Breaking the garrison costs `def / atkMult` attacker ships, so an attack
+        // bonus makes the push cheaper instead of minting ships on arrival. Without
+        // the division a +60% dominance bonus would land 80 ships from a 50-ship
+        // fleet on an empty world.
+        var survivors = arrivingShips - def / atkMult;
         targetNode.owner = fleet.owner;
-        targetNode.units = Math.max(1, Math.floor(atk - def));
+        targetNode.units = Math.min(arrivingShips, Math.max(1, Math.floor(survivors)));
+        targetNode.combatAcc = 0;
         targetNode.defense = false;
         clearNodeUpgradeState(targetNode);
         targetNode.assimilationProgress = 0;
@@ -490,7 +510,19 @@ export function resolveCombatOutcome(params) {
             audio.push('combat');
         }
     } else {
-        targetNode.units = Math.max(0, (def - atk) / defMult);
+        // Garrisons stay whole numbers: the number the player reads off the map is
+        // exactly the number the next attack has to beat. The sub-ship remainder is
+        // carried on the node (like prodAcc) so a fleet trickling in over several
+        // waves does the same total damage as the same fleet landing as one block.
+        var damage = atk / defMult;
+        // The carried remainder is by definition less than one ship. Guarding the read
+        // keeps a stale or hand-edited value from turning into free damage.
+        var carried = Number(targetNode.combatAcc);
+        if (!(carried >= 0 && carried < 1)) carried = 0;
+        var acc = carried + damage;
+        var killed = Math.min(garrisonShips, Math.floor(acc));
+        targetNode.combatAcc = acc - killed;
+        targetNode.units = garrisonShips - killed;
         if (humanInvolved) audio.push('combat');
     }
 
@@ -560,7 +592,7 @@ export function resolveFleetArrivals(params) {
             targetNode.units = friendlyArrival.targetUnits;
             if (sourceNode && sourceNode.owner === fleet.owner) sourceNode.units = friendlyArrival.sourceUnits;
             if (friendlyArrival.lost > 0 && fleet.owner === humanIndex) {
-                toasts.push('Takviye taski: hedef doluydu. Fazla birlik once kaynaga dondu, kalan fazlalik dagildi.');
+                toasts.push('Takviye taştı: hedef doluydu. Fazla birlik önce kaynağa döndü, kalanı dağıldı.');
             }
         } else {
             var combatResult = resolveCombatOutcome({

@@ -26,8 +26,8 @@ export function buildHudAdvisorCard(opts) {
     }
 
     if (opts.primaryObjectiveLabel) {
-        var objectiveBody = (opts.primaryObjectiveProgress ? (opts.primaryObjectiveLabel + ' | ' + opts.primaryObjectiveProgress) : opts.primaryObjectiveLabel);
-        if (opts.primaryObjectiveCoach) objectiveBody += ' | ' + opts.primaryObjectiveCoach;
+        var objectiveBody = (opts.primaryObjectiveProgress ? (opts.primaryObjectiveLabel + ' · ' + opts.primaryObjectiveProgress) : opts.primaryObjectiveLabel);
+        if (opts.primaryObjectiveCoach) objectiveBody += ' · ' + opts.primaryObjectiveCoach;
         return makeCard('objective', opts.primaryObjectiveTitle || 'Görev', objectiveBody);
     }
 

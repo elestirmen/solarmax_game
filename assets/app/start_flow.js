@@ -1,26 +1,39 @@
 import { normalizeCustomMapConfig } from '../sim/custom_map.js';
-import { campaignMechanicsPreset } from '../sim/mechanics.js';
+import { campaignMechanicsPreset, getMechanicsConfig, normalizeMechanicsPreset } from '../sim/mechanics.js';
 
+/**
+ * Resolve a free match from the menu.
+ *
+ * The mechanics tier is the one dial that decides how much game is switched on, and
+ * everything else follows from it: a tier without doctrines cannot be handed a doctrine,
+ * a tier without anomalies must not be given map features. Deriving those from the tier
+ * (instead of from a separate "primitive" flag) is what keeps the menu's promise and the
+ * match that starts in agreement.
+ */
 export function buildSkirmishStartConfig(skirmish, options) {
     skirmish = skirmish && typeof skirmish === 'object' ? skirmish : {};
     options = options && typeof options === 'object' ? options : {};
-    var primitive = options.primitive === true;
+    var preset = normalizeMechanicsPreset(options.primitive === true ? 'primitive' : (skirmish.mechanicsPreset || 'primitive'));
+    var mechanics = getMechanicsConfig(preset);
+    var anomalies = preset !== 'primitive';
+    var fogEnabled = anomalies && !!skirmish.fogEnabled;
     return {
         seed: skirmish.seed,
         nodeCount: skirmish.nodeCount,
         difficulty: skirmish.difficulty,
-        fogEnabled: primitive ? false : !!skirmish.fogEnabled,
+        fogEnabled: fogEnabled,
+        mechanicsPreset: preset,
         customMapConfig: null,
         initOptions: {
-            fogEnabled: primitive ? false : !!skirmish.fogEnabled,
-            rulesMode: primitive ? 'classic' : skirmish.rulesMode,
-            mechanicsPreset: primitive ? 'primitive' : 'advanced',
-            mapFeature: primitive ? 'none' : 'auto',
-            mapMutator: primitive ? 'none' : 'auto',
-            playlist: primitive ? 'standard' : skirmish.playlist,
-            doctrineId: primitive ? 'none' : skirmish.doctrineId,
+            fogEnabled: fogEnabled,
+            rulesMode: mechanics.upgrades ? (skirmish.rulesMode || 'advanced') : 'classic',
+            mechanicsPreset: preset,
+            mapFeature: anomalies ? 'auto' : 'none',
+            mapMutator: mechanics.strategicPulse ? 'auto' : 'none',
+            playlist: mechanics.doctrines ? (skirmish.playlist || 'standard') : 'standard',
+            doctrineId: mechanics.doctrines ? skirmish.doctrineId : 'none',
             encounters: [],
-            forcePlaylistOverrides: primitive ? false : skirmish.playlist !== 'standard',
+            forcePlaylistOverrides: mechanics.doctrines && skirmish.playlist !== 'standard',
         },
     };
 }

@@ -1,3 +1,5 @@
+import { SIM_CONSTANTS } from './shared_config.js';
+
 export function stepNodeEconomy(params) {
     params = params || {};
 
@@ -54,12 +56,14 @@ export function stepNodeEconomy(params) {
     var assimGarrisonFloor = Number(constants.assimGarrisonFloor);
     var assimLevelResist = Number(constants.assimLevelResist);
 
-    if (!Number.isFinite(baseProd)) baseProd = 0.12;
+    // Fallbacks mirror SIM_CONSTANTS so a caller that forgets a field still runs the
+    // shipped balance instead of a stale copy of it.
+    if (!Number.isFinite(baseProd)) baseProd = SIM_CONSTANTS.BASE_PROD;
     if (!Number.isFinite(nodeRadiusMax) || nodeRadiusMax <= 0) nodeRadiusMax = 36;
-    if (!Number.isFinite(isolatedProdPenalty)) isolatedProdPenalty = 0.6;
-    if (!Number.isFinite(capSoftStart)) capSoftStart = 0.82;
-    if (!Number.isFinite(capSoftFloor)) capSoftFloor = 0.12;
-    if (!Number.isFinite(ddaMaxBoost)) ddaMaxBoost = 0.5;
+    if (!Number.isFinite(isolatedProdPenalty)) isolatedProdPenalty = SIM_CONSTANTS.ISOLATED_PROD_PENALTY;
+    if (!Number.isFinite(capSoftStart)) capSoftStart = SIM_CONSTANTS.CAP_SOFT_START;
+    if (!Number.isFinite(capSoftFloor)) capSoftFloor = SIM_CONSTANTS.CAP_SOFT_FLOOR;
+    if (!Number.isFinite(ddaMaxBoost)) ddaMaxBoost = SIM_CONSTANTS.DDA_MAX_BOOST;
     if (!Number.isFinite(defenseProdPenalty)) defenseProdPenalty = 1;
     if (!Number.isFinite(strategicPulseProd)) strategicPulseProd = 1;
     if (!Number.isFinite(strategicPulseAssim)) strategicPulseAssim = 1;

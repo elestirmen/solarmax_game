@@ -143,8 +143,8 @@ export var DOMINANCE_ATTACK_MAX_BONUS = 0.6;
 
 // Late-game closeout aid: a player who controls most of the map gets a
 // gradually rising attack bonus, so mopping up the last well-defended
-// holdouts does not stall out. Pure and deterministic Ã¢â‚¬â€ it reads only node
-// ownership Ã¢â‚¬â€ so the client prediction and the authoritative server always
+// holdouts does not stall out. Pure and deterministic — it reads only node
+// ownership — so the client prediction and the authoritative server always
 // compute the same multiplier. Returns a value >= 1.
 export function dominanceAttackMultiplier(nodes, owner) {
     if (!Array.isArray(nodes) || !(owner >= 0)) return 1;

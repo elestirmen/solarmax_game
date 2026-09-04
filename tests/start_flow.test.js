@@ -19,6 +19,7 @@ test('buildSkirmishStartConfig preserves menu skirmish tuning in init payload', 
         difficulty: 'hard',
         fogEnabled: true,
         rulesMode: 'classic',
+        mechanicsPreset: 'advanced',
         playlist: 'frontier',
         doctrineId: 'siege',
     });
@@ -27,6 +28,35 @@ test('buildSkirmishStartConfig preserves menu skirmish tuning in init payload', 
     assert.equal(config.nodeCount, 20);
     assert.equal(config.initOptions.rulesMode, 'classic');
     assert.equal(config.initOptions.forcePlaylistOverrides, true);
+});
+
+test('the mechanics tier gates the systems a free match is allowed to start with', function () {
+    var loaded = {
+        seed: '42',
+        nodeCount: 20,
+        difficulty: 'normal',
+        fogEnabled: true,
+        rulesMode: 'advanced',
+        playlist: 'chaos',
+        doctrineId: 'siege',
+    };
+
+    // Logistics has flow but no upgrades, doctrines or global events, so the menu's
+    // doctrine and playlist picks must not leak into the match.
+    var logistics = buildSkirmishStartConfig(Object.assign({}, loaded, { mechanicsPreset: 'logistics' }));
+    assert.equal(logistics.initOptions.mechanicsPreset, 'logistics');
+    assert.equal(logistics.initOptions.rulesMode, 'classic');
+    assert.equal(logistics.initOptions.doctrineId, 'none');
+    assert.equal(logistics.initOptions.playlist, 'standard');
+    assert.equal(logistics.initOptions.mapMutator, 'none');
+    assert.equal(logistics.initOptions.mapFeature, 'auto');
+
+    // Full spectrum takes every menu pick as given.
+    var advanced = buildSkirmishStartConfig(Object.assign({}, loaded, { mechanicsPreset: 'advanced' }));
+    assert.equal(advanced.initOptions.doctrineId, 'siege');
+    assert.equal(advanced.initOptions.playlist, 'chaos');
+    assert.equal(advanced.initOptions.mapMutator, 'auto');
+    assert.equal(advanced.initOptions.fogEnabled, true);
 });
 
 test('quick skirmish starts as a primitive conquest match', function () {

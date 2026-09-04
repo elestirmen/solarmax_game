@@ -49,7 +49,7 @@ test('quick match opens as a primitive conquest game', async ({ page }) => {
     await page.goto('/');
 
     await expect(page.locator('#startBtn')).toHaveText('Temel Fetih Başlat');
-    await expect(page.locator('#menuQuickStatus')).toContainText('Yalın başlangıç');
+    await expect(page.locator('#menuQuickStatus')).toContainText('Temel Fetih');
     await page.click('#startBtn');
 
     await expect(page.locator('#hud')).toBeVisible();

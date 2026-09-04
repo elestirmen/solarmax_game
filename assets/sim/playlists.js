@@ -20,12 +20,12 @@ export var PLAYLIST_DEFS = {
     standard: {
         id: 'standard',
         label: 'Standart',
-        blurb: 'Varsayilan kurallar. Harita tohumu oyunun kimligini belirler.',
+        blurb: 'Varsayılan kurallar. Harita tohumu oyunun kimliğini belirler.',
     },
     chaos: {
         id: 'chaos',
-        label: 'Chaos',
-        blurb: 'Anomali, mutator ve kusatma hedefleri hizli tempoda ust uste biner.',
+        label: 'Kaos',
+        blurb: 'Anomali, mutatör ve kuşatma hedefleri hızlı tempoda üst üste biner.',
         aiCount: 3,
         mapFeature: 'auto',
         mapMutator: 'auto',
@@ -36,7 +36,7 @@ export var PLAYLIST_DEFS = {
     ironman: {
         id: 'ironman',
         label: 'Ironman',
-        blurb: 'Daha sert ekonomi ve karanlik alanlarla hata payi azalir.',
+        blurb: 'Daha sert ekonomi ve karanlık alanlarla hata payı azalır.',
         difficulty: 'hard',
         fogEnabled: true,
         mapMutator: 'blackout',
@@ -45,8 +45,8 @@ export var PLAYLIST_DEFS = {
     },
     puzzle: {
         id: 'puzzle',
-        label: 'Puzzle Sector',
-        blurb: 'Daha kucuk, daha belirgin ve objective odakli sektorler.',
+        label: 'Bulmaca Sektörü',
+        blurb: 'Daha küçük, daha belirgin ve hedef odaklı sektörler.',
         nodeCount: 12,
         aiCount: 1,
         difficulty: 'normal',
@@ -59,7 +59,7 @@ export var PLAYLIST_DEFS = {
     zen: {
         id: 'zen',
         label: 'Zen',
-        blurb: 'Daha yavas acilis, daha okunur ritim. Sistemi ogrenmek icin uygun.',
+        blurb: 'Daha yavaş açılış, daha okunur ritim. Sistemi öğrenmek için uygun.',
         nodeCount: 14,
         aiCount: 1,
         difficulty: 'easy',
@@ -72,7 +72,7 @@ export var PLAYLIST_DEFS = {
     frontier: {
         id: 'frontier',
         label: 'Frontier',
-        blurb: 'Daha buyuk sektor, daha cok baski noktasi ve iki objective birden.',
+        blurb: 'Daha büyük sektör, daha çok baskı noktası ve iki hedef birden.',
         nodeCount: 20,
         aiCount: 3,
         difficulty: 'hard',

@@ -35,7 +35,7 @@
 
 **Single codebase, two runtimes:** Simulation logic lives under `assets/sim/`; the Canvas 2D client (`game.js`) and the multiplayer host (`server.js`) share the same rules, advancing a **deterministic tick** and checking **state hashes** for sync. Campaign, daily challenge, playlist presets, mutators, and PvE encounters (e.g. **Mega Turret**, **Relay Core**) are layers on top of that core.
 
-**Recent updates (e.g. Mar 2026):** Periodic **solar flares** on the map — warning phase, then effects on **deep-space fleets** and **planet garrisons**, driven deterministically from the match seed (`assets/sim/solar_flare.js`, tuning in `shared_config.js`). On mobile, **Visual Viewport** alignment (`stellar_conquest.html` and `game.js` CSS vars `--app-vvh` / `--app-vvw`), a tuning control, and layout tweaks for campaign / power HUD.
+**Recent updates (e.g. Mar 2026):** Periodic **solar flares** on the map — warning phase, then damage to **deep-space fleets** only, driven deterministically from the match seed (`assets/sim/solar_flare.js`, tuning in `shared_config.js`). On mobile, **Visual Viewport** alignment (`stellar_conquest.html` and `game.js` CSS vars `--app-vvh` / `--app-vvw`), a tuning control, and layout tweaks for campaign / power HUD.
 
 ---
 
@@ -79,13 +79,14 @@ docker compose up -d --build
 
 | Mechanic | Description |
 |--------|-------------|
-| **Planet capture** | Capture through fleet dispatch and attrition-based combat |
+| **Planet capture** | Fleet dispatch and attrition combat. Resolved in whole ships: the number on screen is the number an attack has to beat |
+| **System tiers** | The tier picked in the menu (Basic Conquest → Full Spectrum) decides which mechanics are switched on |
 | **Flow links** | Set routes once and let your economy reinforce automatically |
 | **Parked fleets** | Hold deep space, stage attacks, and decay when unsupported |
 | **Territory and assimilation** | Borders grow from fully assimilated worlds |
 | **Defense systems** | Defensive nodes, turrets, and defense fields |
 | **Map features** | Wormholes, gravity wells, and barrier gates |
-| **Solar flare** | Timed map event: warning window, then impact on fleets in space and garrison on planets; seed-deterministic |
+| **Solar flare** | Timed map event: warning window, then damage to **fleets in transit** (planet garrisons are untouched); seed-deterministic |
 
 ### Game Modes
 
@@ -249,7 +250,7 @@ The project uses the built-in Node.js test runner (no extra test framework).
 npm test
 ```
 
-`tests/` covers shared simulation modules plus selected UI helpers (campaign levels, playlists, mission scripts, solar flare rules, online session, etc.). Current unit test count: **208** (see the `tests` line in `npm test` output).
+`tests/` covers shared simulation modules plus selected UI helpers (campaign levels, playlists, mission scripts, solar flare rules, online session, etc.). Current unit test count: **283** (see the `tests` line in `npm test` output).
 
 **E2E (Playwright):**
 

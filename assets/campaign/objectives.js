@@ -191,5 +191,5 @@ export function describeCampaignObjectives(level, opts) {
     return objectives.map(function (objective) {
         var prefix = objective.optional ? 'Bonus' : 'Görev';
         return prefix + ': ' + formatObjectiveLabel(objective, tickRate);
-    }).join(' | ');
+    }).join(' · ');
 }

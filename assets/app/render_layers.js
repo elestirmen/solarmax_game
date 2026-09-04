@@ -350,6 +350,36 @@ function drawFleetsAndBeamsLayer(ctx, game, tick, inputState, hw, hh, constants,
     }
 }
 
+// Recolour a planet's surface in the owner's hue while keeping the baked lighting and
+// terrain. The 'color' blend takes hue and saturation from the fill and luminance from
+// what is already on the canvas, so one cheap fill per planet does what re-baking a
+// texture per owner would otherwise cost. Older engines that do not implement the blend
+// fall back to a translucent tint instead of flooding the disc with flat colour.
+var nodeHueBlendMode = null;
+
+function paintNodeOwnerHue(ctx, x, y, radius, color, strength) {
+    if (!color || color.indexOf('#') !== 0 || radius <= 0) return;
+    if (nodeHueBlendMode === null) {
+        var previous = ctx.globalCompositeOperation;
+        ctx.globalCompositeOperation = 'color';
+        nodeHueBlendMode = ctx.globalCompositeOperation === 'color' ? 'color' : '';
+        ctx.globalCompositeOperation = previous;
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, radius - 1.1, 0, Math.PI * 2);
+    ctx.clip();
+    if (nodeHueBlendMode) {
+        ctx.globalCompositeOperation = 'color';
+        ctx.globalAlpha = strength;
+    } else {
+        ctx.globalAlpha = strength * 0.4;
+    }
+    ctx.fillStyle = color;
+    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    ctx.restore();
+}
+
 function drawNodesLayer(ctx, game, tick, constants, helpers) {
     var getNodeVisualScale = typeof helpers.getNodeVisualScale === 'function' ? helpers.getNodeVisualScale : function () { return 1; };
     var getNodeUpgradeProgress = typeof helpers.getNodeUpgradeProgress === 'function' ? helpers.getNodeUpgradeProgress : function () { return 0; };
@@ -606,10 +636,13 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
         } else {
             var bodyCol = col;
             if ((vis || n.owner === game.human) && col.indexOf('#') === 0) {
-                var typeBlend = 0.22;
-                if (n.owner === -1) typeBlend = 0.66;
-                else if (n.kind === 'core') typeBlend = 0.13;
-                else typeBlend = 0.49;
+                // Ownership first: the fill barely leaves the owner's hue, so a player
+                // never has to work out whether a planet is theirs. Class identity rides
+                // on the rim and glyph below instead of on the fill.
+                var blendPolicy = constants.nodeBodyTypeBlend || { core: 0.08, owned: 0.16, neutral: 0.14 };
+                var typeBlend = n.owner === -1
+                    ? blendPolicy.neutral
+                    : (n.kind === 'core' ? blendPolicy.core : blendPolicy.owned);
                 bodyCol = helpers.blendHex(col, tdef.color, typeBlend);
             }
             var planetCanvas = helpers.getPlanetTexture(n.id, n.radius, n.kind);
@@ -620,14 +653,18 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             }
             ctx.drawImage(planetCanvas, n.pos.x - drawRadius, n.pos.y - drawRadius, drawRadius * 2, drawRadius * 2);
             ctx.restore();
+            if (n.owner === -1) paintNodeOwnerHue(ctx, n.pos.x, n.pos.y, drawRadius, constants.colNeutral || '#868d99', 0.85);
             if ((vis || n.owner === game.human || n.owner === -1) && typeof helpers.drawPlanetTypeVisual === 'function') {
                 helpers.drawPlanetTypeVisual(ctx, drawNode, tdef, bodyCol, tick);
             }
             if (n.kind !== 'turret' && (vis || n.owner === game.human || n.owner === -1)) {
-                var rimAlpha = n.owner === -1 ? 0.5 : (n.kind === 'core' ? 0.24 : 0.58);
-                var rimW = n.kind === 'core' ? 1.2 : 2.45;
+                // Class rim sits just inside the owner ring (drawn a few lines down at
+                // drawRadius + 2) so the two never fight for the same edge. Neutrals have
+                // no owner ring, so their class rim is the brighter of the two.
+                var rimAlpha = n.owner === -1 ? 0.5 : (n.kind === 'core' ? 0.2 : 0.42);
+                var rimW = n.kind === 'core' ? 1.1 : 1.7;
                 ctx.beginPath();
-                ctx.arc(n.pos.x, n.pos.y, drawRadius + 1.38, 0, Math.PI * 2);
+                ctx.arc(n.pos.x, n.pos.y, drawRadius - 0.4, 0, Math.PI * 2);
                 ctx.strokeStyle = helpers.hexToRgba(tdef.color, rimAlpha);
                 ctx.lineWidth = rimW;
                 ctx.stroke();
@@ -665,22 +702,32 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
                 ctx.restore();
             }
             if ((vis || n.owner === game.human) && n.owner >= 0 && col && col.indexOf('#') === 0) {
+                paintNodeOwnerHue(ctx, n.pos.x, n.pos.y, drawRadius, col, 0.9);
                 ctx.save();
                 ctx.beginPath();
                 ctx.arc(n.pos.x, n.pos.y, drawRadius, 0, Math.PI * 2);
                 ctx.clip();
                 var tint = ctx.createRadialGradient(n.pos.x - drawRadius * 0.3, n.pos.y - drawRadius * 0.3, 0, n.pos.x, n.pos.y, drawRadius * 1.2);
-                tint.addColorStop(0, helpers.hexToRgba(col, 0.35));
-                tint.addColorStop(0.7, helpers.hexToRgba(col, 0.15));
+                tint.addColorStop(0, helpers.hexToRgba(col, 0.18));
+                tint.addColorStop(0.7, helpers.hexToRgba(col, 0.07));
                 tint.addColorStop(1, 'rgba(0,0,0,0)');
                 ctx.fillStyle = tint;
                 ctx.fillRect(n.pos.x - drawRadius, n.pos.y - drawRadius, drawRadius * 2, drawRadius * 2);
                 ctx.restore();
+                // The owner ring is the loudest thing on the planet on purpose - at map
+                // zoom it is often the only part of a small world a player can resolve.
                 ctx.beginPath();
-                ctx.arc(n.pos.x, n.pos.y, drawRadius + 2, 0, Math.PI * 2);
-                ctx.strokeStyle = helpers.hexToRgba(col, 0.9);
-                ctx.lineWidth = 2.5;
+                ctx.arc(n.pos.x, n.pos.y, drawRadius + 2.2, 0, Math.PI * 2);
+                ctx.strokeStyle = helpers.hexToRgba(col, 0.96);
+                ctx.lineWidth = 2.9;
                 ctx.stroke();
+                if (n.owner === game.human) {
+                    ctx.beginPath();
+                    ctx.arc(n.pos.x, n.pos.y, drawRadius + 4.6, 0, Math.PI * 2);
+                    ctx.strokeStyle = helpers.hexToRgba(col, 0.3);
+                    ctx.lineWidth = 1.2;
+                    ctx.stroke();
+                }
             }
         }
 
@@ -1013,77 +1060,113 @@ export function renderMinimapLayer(opts) {
     var viewportCanvas = opts.viewportCanvas;
     var constants = opts.constants || {};
     var helpers = opts.helpers || {};
-    var blendHex = typeof helpers.blendHex === 'function' ? helpers.blendHex : function (a) { return a; };
-    var nodeTypeOf = typeof helpers.nodeTypeOf === 'function' ? helpers.nodeTypeOf : function (n) {
-        var defs = constants.nodeTypeDefs;
-        return defs && n && defs[n.kind] ? defs[n.kind] : { color: '#8db3ff' };
-    };
+    var toRgba = typeof helpers.hexToRgba === 'function' ? helpers.hexToRgba : function (hex) { return hex; };
+    var neutralCol = constants.colNeutral || '#868d99';
     if (!canvas || !ctx || !(game.state === 'playing' || game.state === 'paused') || game.nodes.length <= 0) {
         if (wrapper) wrapper.classList.add('hidden');
         return;
     }
 
-    if (canvas.width !== 140) canvas.width = 140;
-    if (canvas.height !== 90) canvas.height = 90;
-    var scale = Math.min(canvas.width / constants.mapWidth, canvas.height / constants.mapHeight);
-    var mx = (canvas.width - constants.mapWidth * scale) * 0.5;
-    var my = (canvas.height - constants.mapHeight * scale) * 0.5;
-    ctx.fillStyle = 'rgba(8,12,21,0.95)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.save();
-    ctx.translate(mx, my);
-    ctx.scale(scale, scale);
+    // Unhide before measuring: a display:none wrapper reports a zero-width canvas, which
+    // would size the backing store from the fallback for one frame and then resize.
+    if (wrapper) wrapper.classList.remove('hidden');
+
+    // Render at device resolution so the dots and the viewport frame stay crisp.
+    var cssWidth = canvas.clientWidth || 202;
+    var cssHeight = canvas.clientHeight || 126;
+    var dpr = Math.min(2, Math.max(1, (typeof window !== 'undefined' && window.devicePixelRatio) || 1));
+    var pixelWidth = Math.round(cssWidth * dpr);
+    var pixelHeight = Math.round(cssHeight * dpr);
+    if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+    if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
+
+    var pad = 5 * dpr;
+    var mapW = Math.max(1, Number(constants.mapWidth) || 1600);
+    var mapH = Math.max(1, Number(constants.mapHeight) || 1000);
+    var scale = Math.min((pixelWidth - pad * 2) / mapW, (pixelHeight - pad * 2) / mapH);
+    var mx = (pixelWidth - mapW * scale) * 0.5;
+    var my = (pixelHeight - mapH * scale) * 0.5;
+    function px(x) { return mx + x * scale; }
+    function py(y) { return my + y * scale; }
+
+    ctx.clearRect(0, 0, pixelWidth, pixelHeight);
+    ctx.fillStyle = 'rgba(7,11,20,0.9)';
+    ctx.fillRect(0, 0, pixelWidth, pixelHeight);
+
+    // In-transit fleets first, so garrison dots always draw on top of them.
+    for (var fi = 0; fi < game.fleets.length; fi++) {
+        var fleet = game.fleets[fi];
+        if (!fleet || !fleet.active || (fleet.count || 0) <= 0) continue;
+        if (game.tune.fogEnabled && fleet.owner !== game.human && typeof helpers.fleetVis === 'function' && !helpers.fleetVis(fleet, game.human, game.nodes)) continue;
+        var fleetCol = game.players[fleet.owner] ? game.players[fleet.owner].color : neutralCol;
+        ctx.fillStyle = toRgba(fleetCol, 0.75);
+        ctx.beginPath();
+        ctx.arc(px(fleet.x || 0), py(fleet.y || 0), 1.1 * dpr, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
     for (var i = 0; i < game.nodes.length; i++) {
         var mn = game.nodes[i];
-        var tdef = nodeTypeOf(mn);
-        var baseCol = mn.owner < 0 ? '#5a6272' : (game.players[mn.owner] ? game.players[mn.owner].color : '#888');
-        var mcol = baseCol;
-        var tc = tdef && tdef.color ? tdef.color : '#8db3ff';
-        if (mn.owner >= 0) {
-            mcol = blendHex(baseCol, tc, mn.kind === 'core' ? 0.15 : 0.42);
-        } else {
-            mcol = blendHex(baseCol, tc, 0.38);
+        var visible = !game.tune.fogEnabled || !!game.fog.vis[game.human][mn.id] || mn.owner === game.human;
+        // Owner colour only. Tinting these toward the node-class hue would make the one
+        // question a minimap exists to answer - who holds what - unanswerable.
+        var mcol = mn.owner < 0 ? neutralCol : (game.players[mn.owner] ? game.players[mn.owner].color : neutralCol);
+        if (!visible) {
+            var seen = game.fog.ls[game.human][mn.id];
+            mcol = seen && seen.tick >= 0 && seen.owner >= 0 && game.players[seen.owner]
+                ? game.players[seen.owner].color
+                : (constants.colFog || '#2e3340');
         }
-        var mr = 8.6;
-        if (mn.kind === 'turret') mr = 11.4;
-        else if (mn.kind === 'gate') mr = 10.8;
-        else if (mn.kind === 'forge' || mn.kind === 'bulwark' || mn.kind === 'nexus') mr = 10;
-        else if (mn.kind === 'relay') mr = 9.4;
-        // Soft glow so dots read clearly against the dark minimap.
-        ctx.globalAlpha = mn.owner >= 0 ? 0.45 : 0.28;
-        ctx.fillStyle = mcol;
-        ctx.beginPath();
-        ctx.arc(mn.pos.x, mn.pos.y, mr * 2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
-        // Solid core dot.
-        ctx.fillStyle = mcol;
-        ctx.beginPath();
-        ctx.arc(mn.pos.x, mn.pos.y, mr, 0, Math.PI * 2);
-        ctx.fill();
-        // Bright highlight for legibility.
-        ctx.fillStyle = 'rgba(255,255,255,0.6)';
-        ctx.beginPath();
-        ctx.arc(mn.pos.x, mn.pos.y, mr * 0.38, 0, Math.PI * 2);
-        ctx.fill();
-        // Ring the player's own holdings so their front is obvious.
-        if (mn.owner === game.human) {
-            ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-            ctx.lineWidth = 2.4;
+
+        // Radius reads garrison size, in screen pixels with a floor so the smallest
+        // world is still a legible dot rather than the sub-pixel speck it used to be.
+        var strength = visible ? Math.max(0, Math.floor(Number(mn.units) || 0)) : 0;
+        var r = (2.4 + Math.min(2.6, Math.sqrt(strength) * 0.42)) * dpr;
+        var cx = px(mn.pos.x);
+        var cy = py(mn.pos.y);
+
+        if (mn.owner >= 0) {
+            ctx.fillStyle = toRgba(mcol, visible ? 0.22 : 0.12);
             ctx.beginPath();
-            ctx.arc(mn.pos.x, mn.pos.y, mr + 2.4, 0, Math.PI * 2);
+            ctx.arc(cx, cy, r + 2.2 * dpr, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.fillStyle = mn.owner < 0 ? toRgba(mcol, 0.6) : mcol;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+
+        if (mn.owner === game.human) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+            ctx.lineWidth = 1.1 * dpr;
+            ctx.beginPath();
+            ctx.arc(cx, cy, r + 1.9 * dpr, 0, Math.PI * 2);
+            ctx.stroke();
+        }
+        // Objective-grade worlds (gates, encounters) get a marker so the minimap can be
+        // used to navigate to them.
+        if (visible && (mn.gate || mn.encounterType)) {
+            ctx.strokeStyle = 'rgba(255,214,150,0.85)';
+            ctx.lineWidth = 1 * dpr;
+            ctx.beginPath();
+            ctx.moveTo(cx - r - 2.4 * dpr, cy);
+            ctx.lineTo(cx + r + 2.4 * dpr, cy);
+            ctx.moveTo(cx, cy - r - 2.4 * dpr);
+            ctx.lineTo(cx, cy + r + 2.4 * dpr);
             ctx.stroke();
         }
     }
-    ctx.restore();
 
     var vw = (viewportCanvas.width / game.cam.zoom) * scale;
     var vh = (viewportCanvas.height / game.cam.zoom) * scale;
-    var vx = mx + game.cam.x * scale - vw * 0.5;
-    var vy = my + game.cam.y * scale - vh * 0.5;
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-    ctx.strokeRect(vx, vy, vw, vh);
-    if (wrapper) wrapper.classList.remove('hidden');
+    var vx = px(game.cam.x) - vw * 0.5;
+    var vy = py(game.cam.y) - vh * 0.5;
+    // Only worth drawing when the camera actually shows less than the whole sector.
+    if (vw < pixelWidth - pad || vh < pixelHeight - pad) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.72)';
+        ctx.lineWidth = 1 * dpr;
+        ctx.strokeRect(Math.round(vx) + 0.5, Math.round(vy) + 0.5, Math.round(vw), Math.round(vh));
+    }
 }
 
 export function renderMarqueeLayer(opts) {

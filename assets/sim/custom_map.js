@@ -124,6 +124,7 @@ export function normalizeCustomMapConfig(rawMap) {
             owner: owner,
             units: clamp(rawNode.units, 0, MAX_UNITS),
             prodAcc: clamp(rawNode.prodAcc, 0, 10),
+            combatAcc: 0,
             level: clamp(rawNode.level, 1, 3),
             kind: normalizeNodeKind(rawNode.kind),
             defense: rawNode.defense === true,

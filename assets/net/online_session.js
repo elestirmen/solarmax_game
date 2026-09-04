@@ -202,5 +202,5 @@ export function buildOnlineMatchStatusText(payload, localPlayerIndex, authoritat
     if (payload.mode === 'daily' && payload.challengeTitle) parts.push('Günlük: ' + payload.challengeTitle);
     if (payload.mode === 'custom' && payload.customMapName) parts.push('Custom: ' + payload.customMapName);
     if (authoritativeEnabled) parts.push('Sunucu state senkronu bekleniyor...');
-    return parts.join(' | ');
+    return parts.join(' · ');
 }

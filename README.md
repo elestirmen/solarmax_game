@@ -35,7 +35,7 @@
 
 **Tek kod tabanı, çift çalışma şekli:** Simülasyon mantığı `assets/sim/` altında toplanır; istemci (Canvas 2D + `game.js`) ve çok oyunculu sunucu (`server.js`) aynı kuralları kullanarak **deterministik tick** ve **durum hash** ile senkron kalır. Kampanya, günlük meydan okuma, playlist önayarları, mutatörler ve PvE karşılaşmaları (ör. **Mega Turret**, **Relay Core**) bu çekirdeğin üzerinde modül olarak çalışır.
 
-**Son güncellemeler (ör. Mart 2026):** Haritada dönemsel **güneş patlaması** — önceden uyarı, ardından **uzaydaki filoları** ve **gezegen garnizonlarını** etkileyen deterministik olay (`assets/sim/solar_flare.js`, yapılandırma `shared_config.js`). Mobil tarafta **Visual Viewport** ile gerçek görünür alan (`stellar_conquest.html` + `game.js` içi `--app-vvh` / `--app-vvw`), ince ayar paneli ve kampanya / güç düzenine dokunan dokunuş iyileştirmeleri.
+**Son güncellemeler (ör. Mart 2026):** Haritada dönemsel **güneş patlaması** — önceden uyarı, ardından **uzaydaki filoları** vuran deterministik olay; gezegen garnizonlarına dokunmaz (`assets/sim/solar_flare.js`, yapılandırma `shared_config.js`). Mobil tarafta **Visual Viewport** ile gerçek görünür alan (`stellar_conquest.html` + `game.js` içi `--app-vvh` / `--app-vvw`), ince ayar paneli ve kampanya / güç düzenine dokunan dokunuş iyileştirmeleri.
 
 ---
 
@@ -79,13 +79,14 @@ docker compose up -d --build
 
 | Mekanik | Açıklama |
 |--------|----------|
-| **Gezegen ele geçirme** | Filo gönderimi ve yıpranma savaşı ile |
+| **Gezegen ele geçirme** | Filo gönderimi ve yıpranma savaşı. Çarpışma tam sayı gemiyle çözülür: ekrandaki sayı, saldırının aşması gereken sayıdır |
+| **Sistem katmanları** | Menüden seçilen katman (Temel Fetih → Tam Spektrum) hangi mekaniklerin açık olduğunu belirler |
 | **Flow bağlantıları** | Bir kez öncelik ver, ekonomini otomatik çalıştır |
 | **Park filoları** | Bölgeyi tutar, tedarik kesilince zayıflar |
 | **Bölge & asimilasyon** | Dünyaların etrafında organik büyüyen sınırlar |
 | **Savunma** | Güçlendirilmiş düğümlerde taretler ve savunma alanları |
 | **Harita öğeleri** | Solucan delikleri, yerçekimi kuyuları, bariyer kapıları |
-| **Güneş patlaması** | Maç içi aralıklı olay: uyarı süresi, uzay filolarına ve gezegen garnizonlarına etki; seed ile deterministik |
+| **Güneş patlaması** | Maç içi aralıklı olay: uyarı süresi, ardından **yoldaki filolara** hasar (gezegen garnizonları etkilenmez); seed ile deterministik |
 
 ### Oyun Modları
 
@@ -263,7 +264,7 @@ Node.js yerleşik test çalıştırıcısı kullanılır — ek test framework�
 npm test
 ```
 
-`tests/` altında çekirdek simülasyon (filo, bölge, komutlar, hash, kampanya seviyeleri, playlist, misyon script, güneş patlaması, çok oyunculu oturum vb.) ve seçili UI yardımcıları kapsanır. Güncel birim testi sayısı **208** (`npm test` çıktısındaki `tests` satırı).
+`tests/` altında çekirdek simülasyon (filo, bölge, komutlar, hash, kampanya seviyeleri, playlist, misyon script, güneş patlaması, çok oyunculu oturum vb.) ve seçili UI yardımcıları kapsanır. Güncel birim testi sayısı **283** (`npm test` çıktısındaki `tests` satırı).
 
 **E2E (Playwright):**
 

@@ -49,5 +49,5 @@ test('buildPingDisplayText appends SYNC tag while warning window is active', fun
         currentTick: 200,
         syncWarningTick: 100,
         syncWindowTicks: 300,
-    }), 'Ping: 49ms | SYNC');
+    }), 'Ping: 49ms · SYNC');
 });

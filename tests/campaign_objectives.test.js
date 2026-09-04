@@ -77,7 +77,7 @@ test('describeCampaignObjectives includes goal prefixes', function () {
         ],
     }, { tickRate: 30 });
 
-    assert.equal(summary, 'Görev: 4 gezegen kontrol et | Bonus: 600 tickten önce kazan');
+    assert.equal(summary, 'Görev: 4 gezegen kontrol et · Bonus: 600 tickten önce kazan');
 });
 
 test('evaluateCampaignObjectives resolves encounter and survival goals', function () {

@@ -210,6 +210,7 @@ function ensureNodeDefaults(node, index) {
     node.maxUnits = nodeCapacity(node);
     node.units = clamp(Number(node.units) || 0, 0, node.maxUnits);
     node.prodAcc = Number(node.prodAcc) || 0;
+    node.combatAcc = Number(node.combatAcc) || 0;
     node.visionR = SIM_CONSTANTS.VISION_R + node.radius * 2;
     node.selected = false;
     node.assimilationLock = Math.max(0, Math.floor(Number(node.assimilationLock) || 0));

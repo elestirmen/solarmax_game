@@ -80,7 +80,7 @@ export function buildRoomStatusSummary(state, opts) {
 
     var playerCount = Math.max(0, Math.floor(Number(opts.playerCount) || 0));
     var maxPlayers = Math.max(playerCount, Math.floor(Number(state.maxPlayers) || 0));
-    var parts = ['Oda: ' + (state.code || '-----') + ' | ' + playerCount + '/' + maxPlayers + ' oyuncu'];
+    var parts = ['Oda: ' + (state.code || '-----') + ' · ' + playerCount + '/' + maxPlayers + ' oyuncu'];
     var preview = state.preview && typeof state.preview === 'object' ? state.preview : null;
 
     if (preview && preview.mode === 'daily') {
@@ -96,5 +96,5 @@ export function buildRoomStatusSummary(state, opts) {
 
     if (playerCount < 2) parts.push('En az 2 oyuncu gerekli');
     else parts.push(opts.isHost ? 'Oyunu başlatabilirsin' : 'Hostun başlatması bekleniyor...');
-    return parts.join(' | ');
+    return parts.join(' · ');
 }

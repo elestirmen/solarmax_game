@@ -75,6 +75,7 @@ function buildBaseNode(id, x, y, radius, units, rng) {
         owner: -1,
         units: units,
         prodAcc: 0,
+        combatAcc: 0,
         maxUnits: 200,
         visionR: SIM_CONSTANTS.VISION_R + radius * 2,
         selected: false,

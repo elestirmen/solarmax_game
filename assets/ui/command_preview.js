@@ -1,26 +1,24 @@
-import { computeSendCount } from '../sim/dispatch_math.js';
+import { garrisonDefenseStrength } from '../sim/combat_math.js';
+import { computeSendCount, toSendFraction } from '../sim/dispatch_math.js';
 
-function clamp(value, min, max) {
-    return Math.max(min, Math.min(max, value));
-}
-
-function targetDefenseEstimate(target) {
-    target = target && typeof target === 'object' ? target : {};
-    var units = Math.max(0, Math.floor(Number(target.units) || 0));
-    var level = Math.max(1, Math.floor(Number(target.level) || 1));
-    var multiplier = 1 + (level - 1) * 0.08;
-    if (target.defense) multiplier *= 1.22;
-    if (target.kind === 'bulwark') multiplier *= 1.16;
-    if (target.kind === 'turret') multiplier *= 1.42;
-    return Math.max(0, Math.round(units * multiplier));
+/**
+ * Defence the order is actually up against, read from the sim's own formula.
+ * `attackMult` folds in the attacker's doctrine and dominance bonuses so the ratio the
+ * player is shown is the ratio the fight will use.
+ */
+function forecastRatio(sendUnits, target, attackMult, tuneDef) {
+    var defenseUnits = Math.max(0, Math.round(garrisonDefenseStrength({ node: target, tuneDef: tuneDef })));
+    var attackStrength = sendUnits * (Number(attackMult) > 0 ? Number(attackMult) : 1);
+    return {
+        defenseUnits: defenseUnits,
+        ratio: defenseUnits > 0 ? attackStrength / defenseUnits : (sendUnits > 0 ? 3 : 0),
+    };
 }
 
 export function buildDispatchForecast(opts) {
     opts = opts && typeof opts === 'object' ? opts : {};
     var sourceGroups = Array.isArray(opts.sourceGroups) ? opts.sourceGroups : [];
-    var pctRaw = Number(opts.sendPct);
-    var pct = Number.isFinite(pctRaw) ? (pctRaw > 1 ? pctRaw / 100 : pctRaw) : 0.5;
-    pct = clamp(pct, 0.05, 1);
+    var pct = toSendFraction(opts.sendPct);
     var sendUnits = Math.max(0, Math.floor(Number(opts.fleetUnits) || 0));
     for (var i = 0; i < sourceGroups.length; i++) {
         var group = sourceGroups[i] || {};
@@ -50,21 +48,24 @@ export function buildDispatchForecast(opts) {
         return { tone: 'friendly', label: 'TAKVİYE +' + accepted, summary: accepted + ' birlik dost garnizona katılır', sendUnits: accepted, defenseUnits: 0, ratio: 1 };
     }
 
-    var defenseUnits = targetDefenseEstimate(target);
-    var ratio = defenseUnits > 0 ? sendUnits / defenseUnits : (sendUnits > 0 ? 3 : 0);
+    var forecast = forecastRatio(sendUnits, target, opts.attackMult, opts.tuneDef);
+    var defenseUnits = forecast.defenseUnits;
+    var ratio = forecast.ratio;
+    // The capture threshold is ratio > 1 exactly, so the bands sit around it: below 1 the
+    // attack cannot take the world at all, and 1.0-1.15 wins it with almost nothing left.
     var tone = 'danger';
-    var label = 'ZAYIF';
+    var label = 'YETERSİZ';
     if (ratio >= 1.35) {
         tone = 'advantage';
         label = 'AVANTAJLI';
-    } else if (ratio >= 0.9) {
+    } else if (ratio > 1) {
         tone = 'warning';
-        label = 'RİSKLİ';
+        label = 'KIL PAYI';
     }
     return {
         tone: tone,
         label: label,
-        summary: sendUnits + ' saldırı · ~' + defenseUnits + ' savunma',
+        summary: sendUnits + ' saldırı · ' + defenseUnits + ' savunma',
         sendUnits: sendUnits,
         defenseUnits: defenseUnits,
         ratio: ratio,

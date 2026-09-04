@@ -4,6 +4,19 @@ export function clamp(v, lo, hi) {
     return v;
 }
 
+/**
+ * Accept a send ratio in either form and return the clamped 0-1 fraction.
+ *
+ * The HUD slider works in whole percent (50) while the sim works in fractions (0.5),
+ * and every place that mixed the two produced a silent "sends everything" bug. One
+ * converter keeps the two representations from leaking into each other.
+ */
+export function toSendFraction(value) {
+    var raw = Number(value);
+    if (!Number.isFinite(raw)) return 0.5;
+    return clamp(raw > 1 ? raw / 100 : raw, 0.05, 1);
+}
+
 export function computeSendCount(opts) {
     opts = opts || {};
     var srcUnits = Number(opts.srcUnits);

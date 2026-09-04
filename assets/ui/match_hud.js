@@ -35,7 +35,7 @@ export function buildDoctrineButtonState(opts) {
         };
     }
 
-    var label = (opts.doctrineName || opts.doctrineId) + ' | ' + (opts.doctrineStatus || '');
+    var label = (opts.doctrineName || opts.doctrineId) + ' · ' + (opts.doctrineStatus || '');
     return {
         disabled: !opts.ready,
         text: opts.ready ? 'DOKTRİN' : 'DOKTRİN · BEKLE',
@@ -49,6 +49,6 @@ export function buildPingDisplayText(opts) {
     opts = opts && typeof opts === 'object' ? opts : {};
     var text = opts.online && opts.lastPingMs !== undefined ? ('Ping: ' + Math.round(Number(opts.lastPingMs) || 0) + 'ms') : '';
     var showSync = !!(opts.online && opts.syncWarningText && ((Math.floor(Number(opts.currentTick) || 0) - Math.floor(Number(opts.syncWarningTick) || 0)) < Math.floor(Number(opts.syncWindowTicks) || 0)));
-    if (showSync) text += (text ? ' | ' : '') + 'SYNC';
+    if (showSync) text += (text ? ' · ' : '') + 'SYNC';
     return text;
 }

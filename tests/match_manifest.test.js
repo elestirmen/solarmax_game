@@ -51,7 +51,7 @@ test('buildRoomMatchManifest returns standard manifest for standard rooms', func
     assert.equal(manifest.mode, 'standard');
     assert.equal(manifest.seed, 'custom');
     assert.equal(manifest.playlist, 'chaos');
-    assert.equal(manifest.playlistLabel, 'Chaos');
+    assert.equal(manifest.playlistLabel, 'Kaos');
     assert.equal(manifest.doctrineId, 'siege');
     assert.equal(Array.isArray(manifest.encounters), true);
     assert.equal(manifest.encounters.length > 0, true);

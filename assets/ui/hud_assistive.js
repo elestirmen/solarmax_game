@@ -89,6 +89,12 @@ export function buildNodeHoverTip(opts) {
     return {
         title: title,
         stats: buildNodeHoverStats(opts),
+        // The order forecast is the reason the card is open at all, so it comes back as
+        // its own row instead of being appended to the stat line.
+        forecast: opts.forecastLabel ? {
+            label: String(opts.forecastLabel),
+            summary: opts.forecastSummary ? String(opts.forecastSummary) : '',
+        } : null,
         body: NODE_TYPE_TIPS[kind] || NODE_TYPE_TIPS.core,
         forecastTone: opts.forecastTone || '',
     };
@@ -109,8 +115,5 @@ export function buildNodeHoverStats(opts) {
     if (level >= 1) parts.push('Sv.' + level);
     if (opts.defense) parts.push('Kalkan açık');
     if (opts.supplied === false) parts.push('Tedariksiz');
-    if (opts.forecastLabel) {
-        parts.push('Emir: ' + String(opts.forecastLabel) + (opts.forecastSummary ? ' · ' + String(opts.forecastSummary) : ''));
-    }
     return parts.join('  ·  ');
 }

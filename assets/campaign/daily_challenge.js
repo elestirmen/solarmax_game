@@ -145,7 +145,7 @@ export function buildDailyChallenge(inputDate) {
     return {
         key: key,
         title: parts.prefix + ' ' + parts.suffix,
-        blurb: nodeCount + ' gezegen | ' + aiCount + ' AI | ' + difficultyLabel(diff) + ' | ' + featureLabel(feature) + (mapMutator !== 'none' ? (' | ' + mapMutatorName(mapMutator)) : '') + (fog ? ' | Sis' : ''),
+        blurb: nodeCount + ' gezegen · ' + aiCount + ' AI · ' + difficultyLabel(diff) + ' · ' + featureLabel(feature) + (mapMutator !== 'none' ? (' · ' + mapMutatorName(mapMutator)) : '') + (fog ? ' | Sis' : ''),
         seed: 'daily-' + key,
         nc: nodeCount,
         diff: diff,

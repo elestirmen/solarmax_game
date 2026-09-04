@@ -5,7 +5,7 @@ export var DOCTRINE_DEFS = {
         id: 'logistics',
         label: 'Lojistik',
         activeLabel: 'Overdrive',
-        blurb: 'Supply altindaki ekonomi guclenir, filolar daha duzenli akar.',
+        blurb: 'Tedarik hattındaki ekonomi güçlenir ve filolar daha hızlı akar; karşılığında vuruş gücü biraz düşer.',
         cooldownTicks: 900,
         activeTicks: 180,
         passive: {
@@ -28,8 +28,8 @@ export var DOCTRINE_DEFS = {
     assimilation: {
         id: 'assimilation',
         label: 'Asimilasyon',
-        activeLabel: 'Yakinsama',
-        blurb: 'Yeni fetihler daha hizli oturur, cephe yerlesimi ivme kazanir.',
+        activeLabel: 'Yakınsama',
+        blurb: 'Yeni fetihler çok daha hızlı oturur; karşılığında filolar biraz yavaş hareket eder.',
         cooldownTicks: 960,
         activeTicks: 180,
         passive: {
@@ -37,7 +37,7 @@ export var DOCTRINE_DEFS = {
             suppliedProdMult: 1,
             assimMult: 1.38,
             fleetSpeedMult: 0.97,
-            attackMult: 0.98,
+            attackMult: 1,
             turretAttackMult: 1,
         },
         active: {
@@ -51,9 +51,9 @@ export var DOCTRINE_DEFS = {
     },
     siege: {
         id: 'siege',
-        label: 'Kusatma',
+        label: 'Kuşatma',
         activeLabel: 'Yarma',
-        blurb: 'Savunmali hedefler daha kolay dusurulur ama ekonomi biraz yavaslar.',
+        blurb: 'Savunmalı hedefler ve taretler daha kolay düşer; karşılığında ekonomi biraz yavaşlar.',
         cooldownTicks: 1020,
         activeTicks: 150,
         passive: {
@@ -74,6 +74,18 @@ export var DOCTRINE_DEFS = {
         },
     },
 };
+
+// Every doctrine number a player is subject to has to be readable somewhere in the
+// UI. Rendering the effect list from the multipliers themselves (instead of from a
+// hand-written blurb) means a balance tweak can never leave stale copy behind.
+export var DOCTRINE_EFFECT_FIELDS = [
+    { key: 'prodMult', label: 'Üretim' },
+    { key: 'suppliedProdMult', label: 'Tedarikli üretim' },
+    { key: 'assimMult', label: 'Asimilasyon' },
+    { key: 'fleetSpeedMult', label: 'Filo hızı' },
+    { key: 'attackMult', label: 'Saldırı gücü' },
+    { key: 'turretAttackMult', label: 'Taret kırma' },
+];
 
 var DOCTRINE_IDS = Object.keys(DOCTRINE_DEFS);
 
@@ -276,12 +288,54 @@ export function doctrineCooldownSummary(doctrines, rawStates, playerIndex) {
     return mods.activeLabel + ' hazır';
 }
 
+function formatMultiplierDelta(value) {
+    var percent = Math.round((Number(value) - 1) * 100);
+    if (percent === 0) return '';
+    return (percent > 0 ? '+' : '\u2212') + Math.abs(percent) + '%';
+}
+
+/**
+ * Turn a doctrine's multipliers into display rows.
+ * `phase` is 'passive' (always on) or 'active' (extra effect while the ability runs).
+ * Rows come back in DOCTRINE_EFFECT_FIELDS order so every surface lists them the same way.
+ */
+export function doctrineEffectRows(raw, phase) {
+    var def = doctrineDef(raw);
+    var set = (String(phase || 'passive') === 'active' ? def.active : def.passive) || {};
+    var rows = [];
+    for (var i = 0; i < DOCTRINE_EFFECT_FIELDS.length; i++) {
+        var field = DOCTRINE_EFFECT_FIELDS[i];
+        var value = Number(set[field.key]);
+        if (!Number.isFinite(value)) continue;
+        var text = formatMultiplierDelta(value);
+        if (!text) continue;
+        rows.push({
+            key: field.key,
+            label: field.label,
+            value: text,
+            tone: value > 1 ? 'up' : 'down',
+        });
+    }
+    return rows;
+}
+
+/** One-line version of the effect rows, e.g. 'Tedarikli üretim +12% · Saldırı gücü −5%'. */
+export function doctrineTradeLine(raw, phase) {
+    return doctrineEffectRows(raw, phase).map(function (row) {
+        return row.label + ' ' + row.value;
+    }).join(' · ');
+}
+
 export function doctrineOptionList() {
     return DOCTRINE_IDS.map(function (id) {
         return {
             id: id,
             label: doctrineName(id),
             blurb: doctrineDef(id).blurb,
+            passive: doctrineEffectRows(id, 'passive'),
+            active: doctrineEffectRows(id, 'active'),
+            activeLabel: doctrineActiveName(id),
+            trade: doctrineTradeLine(id, 'passive'),
         };
     });
 }

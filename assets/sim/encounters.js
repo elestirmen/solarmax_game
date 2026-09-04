@@ -197,5 +197,5 @@ export function encounterSummary(encounters) {
     if (!encounters.length) return 'Encounter yok';
     return encounters.map(function (encounter) {
         return encounterName(encounter);
-    }).join(' | ');
+    }).join(' · ');
 }

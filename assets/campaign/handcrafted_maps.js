@@ -78,7 +78,7 @@ export function buildVeilBridgeHandcraftedMap() {
 
 export function buildGunlineHandcraftedMap() {
     return {
-        name: 'Turret Hatti Layout',
+        name: 'Turret Hattı Düzeni',
         playerCount: 4,
         nodes: [
             node(200, 500, 0, 24, 'core'),

@@ -581,3 +581,109 @@ test('stepFleetMovement snaps wormholeInstant fleets to target position', functi
     assert.equal(fleets[0].x, 100);
     assert.equal(fleets[0].y, 0);
 });
+
+function combatCallbacks(extra) {
+    return Object.assign({
+        nodeTypeOf: function () { return { def: 1 }; },
+        nodeLevelDefMult: function () { return 1; },
+        nodeCapacity: function (node) { return node.maxUnits; },
+    }, extra || {});
+}
+
+test('an attack bonus lowers the cost of a capture instead of minting ships', function () {
+    var targetNode = { id: 1, owner: -1, kind: 'core', level: 1, units: 0, maxUnits: 200, pos: { x: 0, y: 0 } };
+
+    var result = resolveCombatOutcome({
+        fleet: { owner: 0, count: 50 },
+        targetNode: targetNode,
+        players: [{ color: '#4a8eff' }],
+        tune: { def: 1.2 },
+        humanIndex: 0,
+        callbacks: combatCallbacks({ attackMultiplier: function () { return 1.6; } }),
+        constants: { turretCaptureResist: 1, defenseBonus: 1, assimLockTicks: 180 },
+    });
+
+    assert.equal(result.captured, true);
+    assert.equal(targetNode.units, 50);
+});
+
+test('a capture against a defended world costs fewer ships when the attacker has a bonus', function () {
+    function capture(atkMult) {
+        var targetNode = { id: 1, owner: 1, kind: 'core', level: 1, units: 20, maxUnits: 200, pos: { x: 0, y: 0 } };
+        resolveCombatOutcome({
+            fleet: { owner: 0, count: 40 },
+            targetNode: targetNode,
+            players: [{ color: '#4a8eff' }, { color: '#e74c3c' }],
+            tune: { def: 1 },
+            humanIndex: 0,
+            callbacks: combatCallbacks({ attackMultiplier: function () { return atkMult; } }),
+            constants: { turretCaptureResist: 1, defenseBonus: 1, assimLockTicks: 180 },
+        });
+        return targetNode.units;
+    }
+
+    // 40 ships break a 20-ship garrison and 20 hold the world.
+    assert.equal(capture(1), 20);
+    // With +60% attack the same garrison costs 20/1.6 = 12.5 ships, so 27 hold it -
+    // more survivors than the plain push, but never more than the 40 that were sent.
+    assert.equal(capture(1.6), 27);
+});
+
+test('a failed attack leaves a whole-number garrison', function () {
+    var targetNode = { id: 1, owner: 1, kind: 'core', level: 1, units: 20, maxUnits: 200, pos: { x: 0, y: 0 } };
+
+    var result = resolveCombatOutcome({
+        fleet: { owner: 0, count: 5 },
+        targetNode: targetNode,
+        players: [{ color: '#4a8eff' }, { color: '#e74c3c' }],
+        tune: { def: 1.2 },
+        humanIndex: 0,
+        callbacks: combatCallbacks(),
+        constants: { turretCaptureResist: 1, defenseBonus: 1, assimLockTicks: 180 },
+    });
+
+    assert.equal(result.captured, false);
+    assert.equal(Number.isInteger(targetNode.units), true);
+    // 5 ships at defence 1.2 erase 4.16 defenders: 4 die now, the remainder is carried.
+    assert.equal(targetNode.units, 16);
+});
+
+test('a fleet arriving in waves does the same damage as the same fleet arriving at once', function () {
+    function attack(waves, perWave) {
+        var targetNode = { id: 1, owner: 1, kind: 'core', level: 1, units: 20, maxUnits: 200, pos: { x: 0, y: 0 } };
+        for (var i = 0; i < waves; i++) {
+            resolveCombatOutcome({
+                fleet: { owner: 0, count: perWave },
+                targetNode: targetNode,
+                players: [{ color: '#4a8eff' }, { color: '#e74c3c' }],
+                tune: { def: 1.2 },
+                humanIndex: 0,
+                callbacks: combatCallbacks(),
+                constants: { turretCaptureResist: 1, defenseBonus: 1, assimLockTicks: 180 },
+            });
+        }
+        return targetNode.units;
+    }
+
+    assert.equal(attack(1, 20), attack(4, 5));
+    assert.equal(attack(1, 20), attack(20, 1));
+});
+
+test('capture clears the carried combat remainder so the next owner starts clean', function () {
+    var targetNode = { id: 1, owner: 1, kind: 'core', level: 1, units: 20, maxUnits: 200, pos: { x: 0, y: 0 } };
+    var params = {
+        targetNode: targetNode,
+        players: [{ color: '#4a8eff' }, { color: '#e74c3c' }],
+        tune: { def: 1.2 },
+        humanIndex: 0,
+        callbacks: combatCallbacks(),
+        constants: { turretCaptureResist: 1, defenseBonus: 1, assimLockTicks: 180 },
+    };
+
+    resolveCombatOutcome(Object.assign({ fleet: { owner: 0, count: 5 } }, params));
+    assert.equal(targetNode.combatAcc > 0, true);
+
+    resolveCombatOutcome(Object.assign({ fleet: { owner: 0, count: 60 } }, params));
+    assert.equal(targetNode.owner, 0);
+    assert.equal(targetNode.combatAcc, 0);
+});

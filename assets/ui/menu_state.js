@@ -1,5 +1,6 @@
 import { doctrineName } from '../sim/doctrine.js';
 import { playlistName } from '../sim/playlists.js';
+import { getMechanicsConfig, mechanicsProgressionInfo, normalizeMechanicsPreset } from '../sim/mechanics.js';
 import { normalizeRulesetMode } from '../sim/ruleset.js';
 
 export var MENU_PANEL_META = {
@@ -23,6 +24,14 @@ export function normalizeMenuDifficulty(value) {
 
 export function normalizeMenuRulesMode(value) {
     return normalizeRulesetMode(value || 'advanced');
+}
+
+export function normalizeMenuMechanics(value) {
+    return normalizeMechanicsPreset(value || 'primitive');
+}
+
+export function menuMechanicsLabel(preset) {
+    return mechanicsProgressionInfo(normalizeMenuMechanics(preset)).name;
 }
 
 export function normalizeMenuPlaylist(value) {
@@ -76,6 +85,9 @@ export function buildMenuHeroSummary(skirmish) {
     var doctrine = menuDoctrineMenuLabel(state.doctrineId);
     var rulesMode = menuRulesModeLabel(state.rulesMode);
     var fogLabel = state.fogEnabled ? 'Sis Açık' : 'Sis Kapalı';
+    var mechanics = menuMechanicsLabel(state.mechanicsPreset);
+    // A tier without doctrines ignores the playlist, so the summary does not list it.
+    var showsPlaylist = getMechanicsConfig(state.mechanicsPreset).doctrines;
 
     return {
         seedChip: 'Tohum ' + seed,
@@ -83,7 +95,8 @@ export function buildMenuHeroSummary(skirmish) {
         doctrineChip: doctrine,
         modeChip: rulesMode,
         fogChip: fogLabel,
-        quickStatus: 'Hızlı başlat | ' + clampMenuNodeCount(state.nodeCount) + ' gezegen | ' + menuDifficultyLabel(difficulty) + ' | ' + playlist + ' | ' + doctrine,
+        mechanicsChip: mechanics,
+        quickStatus: clampMenuNodeCount(state.nodeCount) + ' gezegen · ' + menuDifficultyLabel(difficulty) + ' · ' + mechanics + (showsPlaylist ? (' · ' + playlist) : ''),
         stagePlaylistLabel: 'OYUN LİSTESİ // ' + String(playlist).toUpperCase(),
         stageDoctrineLabel: 'DOKTRİN // ' + String(doctrine).toUpperCase(),
     };
@@ -103,6 +116,7 @@ export function createInitialMenuState(values) {
             playlist: normalizeMenuPlaylist(skirmish.playlist),
             doctrineId: normalizeMenuDoctrine(skirmish.doctrineId),
             rulesMode: normalizeMenuRulesMode(skirmish.rulesMode),
+            mechanicsPreset: normalizeMenuMechanics(skirmish.mechanicsPreset),
             fogEnabled: !!skirmish.fogEnabled,
         },
         multiplayer: {
