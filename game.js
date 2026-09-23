@@ -3320,10 +3320,10 @@ function drawGateStation(ctx, n, col, tick) {
 }
 
 // ── SHIPS ──
-// Every ship on the board goes through a batch: engine glows are stamped from one cached
-// sprite, all light streaks go into one stroked path and all hulls into one filled path.
-// A swarm of forty ships costs about as much as the old renderer spent on six, which is
-// what allows fleets to finally look like fleets.
+// Every ship is a little shuttle: an owner-coloured hull with a white spine and nose
+// light, riding an orange engine flame. They are drawn in batches - one path for all
+// flames, one per alpha band for hulls, one stroke for all spines, stamped sprites for
+// glows - so a stream of forty ships costs about what six hand-drawn rockets used to.
 var SHIP_BATCH_MAX = 4096;
 // Share of the per-fleet ship budget actually drawn this frame; render() lowers it when
 // the board is crowded so a late-game swarm cannot tank the frame rate.
@@ -3337,18 +3337,24 @@ var shipBatch = {
     dy: new Float32Array(SHIP_BATCH_MAX),
     s: new Float32Array(SHIP_BATCH_MAX),
     a: new Float32Array(SHIP_BATCH_MAX),
-    streak: new Float32Array(SHIP_BATCH_MAX),
+    throttle: new Float32Array(SHIP_BATCH_MAX),
+    flicker: new Float32Array(SHIP_BATCH_MAX),
 };
 var shipHullColorCache = {};
+var SHIP_FLAME_COLOR = '#ff9a46';
+// Below this on-screen size (pixels per hull unit) the delta-wing silhouette is mush,
+// so small ships fall back to the classic rocket triangle.
+var SHIP_DETAIL_PX = 1.7;
 
 function shipHullColor(col) {
     if (shipHullColorCache[col]) return shipHullColorCache[col];
-    var hull = col && col.indexOf('#') === 0 ? blendHex(col, '#ffffff', 0.3) : '#dfe8f5';
+    var hull = col && col.indexOf('#') === 0 ? blendHex(col, '#ffffff', 0.12) : '#dfe8f5';
     shipHullColorCache[col] = hull;
     return hull;
 }
 
-function shipBatchPush(x, y, dirX, dirY, size, alpha, streak) {
+// throttle: 0 = engines off, ~0.5 idling in orbit, 1 cruising, >1 boosted.
+function shipBatchPush(x, y, dirX, dirY, size, alpha, throttle) {
     if (shipBatch.n >= SHIP_BATCH_MAX || !(alpha > 0.02)) return;
     var i = shipBatch.n++;
     shipBatch.x[i] = x;
@@ -3357,10 +3363,12 @@ function shipBatchPush(x, y, dirX, dirY, size, alpha, streak) {
     shipBatch.dy[i] = dirY;
     shipBatch.s[i] = size;
     shipBatch.a[i] = alpha;
-    shipBatch.streak[i] = streak || 0;
+    shipBatch.throttle[i] = throttle === undefined ? 1 : Math.max(0, throttle);
+    // Each engine flickers on its own phase, so a stream shimmers instead of pulsing.
+    shipBatch.flicker[i] = 0.5 + 0.5 * Math.sin(renderTick * 0.62 + i * 2.39 + x * 0.043 + y * 0.029);
 }
 
-function traceShipHulls(ctx, minAlpha, maxAlpha) {
+function traceShipHulls(ctx, minAlpha, maxAlpha, zoom) {
     var any = false;
     ctx.beginPath();
     for (var i = 0; i < shipBatch.n; i++) {
@@ -3368,10 +3376,60 @@ function traceShipHulls(ctx, minAlpha, maxAlpha) {
         if (a < minAlpha || a >= maxAlpha) continue;
         var x = shipBatch.x[i], y = shipBatch.y[i], dx = shipBatch.dx[i], dy = shipBatch.dy[i], sz = shipBatch.s[i];
         var nx = -dy, ny = dx;
-        ctx.moveTo(x + dx * sz * 1.9, y + dy * sz * 1.9);
-        ctx.lineTo(x - dx * sz * 1.15 + nx * sz * 1.15, y - dy * sz * 1.15 + ny * sz * 1.15);
-        ctx.lineTo(x - dx * sz * 0.5, y - dy * sz * 0.5);
-        ctx.lineTo(x - dx * sz * 1.15 - nx * sz * 1.15, y - dy * sz * 1.15 - ny * sz * 1.15);
+        if (sz * zoom < SHIP_DETAIL_PX) {
+            ctx.moveTo(x + dx * sz * 1.85, y + dy * sz * 1.85);
+            ctx.lineTo(x - dx * sz * 1.34 + nx * sz * 1.08, y - dy * sz * 1.34 + ny * sz * 1.08);
+            ctx.lineTo(x - dx * sz * 1.34 - nx * sz * 1.08, y - dy * sz * 1.34 - ny * sz * 1.08);
+            ctx.closePath();
+        } else {
+            // Shuttle, seen from above: pointed nose, slim fuselage, swept delta wings,
+            // flat engine block at the back.
+            for (var k = 0; k < SHUTTLE_OUTLINE.length; k += 2) {
+                var fx = SHUTTLE_OUTLINE[k] * sz, fy = SHUTTLE_OUTLINE[k + 1] * sz;
+                var px = x + dx * fx + nx * fy, py = y + dy * fx + ny * fy;
+                if (k === 0) ctx.moveTo(px, py);
+                else ctx.lineTo(px, py);
+            }
+            ctx.closePath();
+        }
+        any = true;
+    }
+    return any;
+}
+
+// Forward is +x, port is +y, in hull units.
+var SHUTTLE_OUTLINE = [
+    2.05, 0,
+    1.25, 0.32,
+    0.2, 0.42,
+    -0.95, 1.2,
+    -1.28, 1.14,
+    -1.1, 0.44,
+    -1.4, 0.34,
+    -1.4, -0.34,
+    -1.1, -0.44,
+    -1.28, -1.14,
+    -0.95, -1.2,
+    0.2, -0.42,
+    1.25, -0.32,
+];
+
+function traceShipFlames(ctx, lengthShare, widthShare, zoom) {
+    var any = false;
+    ctx.beginPath();
+    for (var i = 0; i < shipBatch.n; i++) {
+        var thr = shipBatch.throttle[i];
+        if (thr <= 0.05) continue;
+        var x = shipBatch.x[i], y = shipBatch.y[i], dx = shipBatch.dx[i], dy = shipBatch.dy[i], sz = shipBatch.s[i];
+        var nx = -dy, ny = dx;
+        // On a small ship the flame is most of what says "rocket", so it grows.
+        var small = sz * zoom < SHIP_DETAIL_PX ? 1.35 : 1;
+        var len = sz * (1.35 + shipBatch.flicker[i] * 1.15) * (0.55 + thr * 0.55) * lengthShare * small;
+        var half = sz * (0.42 + shipBatch.flicker[i] * 0.16) * widthShare * (small > 1 ? 1.2 : 1);
+        var bx = x - dx * sz * 1.3, by = y - dy * sz * 1.3;
+        ctx.moveTo(bx + nx * half, by + ny * half);
+        ctx.lineTo(bx - dx * len, by - dy * len);
+        ctx.lineTo(bx - nx * half, by - ny * half);
         ctx.closePath();
         any = true;
     }
@@ -3385,7 +3443,7 @@ function shipBatchFlush(ctx, col, opts) {
     var alphaScale = opts.alphaScale === undefined ? 1 : clamp(Number(opts.alphaScale) || 0, 0, 1);
     if (alphaScale <= 0.01) { shipBatch.n = 0; return; }
     var glowMul = (opts.glow === undefined ? 1 : opts.glow) * alphaScale;
-    var streakMul = (opts.streak === undefined ? 1 : opts.streak) * alphaScale;
+    var flameMul = (opts.flame === undefined ? 1 : opts.flame) * alphaScale;
     var baseCol = col && col.indexOf('#') === 0 ? col : '#c8d6e5';
     var hull = opts.hullColor || shipHullColor(baseCol);
     var zoom = Math.max(0.2, Number(G.cam && G.cam.zoom) || 1);
@@ -3393,40 +3451,35 @@ function shipBatchFlush(ctx, col, opts) {
 
     ctx.save();
     ctx.globalCompositeOperation = 'lighter';
-    if (streakMul > 0) {
-        // Two passes fake a taper: a long faint wake, and a short bright core by the
-        // engine. A per-ship gradient would look the same and cost a gradient per ship.
-        for (var pass = 0; pass < 2; pass++) {
-            var share = pass === 0 ? 1 : 0.42;
-            var anyStreak = false;
-            ctx.beginPath();
-            for (i = 0; i < n; i++) {
-                var len = shipBatch.streak[i] * share;
-                if (len <= 0.5) continue;
-                var bx = shipBatch.x[i] - shipBatch.dx[i] * shipBatch.s[i] * 0.7;
-                var by = shipBatch.y[i] - shipBatch.dy[i] * shipBatch.s[i] * 0.7;
-                ctx.moveTo(bx, by);
-                ctx.lineTo(bx - shipBatch.dx[i] * len, by - shipBatch.dy[i] * len);
-                anyStreak = true;
-            }
-            if (!anyStreak) continue;
-            ctx.lineCap = 'round';
-            if (pass === 0) {
-                ctx.strokeStyle = hexToRgba(baseCol, 0.2 * streakMul);
-                ctx.lineWidth = Math.max(1.2 / zoom, 1.9);
-            } else {
-                ctx.strokeStyle = hexToRgba(blendHex(baseCol, '#ffffff', 0.4), 0.42 * streakMul);
-                ctx.lineWidth = Math.max(0.7 / zoom, 1);
-            }
-            ctx.stroke();
-        }
-    }
     var glow = glowMul > 0 ? getGlowSprite(baseCol) : null;
     if (glow) {
         for (i = 0; i < n; i++) {
-            var g = shipBatch.s[i] * 3.1;
-            ctx.globalAlpha = Math.min(1, shipBatch.a[i] * 0.62 * glowMul);
-            ctx.drawImage(glow, shipBatch.x[i] - shipBatch.dx[i] * shipBatch.s[i] * 0.55 - g, shipBatch.y[i] - shipBatch.dy[i] * shipBatch.s[i] * 0.55 - g, g * 2, g * 2);
+            var g = shipBatch.s[i] * 3.2;
+            ctx.globalAlpha = Math.min(1, shipBatch.a[i] * 0.5 * glowMul);
+            ctx.drawImage(glow, shipBatch.x[i] - g, shipBatch.y[i] - g, g * 2, g * 2);
+        }
+    }
+    if (flameMul > 0) {
+        // Outer flame, hot core, then a soft bloom where the exhaust ends.
+        ctx.globalAlpha = 1;
+        if (traceShipFlames(ctx, 1, 1, zoom)) {
+            ctx.fillStyle = 'rgba(255,140,64,' + (0.34 * flameMul).toFixed(3) + ')';
+            ctx.fill();
+        }
+        if (traceShipFlames(ctx, 0.55, 0.5, zoom)) {
+            ctx.fillStyle = 'rgba(255,226,160,' + (0.62 * flameMul).toFixed(3) + ')';
+            ctx.fill();
+        }
+        var flameGlow = getGlowSprite(SHIP_FLAME_COLOR);
+        if (flameGlow) {
+            for (i = 0; i < n; i++) {
+                var thr = shipBatch.throttle[i];
+                if (thr <= 0.05) continue;
+                var fs = shipBatch.s[i] * (1.1 + shipBatch.flicker[i] * 0.7) * (0.5 + thr * 0.5);
+                var tail = shipBatch.s[i] * (1.3 + (1.35 + shipBatch.flicker[i] * 1.15) * (0.55 + thr * 0.55) * 0.6);
+                ctx.globalAlpha = Math.min(1, (0.2 + shipBatch.flicker[i] * 0.2) * flameMul * shipBatch.a[i]);
+                ctx.drawImage(flameGlow, shipBatch.x[i] - shipBatch.dx[i] * tail - fs, shipBatch.y[i] - shipBatch.dy[i] * tail - fs, fs * 2, fs * 2);
+            }
         }
     }
     ctx.restore();
@@ -3434,11 +3487,76 @@ function shipBatchFlush(ctx, col, opts) {
     ctx.save();
     ctx.fillStyle = hull;
     // Three alpha bands keep the depth fade of long formations while staying three fills.
-    if (traceShipHulls(ctx, 0.78, 9)) { ctx.globalAlpha = 0.96 * alphaScale; ctx.fill(); }
-    if (traceShipHulls(ctx, 0.5, 0.78)) { ctx.globalAlpha = 0.7 * alphaScale; ctx.fill(); }
-    if (traceShipHulls(ctx, 0, 0.5)) { ctx.globalAlpha = 0.42 * alphaScale; ctx.fill(); }
+    if (traceShipHulls(ctx, 0.78, 9, zoom)) { ctx.globalAlpha = 0.97 * alphaScale; ctx.fill(); }
+    if (traceShipHulls(ctx, 0.5, 0.78, zoom)) { ctx.globalAlpha = 0.72 * alphaScale; ctx.fill(); }
+    if (traceShipHulls(ctx, 0, 0.5, zoom)) { ctx.globalAlpha = 0.45 * alphaScale; ctx.fill(); }
+
+    // White spine and nose light: the details that make a triangle read as a craft.
+    var spineWidth = 0;
+    var anySpine = false;
+    ctx.beginPath();
+    for (i = 0; i < n; i++) {
+        var sz = shipBatch.s[i];
+        if (sz * zoom < SHIP_DETAIL_PX * 0.8 || shipBatch.a[i] < 0.5) continue;
+        var sx = shipBatch.x[i], sy = shipBatch.y[i], ddx = shipBatch.dx[i], ddy = shipBatch.dy[i];
+        ctx.moveTo(sx - ddx * sz * 0.1, sy - ddy * sz * 0.1);
+        ctx.lineTo(sx + ddx * sz * 1.15, sy + ddy * sz * 1.15);
+        spineWidth = Math.max(spineWidth, sz * 0.26);
+        anySpine = true;
+    }
+    if (anySpine) {
+        ctx.globalAlpha = 0.55 * alphaScale;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineCap = 'round';
+        ctx.lineWidth = Math.max(0.6 / zoom, spineWidth);
+        ctx.stroke();
+        ctx.beginPath();
+        for (i = 0; i < n; i++) {
+            var ns = shipBatch.s[i];
+            if (ns * zoom < SHIP_DETAIL_PX * 0.8 || shipBatch.a[i] < 0.5) continue;
+            var noseX = shipBatch.x[i] + shipBatch.dx[i] * ns * 1.55;
+            var noseY = shipBatch.y[i] + shipBatch.dy[i] * ns * 1.55;
+            ctx.moveTo(noseX + ns * 0.3, noseY);
+            ctx.arc(noseX, noseY, ns * 0.3, 0, Math.PI * 2);
+        }
+        ctx.globalAlpha = 0.9 * alphaScale;
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+    }
     ctx.restore();
     shipBatch.n = 0;
+}
+
+// The lead ship keeps the comet tail it always had: its recent positions, fading out.
+function drawFleetLeadTrail(ctx, f, col, headX, headY, alphaScale) {
+    var trail = f.trail || [];
+    var tl = trail.length;
+    if (tl < 2 || alphaScale <= 0.01) return;
+    var trailScale = clamp(Number(f.trailScale) || 1, 0.85, 1.5);
+    var routeVisual = clamp((Number(f.routeSpeedMult) || 1) * (Number(f.spdVar) || 1), 0.85, 2);
+    var boost = clamp(0.92 + Math.max(0, routeVisual - 1) * 0.65 + (trailScale - 1) * 0.45, 0.85, 1.7) * alphaScale;
+    var widthBoost = clamp(0.95 + (trailScale - 1) * 0.85, 0.9, 1.5);
+    ctx.save();
+    ctx.lineCap = 'round';
+    var prev = trail[0];
+    for (var i = 1; i < tl; i++) {
+        var curr = trail[i];
+        var t = i / tl;
+        ctx.beginPath();
+        ctx.moveTo(prev.x, prev.y);
+        ctx.lineTo(curr.x, curr.y);
+        ctx.strokeStyle = hexToRgba(col, (0.04 + t * 0.18) * boost);
+        ctx.lineWidth = (0.6 + t * 1.6) * widthBoost;
+        ctx.stroke();
+        prev = curr;
+    }
+    ctx.beginPath();
+    ctx.moveTo(prev.x, prev.y);
+    ctx.lineTo(headX, headY);
+    ctx.strokeStyle = hexToRgba(col, 0.28 * boost);
+    ctx.lineWidth = 2.3 * widthBoost;
+    ctx.stroke();
+    ctx.restore();
 }
 
 // World size for a ship so it never shrinks below a few screen pixels when zoomed out.
@@ -3486,10 +3604,11 @@ function drawFleetRocket(ctx, f, col, tick, renderState) {
     var dLen = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
     dirX /= dLen; dirY /= dLen;
 
-    // Light streaks scale with speed, so a Relay-boosted or wormhole-adjacent fleet
-    // visibly moves faster than one crawling out of a gravity well.
-    var streakLen = 4 + routeVisual * 5 + Math.min(4, Math.sqrt(count) * 0.5);
-    var leadSize = shipWorldSize(2.25 + Math.min(0.8, Math.sqrt(count) * 0.07));
+    // Engines burn hotter on fast routes, so a Relay-boosted fleet visibly moves faster
+    // than one crawling out of a gravity well.
+    var leadThrottle = clamp(0.8 + Math.max(0, routeVisual - 1) * 0.35 + hitFlash * 0.2, 0.5, 1.35);
+    var leadSize = shipWorldSize(2 + Math.min(0.6, Math.sqrt(count) * 0.06));
+    drawFleetLeadTrail(ctx, f, col, renderX, renderY, gameOverFleetAlpha());
     if (hitFlash > 0.01) {
         ctx.save();
         ctx.globalCompositeOperation = 'lighter';
@@ -3500,7 +3619,7 @@ function drawFleetRocket(ctx, f, col, tick, renderState) {
         ctx.fill();
         ctx.restore();
     }
-    shipBatchPush(renderX, renderY, dirX, dirY, leadSize, 1, streakLen * 1.35);
+    shipBatchPush(renderX, renderY, dirX, dirY, leadSize, 1, leadThrottle);
 
     // The sim lands a fleet one ship at a time, spacingT apart along the route, so a
     // fleet is really a stream: ship k is at t - k * spacingT, and ships still at t < 0
@@ -3513,7 +3632,7 @@ function drawFleetRocket(ctx, f, col, tick, renderState) {
         var visibleSupportCount = Math.min(supportCount, budget);
         var visualStep = supportCount / visibleSupportCount;
         var streamWidth = Math.min(15, 3.5 + Math.sqrt(count) * 1.05);
-        var supportSize = shipWorldSize(1.55);
+        var supportSize = shipWorldSize(1.4);
         var fleetSeed = (f.id || 0) * 7.13 + (f.srcId || 0) * 1.7;
         for (var vi = 0; vi < visibleSupportCount; vi++) {
             var unitIndex = Math.min(supportCount, Math.max(1, Math.round((vi + 1) * visualStep)));
@@ -3538,7 +3657,7 @@ function drawFleetRocket(ctx, f, col, tick, renderState) {
             var sx = pt.x + unx * offsetL + udx * along;
             var sy = pt.y + uny * offsetL + udy * along;
             var alpha = 0.62 + driftNoise * 0.34;
-            shipBatchPush(sx, sy, udx, udy, supportSize * (0.82 + jitter * 0.3), alpha, streakLen * (0.55 + driftNoise * 0.45));
+            shipBatchPush(sx, sy, udx, udy, supportSize * (0.85 + jitter * 0.25), alpha, leadThrottle * (0.85 + driftNoise * 0.2));
         }
     }
     shipBatchFlush(ctx, col, {
@@ -3599,9 +3718,9 @@ function drawHoldingFleet(ctx, fleet, col, tick, selected, renderState) {
         var shipX = x + nX * lateral - dir.x * depth;
         var shipY = y + nY * lateral - dir.y * depth;
         var isFlagship = i === Math.floor(shipCount / 2);
-        shipBatchPush(shipX, shipY, dir.x, dir.y, shipWorldSize(isFlagship ? 2.1 : 1.65), isFlagship ? 0.96 : 0.74, 0);
+        shipBatchPush(shipX, shipY, dir.x, dir.y, shipWorldSize(isFlagship ? 1.95 : 1.5), isFlagship ? 0.96 : 0.74, 0.45);
     }
-    shipBatchFlush(ctx, col, { glow: 0.75 + pulse * 0.25, streak: 0, alphaScale: gameOverFleetAlpha() });
+    shipBatchFlush(ctx, col, { glow: 0.75 + pulse * 0.25, flame: 0.7, alphaScale: gameOverFleetAlpha() });
 
     if (selected) {
         var bracketR = formationRadius + 6;
@@ -3804,14 +3923,14 @@ function pushOrbitalSquadron(ctx, node, squad, col, tick, frontPass) {
     // Ships behind the planet are dimmer: the cheapest depth cue there is.
     var shipAlpha = (frontPass ? 0.92 : 0.46) * squad.presence;
     var members = Math.max(1, squad.members);
-    var baseSize = shipWorldSize(leadScale * 3.6);
+    var baseSize = shipWorldSize(leadScale * 3.3);
     var formation = ORBITAL_FORMATION;
 
     for (var mi = 0; mi < members && mi < formation.length; mi++) {
         var form = formation[mi];
         var px = lead.x - dirX * trailGap * form.back + nX * spread * form.lateral + radial.x * radialGap * form.radial;
         var py = lead.y - dirY * trailGap * form.back + nY * spread * form.lateral + radial.y * radialGap * form.radial;
-        shipBatchPush(px, py, dirX, dirY, baseSize * form.scale, shipAlpha * (1 - mi * 0.08), frontPass ? 5.5 : 3);
+        shipBatchPush(px, py, dirX, dirY, baseSize * form.scale, shipAlpha * (1 - mi * 0.08), squad.throttleBias * (frontPass ? 0.85 : 0.65));
     }
 }
 
@@ -3827,7 +3946,7 @@ var ORBITAL_FORMATION = [
 function drawOrbitalSquadrons(ctx, node, squads, col, tick, frontPass) {
     if (!squads || !squads.length) return;
     for (var i = 0; i < squads.length; i++) pushOrbitalSquadron(ctx, node, squads[i], col, tick, frontPass);
-    shipBatchFlush(ctx, col, { glow: frontPass ? 0.8 : 0.4, streak: frontPass ? 0.7 : 0.35 });
+    shipBatchFlush(ctx, col, { glow: frontPass ? 0.8 : 0.4, flame: frontPass ? 0.85 : 0.45 });
 }
 
 function fillTerritoryCircleSet(ctx, territories, color, alpha, expand) {
@@ -4077,7 +4196,7 @@ var menuSceneHelpers = {
     paintHue: paintNodeOwnerHue,
     paintRipple: paintNodeCaptureRipple,
     nodeVfx: function (id) { return getNodeVfx(vfx, id); },
-    shipPush: function (x, y, dx, dy, size, alpha, streak) { shipBatchPush(x, y, dx, dy, shipWorldSize(size), alpha, streak); },
+    shipPush: function (x, y, dx, dy, size, alpha, throttle) { shipBatchPush(x, y, dx, dy, shipWorldSize(size), alpha, throttle); },
     shipFlush: function (layerCtx, color, opts) { shipBatchFlush(layerCtx, color, opts); },
 };
 

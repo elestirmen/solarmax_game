@@ -174,7 +174,8 @@ export function menuSceneCamera(scene, viewWidth, viewHeight) {
 /**
  * Draw the scene in world space. The caller has already applied the camera transform.
  * helpers: { colorFor(owner), planetTexture(id, r), haloSprite(color), paintHue(ctx, x, y, r, color, k),
- *            paintRipple(ctx, x, y, r, capture), nodeVfx(id), shipPush(...), shipFlush(ctx, color, opts) }
+ *            paintRipple(ctx, x, y, r, capture), nodeVfx(id),
+ *            shipPush(x, y, dirX, dirY, size, alpha, throttle), shipFlush(ctx, color, opts) }
  */
 export function drawMenuSceneWorld(ctx, scene, helpers) {
     var time = scene.time;
@@ -214,9 +215,9 @@ export function drawMenuSceneWorld(ctx, scene, helpers) {
                 var py = planet.y + Math.sin(a) * ry;
                 var tx = -Math.sin(a) * rx, ty = Math.cos(a) * ry;
                 var tl = Math.sqrt(tx * tx + ty * ty) || 1;
-                helpers.shipPush(px, py, tx / tl, ty / tl, 1.5, Math.sin(a) > 0 ? 0.9 : 0.45, 4);
+                helpers.shipPush(px, py, tx / tl, ty / tl, 1.5, Math.sin(a) > 0 ? 0.9 : 0.45, 0.6);
             }
-            helpers.shipFlush(ctx, color, { glow: 0.7, streak: 0.6 });
+            helpers.shipFlush(ctx, color, { glow: 0.7, flame: 0.8 });
         }
     }
 
@@ -238,8 +239,8 @@ export function drawMenuSceneWorld(ctx, scene, helpers) {
             var j = Math.sin(unit * 12.9898 + stream.seed) * 43758.5453;
             j = j - Math.floor(j) - 0.5;
             var off = (j * 12 + Math.sin(time * 3 + unit) * 1.2) * fade;
-            helpers.shipPush(pt.x - dy * off, pt.y + dx * off, dx, dy, 1.6, 0.9, 9);
+            helpers.shipPush(pt.x - dy * off, pt.y + dx * off, dx, dy, 1.6, 0.9, 1);
         }
-        helpers.shipFlush(ctx, color, { glow: 1, streak: 1 });
+        helpers.shipFlush(ctx, color, { glow: 1, flame: 1 });
     }
 }
