@@ -35,7 +35,9 @@
 
 **Single codebase, two runtimes:** Simulation logic lives under `assets/sim/`; the Canvas 2D client (`game.js`) and the multiplayer host (`server.js`) share the same rules, advancing a **deterministic tick** and checking **state hashes** for sync. Campaign, daily challenge, playlist presets, mutators, and PvE encounters (e.g. **Mega Turret**, **Relay Core**) are layers on top of that core.
 
-**Recent updates (e.g. Mar 2026):** Periodic **solar flares** on the map — warning phase, then damage to **deep-space fleets** only, driven deterministically from the match seed (`assets/sim/solar_flare.js`, tuning in `shared_config.js`). On mobile, **Visual Viewport** alignment (`stellar_conquest.html` and `game.js` CSS vars `--app-vvh` / `--app-vvw`), a tuning control, and layout tweaks for campaign / power HUD.
+**Latest update (Sep 2026) — presentation pass:** The game has been restaged end to end. The canvas renders at **HiDPI/Retina** resolution, and while the simulation stays at 30 Hz, fleets are interpolated between ticks so they glide at 60–144 Hz. Fleets are now **ship streams** that show the sim's real landing order; on capture the new owner's colour **ripples** across the world from the point of impact; a glowing particle engine covers combat, captures and ships destroyed in open space. The same effects and sounds play in online matches, because they are derived from board state. Behind the map sits a procedural nebula baked from the sector seed, with parallax star layers. A match opens on the whole sector, ends with a victory/defeat cinematic, and the result screen shows a **power-share timeline**. The main menu floats over a live sector. The music adds and drops layers with the tension of the match, and sound effects are panned to where they happen on screen. None of this touches the simulation or the sync hash.
+
+**Earlier updates (e.g. Mar 2026):** Periodic **solar flares** on the map — warning phase, then damage to **deep-space fleets** only, driven deterministically from the match seed (`assets/sim/solar_flare.js`, tuning in `shared_config.js`). On mobile, **Visual Viewport** alignment (`stellar_conquest.html` and `game.js` CSS vars `--app-vvh` / `--app-vvw`), a tuning control, and layout tweaks for campaign / power HUD.
 
 ---
 
@@ -102,6 +104,17 @@ docker compose up -d --build
 - Multiple difficulty levels with dynamic tuning
 - Aware of territory, turrets, supply, **contested** areas, and local threat geometry
 
+### Visuals and audio
+
+- **Sharp and smooth:** HiDPI canvas; the 30 Hz sim is interpolated and drawn at display rate
+- **Fleet streams:** every ship sits on the route in the order the sim will land it; faster routes leave longer light trails
+- **Capture ripple and effects:** ownership colour spreading from the impact point, hit flashes, sparks, debris, shock rings
+- **Space:** seeded procedural nebula, parallax stars, shooting stars
+- **Cinematic ending:** letterbox bars, camera push-in on the decisive world, fireworks in the winner's colour, then the power-share chart
+- **Adaptive music:** a generative D-minor score; bass pulse, drums and risers come in with combat, threat and how the match is going
+- **Positional audio:** capture, loss, combat and explosion cues are panned by screen position and quieter when off screen
+- **Accessibility:** with `prefers-reduced-motion`, shake, cinematics and particle density are toned down
+
 ### In-game guidance
 
 - Context badge and hint strip (what to do next from current selection)
@@ -133,6 +146,12 @@ assets/
     custom_map.js         JSON map import/export
     doctrine.js           Doctrine passive/active rules
   app/                    Client helpers (input, tick phases, hover target, start flow)
+    vfx.js                Pooled particle engine, cached glow sprites, per-planet effect state
+    fx_director.js        Capture / impact / reinforce / destroyed events from successive board states
+    backdrop.js           Frame-budgeted nebula bake, tiled star layers
+    menu_scene.js         The main menu's live sector (decorative, no sim)
+    match_timeline.js     Power samples over a match and the result chart
+    camera_fit.js         Opening / overview framing, camera bounds
   net/                    online_session, network_tick
   campaign/
     levels.js             Campaign definitions + objectives
@@ -161,9 +180,9 @@ e2e/                      Playwright smoke tests
 | Group send | Ctrl + drag and release |
 | Toggle flow | Right click on target |
 | Defense mode | Right click on your own planet |
-| Camera pan | Middle mouse + drag |
+| Camera pan | Middle mouse, or right mouse on empty space, + drag; arrow keys |
 | Move via minimap | Click / drag the minimap |
-| Zoom | Mouse wheel |
+| Zoom | Mouse wheel (toward the cursor) |
 
 ### Keyboard Shortcuts
 
@@ -174,6 +193,8 @@ e2e/                      Playwright smoke tests
 | `U` | Upgrade selected planets |
 | `A` | Select all owned planets |
 | `F` | Focus the capital and nearby opening targets |
+| `Space` | Show the whole sector / return to the previous framing |
+| `←` `↑` `→` `↓` | Pan the camera |
 | `Q` | Doctrine active ability |
 | `Esc` / `P` | Pause / resume |
 
@@ -250,7 +271,7 @@ The project uses the built-in Node.js test runner (no extra test framework).
 npm test
 ```
 
-`tests/` covers shared simulation modules plus selected UI helpers (campaign levels, playlists, mission scripts, solar flare rules, online session, etc.). Current unit test count: **283** (see the `tests` line in `npm test` output).
+`tests/` covers shared simulation modules plus selected UI helpers (campaign levels, playlists, mission scripts, solar flare rules, online session, etc.). Current unit test count: **307** (see the `tests` line in `npm test` output).
 
 **E2E (Playwright):**
 

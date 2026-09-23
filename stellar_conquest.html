@@ -319,6 +319,18 @@
             overflow: hidden;
         }
 
+        /* The menu floats over a live sector drawn on the game canvas, so the overlay is
+           a light veil instead of an opaque sheet, and the CSS stand-in nebulae retire. */
+        #mainMenu.overlay {
+            background: radial-gradient(ellipse at 50% 45%, rgba(3, 6, 14, 0.5) 0%, rgba(2, 4, 10, 0.2) 70%, rgba(2, 4, 10, 0.1) 100%);
+            backdrop-filter: none;
+        }
+
+        #mainMenu .menu-nebula,
+        #mainMenu .menu-starfield {
+            display: none;
+        }
+
         .menu-atmosphere {
             position: absolute;
             inset: 0;
@@ -3504,6 +3516,145 @@
         }
 
         .game-stats { margin: 12px 0; padding: 10px; background: rgba(255,255,255,0.05); border-radius: var(--radius); font-size: .9rem; }
+
+        /* ── Result screen ── */
+        #gameOverOverlay {
+            background: radial-gradient(ellipse at 50% 42%, rgba(4, 8, 18, 0.55), rgba(2, 4, 10, 0.86));
+            backdrop-filter: blur(3px);
+            transition: opacity .6s ease;
+        }
+        #gameOverOverlay.cinematic-pending {
+            opacity: 0;
+            pointer-events: none;
+            /* The shared overlay fade-in animation would otherwise override the opacity. */
+            animation: none;
+        }
+        #gameOverOverlay.cinematic-pending .gameover-panel { transform: translateY(18px) scale(0.98); }
+        .gameover-panel {
+            width: min(560px, calc(100vw - 32px));
+            padding: 32px 36px 26px;
+            transition: transform .7s cubic-bezier(.2,.8,.2,1);
+        }
+        .gameover-eyebrow {
+            font-family: 'Orbitron', var(--font);
+            font-size: var(--fs-label);
+            letter-spacing: .32em;
+            color: var(--text-dim);
+            margin-bottom: 6px;
+        }
+        #gameOverTitle {
+            font-family: 'Orbitron', var(--font);
+            font-size: clamp(2rem, 6vw, 3.1rem);
+            font-weight: 900;
+            letter-spacing: .08em;
+            line-height: 1.05;
+            margin-bottom: 8px;
+            background: linear-gradient(180deg, #ffffff 0%, var(--result-tint, #9cc6ff) 100%);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            filter: drop-shadow(0 0 22px var(--result-glow, rgba(90, 160, 255, 0.45)));
+        }
+        .gameover-panel.is-victory { --result-tint: #9fe9c2; --result-glow: rgba(80, 230, 160, 0.42); }
+        .gameover-panel.is-defeat { --result-tint: #ff9a9a; --result-glow: rgba(255, 90, 90, 0.4); }
+        #gameOverMsg { color: var(--text); opacity: .86; margin-bottom: 18px; line-height: 1.45; }
+        .gameover-highlights {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: var(--sp-3);
+            margin-bottom: 16px;
+        }
+        .gameover-stat {
+            background: var(--surface-2);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--r-md);
+            padding: 10px 6px 8px;
+            animation: statRise .5s cubic-bezier(.2,.8,.2,1) both;
+        }
+        .gameover-stat:nth-child(2) { animation-delay: .07s; }
+        .gameover-stat:nth-child(3) { animation-delay: .14s; }
+        .gameover-stat:nth-child(4) { animation-delay: .21s; }
+        .gameover-stat-value {
+            font-family: 'Orbitron', var(--font);
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #fff;
+            display: block;
+        }
+        .gameover-stat-label { font-size: var(--fs-label); color: var(--text-dim); letter-spacing: .06em; text-transform: uppercase; }
+        @keyframes statRise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+        .gameover-chart {
+            margin: 0 0 14px;
+            padding: 10px 12px 8px;
+            background: rgba(4, 8, 18, 0.55);
+            border: 1px solid var(--border-soft);
+            border-radius: var(--r-md);
+            text-align: left;
+        }
+        .gameover-chart.hidden { display: none; }
+        .gameover-chart-caption {
+            display: flex;
+            justify-content: space-between;
+            font-size: var(--fs-label);
+            color: var(--text-dim);
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+        .gameover-chart-body svg { display: block; width: 100%; height: auto; overflow: visible; }
+        .gameover-chart-body polyline { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+        .gameover-chart-body polyline.is-human { stroke-width: 3; filter: drop-shadow(0 0 4px currentColor); }
+        .gameover-chart-body .chart-grid { stroke: rgba(255,255,255,0.06); stroke-width: 1; }
+        .gameover-chart-body .chart-marker-gain { fill: #4ade80; }
+        .gameover-chart-body .chart-marker-loss { fill: #ff6b6b; }
+        .gameover-chart-body polyline { stroke-dasharray: 2000; stroke-dashoffset: 2000; animation: chartDraw 1.4s ease-out .25s forwards; }
+        @keyframes chartDraw { to { stroke-dashoffset: 0; } }
+        .gameover-chart-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; font-size: var(--fs-body); color: var(--text); }
+        .gameover-chart-legend span::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 5px;
+            background: var(--swatch, #fff);
+            box-shadow: 0 0 6px var(--swatch, #fff);
+        }
+        .gameover-details { text-align: left; margin-bottom: 14px; }
+        .gameover-details summary {
+            cursor: pointer;
+            font-size: var(--fs-body);
+            color: var(--text-dim);
+            letter-spacing: .06em;
+            padding: 4px 0;
+        }
+        .gameover-details summary:hover { color: var(--text); }
+        .gameover-actions { display: flex; flex-direction: column; gap: var(--sp-3); }
+        .gameover-actions button { width: 100%; }
+        @media (max-width: 520px) {
+            .gameover-highlights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+            .gameover-panel { padding: 22px 16px 18px; }
+        }
+
+        /* Letterbox bars for the end-of-match cinematic. */
+        .cinematic-bars { position: fixed; inset: 0; pointer-events: none; z-index: 90; }
+        .cinematic-bars span {
+            position: absolute;
+            left: 0;
+            right: 0;
+            height: 9vh;
+            background: #000;
+            transform: scaleY(0);
+            transition: transform .6s cubic-bezier(.2,.8,.2,1);
+        }
+        .cinematic-bars span:first-child { top: 0; transform-origin: top; }
+        .cinematic-bars span:last-child { bottom: 0; transform-origin: bottom; }
+        .cinematic-bars.active span { transform: scaleY(1); }
+        @media (prefers-reduced-motion: reduce) {
+            .gameover-chart-body polyline { animation: none; stroke-dashoffset: 0; }
+            .gameover-stat { animation: none; }
+            .cinematic-bars span { transition: none; }
+        }
         .stats-row { margin: 4px 0; color: var(--text-dim); display: flex; justify-content: space-between; gap: 12px; }
         .stats-row.emphasis { color: #d9f6e7; }
         .stats-label { color: var(--text-dim); }
@@ -4613,10 +4764,23 @@
             #hud {
                 gap: 10px;
                 padding: 8px 12px 10px;
+                /* Glass rather than a slab: the battle stays faintly visible behind the deck. */
                 background:
-                    linear-gradient(180deg, rgba(18, 29, 52, .94), rgba(7, 13, 25, .96));
+                    linear-gradient(180deg, rgba(16, 26, 48, .8), rgba(5, 10, 20, .9));
                 box-shadow: 0 -18px 55px rgba(2, 6, 16, .28), inset 0 1px 0 rgba(255, 255, 255, .035);
-                backdrop-filter: blur(16px);
+                backdrop-filter: blur(16px) saturate(1.2);
+                border-top-color: transparent;
+            }
+
+            #hud::before {
+                content: '';
+                position: absolute;
+                left: 0;
+                right: 0;
+                top: -1px;
+                height: 1px;
+                background: linear-gradient(90deg, transparent, rgba(110, 170, 255, .55) 30%, rgba(170, 140, 255, .45) 70%, transparent);
+                pointer-events: none;
             }
 
             #hudLeft { flex-basis: 216px; padding: 8px 10px; }
@@ -4665,6 +4829,16 @@
                 top: calc(max(8px, env(safe-area-inset-top)) + min(26dvh, 210px) + 10px);
             }
             #hudRight button { letter-spacing: .01em; }
+        }
+
+        /* The deck keeps one height while hints and advisor cards come and go, so the
+           panels above it stop jumping every time a tip changes. */
+        @media (min-width: 901px) and (min-height: 700px) {
+            #hud { min-height: 176px; }
+        }
+
+        #mainMenu .menu-panel {
+            background: rgba(10, 16, 30, 0.8);
         }
 
         @media (min-width: 900px) and (max-height: 800px) {
@@ -5140,7 +5314,7 @@
                         <li><b>PC — gönderim:</b> <b>Ctrl+boş alanda sürükle</b> ile seçili kaynaklardan hedefe bırak: dünya veya nötr üzerine toplu gönderim, tamamen boş uzaya <b>park filosu</b>.</li>
                         <li><b>PC — hedef tık:</b> Kaynak seçiliyken hedefe sol tık gönderir. Kaynak tipinin flow katsayısı etkili sayıyı değiştirebilir; hedefteki <b>emir tahmini</b> gerçek gönderimi ve yaklaşık savunmayı gösterir.</li>
                         <li><b>PC — sağ tık:</b> Seçtiğin <i>kendi</i> dünyada savunmayı aç/kapat. Başka düşman/tarafsız hedefte sağ tık: bu kaynaklardan o hedefe <b>flow</b> (otomatik akış) bağla veya kes.</li>
-                        <li><b>Kamera:</b> Orta tuş sürükleme veya kenar kaydırma; tekerlek yakınlaştırır. Mini haritaya tıklayıp sürüklemek kamerayı taşır; <b>F / ODAK</b> açılış cephesini yeniden kadraja alır.</li>
+                        <li><b>Kamera:</b> Orta tuşla ya da boş uzayda <b>sağ tuşla sürükle</b>; <b>ok tuşları</b> da kaydırır. Tekerlek imlecin olduğu noktaya yakınlaştırır. Mini haritaya tıklayıp sürüklemek kamerayı taşır; <b>Space</b> tüm sektörü gösterir, tekrar basınca geri döner; <b>F / ODAK</b> açılış cephesini yeniden kadraja alır.</li>
                         <li><b>Mobil — dokunma:</b> Kaba işaretçide kısa dokunuş seçim; boş alanda kaydırma haritayı kaydırır (pan). İki parmak yakınlaştırma.</li>
                         <li><b>Mobil — komutlar:</b> <b>YÜKSELT</b>, <b>SAVUN</b>, <b>FLOW</b> ve <b>DOKTRİN</b> HUD düğmeleri masaüstündeki eşlenikleriyle aynı emirleri verir.</li>
                     </ul>
@@ -5153,6 +5327,8 @@
                         <div class="shortcut-item"><span class="shortcut-key">U</span> Yükselt</div>
                         <div class="shortcut-item"><span class="shortcut-key">A</span> Tüm dünyaları seç</div>
                         <div class="shortcut-item"><span class="shortcut-key">F</span> Açılış cephesine odaklan</div>
+                        <div class="shortcut-item"><span class="shortcut-key">Space</span> Tüm sektör / geri dön</div>
+                        <div class="shortcut-item"><span class="shortcut-key">← ↑ → ↓</span> Kamerayı kaydır</div>
                         <div class="shortcut-item"><span class="shortcut-key">Q</span> Doktrin (aktif)</div>
                         <div class="shortcut-item"><span class="shortcut-key">Esc</span> Duraklat</div>
                         <div class="shortcut-item"><span class="shortcut-key">P</span> Devam</div>
@@ -5162,6 +5338,7 @@
                         <li><b>U / YÜK:</b> Seçili kendi dünyalarında seviye yükseltir (birlik ve kurallar uygunsa).</li>
                         <li><b>A:</b> Sahip olduğun tüm gezegenleri seçer.</li>
                         <li><b>F / ODAK:</b> Ana gezegenini ve yakın hedefleri yeniden kadraja alır.</li>
+                        <li><b>Space:</b> Kamerayı tüm sektöre açar; ikinci basış önceki kadraja döndürür.</li>
                         <li><b>Q / DOK:</b> Seçtiğin doktrinin aktif yeteneği — süre ve bekleme HUD’da.</li>
                         <li><b>Esc veya P:</b> Tek oyuncuda duraklat / devam.</li>
                         <li><b>HIZ:</b> Yerelde 1× / 2× / 4× sim hızı.</li>
@@ -5331,15 +5508,28 @@
         </div>
     </div>
     <div id="gameOverOverlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="gameOverTitle">
-        <div class="menu-panel">
+        <div class="menu-panel gameover-panel">
+            <div id="gameOverEyebrow" class="gameover-eyebrow">SEKTÖR RAPORU</div>
             <h2 id="gameOverTitle">Zafer</h2>
             <p id="gameOverMsg"></p>
-            <div id="gameOverStats" class="game-stats"></div>
-            <button id="rematchBtn" class="primary-btn" style="display:none">Tekrar Oyna</button>
-            <button id="nextLevelBtn" class="primary-btn" style="display:none">Sonraki Bölüm</button>
-            <button id="restartBtn" class="secondary-btn">Yeni Oyun</button>
+            <div id="gameOverHighlights" class="gameover-highlights"></div>
+            <figure id="gameOverChart" class="gameover-chart hidden" aria-label="Maç boyunca sektör gücü payı">
+                <figcaption class="gameover-chart-caption"><span>Sektör gücü payı</span><span id="gameOverChartTime"></span></figcaption>
+                <div id="gameOverChartBody" class="gameover-chart-body"></div>
+                <div id="gameOverChartLegend" class="gameover-chart-legend"></div>
+            </figure>
+            <details class="gameover-details">
+                <summary>Ayrıntılı istatistikler</summary>
+                <div id="gameOverStats" class="game-stats"></div>
+            </details>
+            <div class="gameover-actions">
+                <button id="rematchBtn" class="primary-btn" style="display:none">Tekrar Oyna</button>
+                <button id="nextLevelBtn" class="primary-btn" style="display:none">Sonraki Bölüm</button>
+                <button id="restartBtn" class="secondary-btn">Yeni Oyun</button>
+            </div>
         </div>
     </div>
+    <div id="cinematicBars" class="cinematic-bars" aria-hidden="true"><span></span><span></span></div>
     <div id="minimap" class="minimap hidden">
         <canvas id="minimapCanvas" tabindex="0" role="button" aria-label="Sektör mini haritası. Kamerayı taşımak için tıkla veya sürükle."></canvas>
     </div>

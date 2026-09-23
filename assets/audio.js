@@ -16,18 +16,32 @@
     var lastSolarFlareBlastAt = 0;
     var lastDeniedAt = 0;
 
+    var musicDelay = null;
+    var lastExplosionAt = 0;
+    var lastCaptureAt = 0;
+
+    // Generative score in D minor. Chords change every two bars; `intensity` (0..1,
+    // driven by the game) decides which layers play, so a quiet build-up and a
+    // desperate defence sound like different pieces without ever cutting.
     var music = {
         started: false,
         timer: null,
-        bpm: 96,
+        bpm: 84,
         step: 0,
         bar: 0,
-        progression: [
-            { root: 98.0, chord: [0, 3, 7, 10] },
-            { root: 110.0, chord: [0, 3, 7, 10] },
-            { root: 123.47, chord: [0, 4, 7, 11] },
-            { root: 82.41, chord: [0, 3, 7, 10] },
-        ],
+        intensity: 0.12,
+        targetIntensity: 0.12,
+        mood: 'menu',
+        chord: 0,
+        tense: false,
+    };
+
+    var MUSIC_ROOT = 38; // D2
+    var PROGRESSIONS = {
+        // i9 - VImaj7 - IIImaj7 - VII(add9): open, drifting, unresolved.
+        calm: [[0, 3, 7, 10, 14], [-4, 0, 3, 7, 10], [3, 7, 10, 14], [-2, 2, 5, 9]],
+        // i - iv9 - VI - V7: the leading tone pulls every four bars.
+        tense: [[0, 3, 7, 10], [-7, -4, 0, 3, 7], [-4, 0, 3, 7], [-5, -1, 2, 5]],
     };
 
     function clamp(v, lo, hi) {
@@ -120,6 +134,23 @@
         reverb.connect(reverbGain);
         reverbGain.connect(masterGain);
 
+        // Dotted-eighth echo for the arpeggio: the single effect that makes a sparse
+        // line of notes sound like space instead of a metronome.
+        musicDelay = ctx.createDelay(2);
+        musicDelay.delayTime.value = (60 / music.bpm) * 0.75;
+        var delayFeedback = ctx.createGain();
+        delayFeedback.gain.value = 0.36;
+        var delayTone = ctx.createBiquadFilter();
+        delayTone.type = 'lowpass';
+        delayTone.frequency.value = 2400;
+        var delayOut = ctx.createGain();
+        delayOut.gain.value = 0.55;
+        musicDelay.connect(delayTone);
+        delayTone.connect(delayFeedback);
+        delayFeedback.connect(musicDelay);
+        delayTone.connect(delayOut);
+        delayOut.connect(musicBus);
+
         noiseBuffer = makeNoiseBuffer(ctx);
         setupUnlock(ctx);
         return ctx;
@@ -131,13 +162,17 @@
         var s = Math.max(0.0001, opt.sustain || 0.001);
         var r = Math.max(0.001, opt.release || 0.05);
         var peak = Math.max(0.0001, opt.peak || 0.1);
+        var hold = Math.max(0, Number(opt.hold) || 0);
 
         gainParam.cancelScheduledValues(now);
         gainParam.setValueAtTime(0.0001, now);
         gainParam.exponentialRampToValueAtTime(peak, now + a);
         gainParam.exponentialRampToValueAtTime(s, now + a + d);
-        gainParam.exponentialRampToValueAtTime(0.0001, now + a + d + r);
-        return now + a + d + r;
+        // Sustained sounds (pads, drones) hold their level before releasing; without a
+        // hold an exponential release starts decaying the instant the attack ends.
+        if (hold > 0) gainParam.setValueAtTime(s, now + a + d + hold);
+        gainParam.exponentialRampToValueAtTime(0.0001, now + a + d + hold + r);
+        return now + a + d + hold + r;
     }
 
     function createPanNode(c, pan) {
@@ -194,17 +229,34 @@
             gain.connect(send);
             send.connect(reverb);
         }
+        if (opt.delaySend && musicDelay) {
+            var echo = c.createGain();
+            echo.gain.value = clamp(opt.delaySend, 0, 1);
+            gain.connect(echo);
+            echo.connect(musicDelay);
+        }
 
         var end = envGain(gain.gain, now, {
             attack: opt.attack,
             decay: opt.decay,
             sustain: opt.sustain,
+            hold: opt.hold,
             release: opt.release,
             peak: opt.gain,
         });
 
         osc.start(now);
         osc.stop(end + 0.02);
+    }
+
+    // Callers may pass { pan, gain } describing where on screen an event happened;
+    // folded into a sound's own pan and level here so every cue can be positional.
+    function spatial(o) {
+        o = o && typeof o === 'object' ? o : {};
+        return {
+            pan: clamp(Number(o.pan) || 0, -1, 1),
+            gain: clamp(o.gain === undefined ? 1 : Number(o.gain), 0, 1.5),
+        };
     }
 
     function playNoise(opt) {
@@ -249,6 +301,7 @@
             attack: opt.attack,
             decay: opt.decay,
             sustain: opt.sustain,
+            hold: opt.hold,
             release: opt.release,
             peak: opt.gain,
         });
@@ -257,7 +310,12 @@
         src.stop(end + 0.03);
     }
 
+    var lastUiClickAt = 0;
     function uiClick() {
+        var c = getCtx();
+        if (!c) return;
+        if (c.currentTime - lastUiClickAt < 0.045) return;
+        lastUiClickAt = c.currentTime;
         playOsc({
             type: 'triangle',
             freq: 1450,
@@ -586,8 +644,9 @@
         }
     }
 
-    function sendSound() {
-        var pan = rand(-0.25, 0.25);
+    function sendSound(o) {
+        var sp = spatial(o);
+        var pan = clamp(sp.pan + rand(-0.12, 0.12), -1, 1);
         playOsc({
             type: 'sawtooth',
             freq: 980,
@@ -633,16 +692,19 @@
         });
     }
 
-    function combatSound() {
+    function combatSound(o) {
         var c = getCtx();
         if (!c) return;
         var now = c.currentTime;
+        var sp = spatial(o);
+        var weight = clamp(o && o.intensity !== undefined ? Number(o.intensity) : 0.7, 0.2, 1.4);
 
         // Combat can happen in bursts; clamp trigger rate to avoid harsh spam.
         if (now - lastCombatAt < 0.065) return;
         lastCombatAt = now;
 
-        var pan = rand(-0.28, 0.28);
+        var pan = clamp(sp.pan + rand(-0.12, 0.12), -1, 1);
+        var level = sp.gain * (0.65 + weight * 0.4);
         var accent = combatAccentFlip;
         combatAccentFlip = !combatAccentFlip;
 
@@ -652,12 +714,12 @@
             freq: accent ? 118 : 104,
             freqEnd: 62,
             sweep: 0.12,
-            gain: 0.095,
+            gain: 0.095 * level,
             attack: 0.001,
             decay: 0.02,
             sustain: 0.03,
             release: 0.14,
-            pan: pan * 0.2,
+            pan: pan * 0.5,
         });
 
         // Short texture crack without piercing highs.
@@ -667,7 +729,7 @@
             filterFreqEnd: accent ? 480 : 220,
             filterSweep: 0.1,
             filterQ: accent ? 1.1 : 0.65,
-            gain: accent ? 0.085 : 0.07,
+            gain: (accent ? 0.085 : 0.07) * level,
             attack: 0.001,
             decay: 0.015,
             sustain: 0.01,
@@ -682,7 +744,7 @@
             freq: accent ? 210 : 170,
             freqEnd: 120,
             sweep: 0.08,
-            gain: 0.04,
+            gain: 0.04 * level,
             attack: 0.001,
             decay: 0.012,
             sustain: 0.008,
@@ -694,31 +756,183 @@
         });
     }
 
-    function captureSound() {
-        var notes = [392, 494, 587, 784];
+    // Taking a world: a rising major arpeggio over a low swell, panned to where it
+    // happened. The loudest positive cue in the game, rate-limited so a chain of
+    // captures rolls instead of stacking.
+    function captureSound(o) {
+        var c = getCtx();
+        if (!c) return;
+        var sp = spatial(o);
+        var now = c.currentTime;
+        var soft = now - lastCaptureAt < 0.25;
+        lastCaptureAt = now;
+        var level = sp.gain * (soft ? 0.6 : 1);
+        var notes = [587.33, 739.99, 880, 1174.66];
         for (var i = 0; i < notes.length; i++) {
             playOsc({
                 type: i % 2 ? 'triangle' : 'sine',
                 freq: notes[i],
-                gain: 0.085 - i * 0.01,
-                attack: 0.002,
-                decay: 0.045,
+                gain: (0.075 - i * 0.009) * level,
+                attack: 0.003,
+                decay: 0.05,
+                sustain: 0.035,
+                release: 0.34,
+                delay: i * 0.05,
+                pan: clamp(sp.pan + (i - 1.5) * 0.08, -1, 1),
+                reverbSend: 0.28,
+            });
+        }
+        playOsc({
+            type: 'sine',
+            freq: 146.83,
+            freqEnd: 220,
+            sweep: 0.3,
+            gain: 0.07 * level,
+            attack: 0.01,
+            decay: 0.12,
+            sustain: 0.04,
+            release: 0.5,
+            pan: sp.pan * 0.5,
+            filterType: 'lowpass',
+            filterFreq: 700,
+            reverbSend: 0.2,
+        });
+        playOsc({
+            type: 'triangle',
+            freq: 1760,
+            gain: 0.022 * level,
+            attack: 0.002,
+            decay: 0.03,
+            sustain: 0.01,
+            release: 0.6,
+            delay: 0.2,
+            pan: sp.pan,
+            reverbSend: 0.45,
+        });
+    }
+
+    // Losing a world must be unmistakable even with the camera elsewhere: a low
+    // falling minor second over a dull impact.
+    function planetLostSound(o) {
+        var sp = spatial(o);
+        var level = sp.gain;
+        playOsc({
+            type: 'sine',
+            freq: 120,
+            freqEnd: 48,
+            sweep: 0.4,
+            gain: 0.13 * level,
+            attack: 0.002,
+            decay: 0.08,
+            sustain: 0.05,
+            release: 0.5,
+            pan: sp.pan * 0.4,
+        });
+        var tones = [311.13, 293.66];
+        for (var i = 0; i < tones.length; i++) {
+            playOsc({
+                type: 'triangle',
+                freq: tones[i],
+                freqEnd: tones[i] * 0.94,
+                sweep: 0.3,
+                gain: 0.06 * level,
+                attack: 0.004,
+                decay: 0.08,
                 sustain: 0.04,
-                release: 0.2,
-                delay: i * 0.055,
-                reverbSend: 0.2,
+                release: 0.42,
+                delay: 0.06 + i * 0.16,
+                pan: sp.pan,
+                filterType: 'lowpass',
+                filterFreq: 1500,
+                reverbSend: 0.3,
             });
         }
         playNoise({
-            filterType: 'highpass',
-            filterFreq: 3200,
-            gain: 0.02,
+            filterType: 'lowpass',
+            filterFreq: 900,
+            filterFreqEnd: 160,
+            filterSweep: 0.5,
+            gain: 0.04 * level,
+            attack: 0.004,
+            decay: 0.06,
+            sustain: 0.02,
+            release: 0.45,
+            pan: sp.pan,
+            reverbSend: 0.2,
+        });
+    }
+
+    // Somebody else's capture: a muted chime, so the map's tempo is audible without
+    // competing with the player's own events.
+    function distantCaptureSound(o) {
+        var c = getCtx();
+        if (!c) return;
+        var now = c.currentTime;
+        if (now - lastCaptureAt < 0.18) return;
+        lastCaptureAt = now;
+        var sp = spatial(o);
+        playOsc({
+            type: 'sine',
+            freq: 523.25,
+            gain: 0.03 * sp.gain,
+            attack: 0.004,
+            decay: 0.05,
+            sustain: 0.02,
+            release: 0.3,
+            pan: sp.pan,
+            filterType: 'lowpass',
+            filterFreq: 1800,
+            reverbSend: 0.35,
+        });
+        playOsc({
+            type: 'sine',
+            freq: 392,
+            gain: 0.022 * sp.gain,
+            attack: 0.004,
+            decay: 0.05,
+            sustain: 0.02,
+            release: 0.3,
+            delay: 0.07,
+            pan: sp.pan,
+            filterType: 'lowpass',
+            filterFreq: 1600,
+            reverbSend: 0.35,
+        });
+    }
+
+    function explosionSound(o) {
+        var c = getCtx();
+        if (!c) return;
+        var now = c.currentTime;
+        if (now - lastExplosionAt < 0.09) return;
+        lastExplosionAt = now;
+        var sp = spatial(o);
+        var size = clamp(o && o.size !== undefined ? Number(o.size) : 0.5, 0.1, 1);
+        playOsc({
+            type: 'sine',
+            freq: 90 + (1 - size) * 60,
+            freqEnd: 34,
+            sweep: 0.25 + size * 0.2,
+            gain: (0.06 + size * 0.07) * sp.gain,
             attack: 0.001,
-            decay: 0.02,
-            sustain: 0.01,
-            release: 0.15,
-            delay: 0.05,
-            reverbSend: 0.25,
+            decay: 0.05,
+            sustain: 0.03,
+            release: 0.22 + size * 0.3,
+            pan: sp.pan * 0.6,
+        });
+        playNoise({
+            filterType: 'lowpass',
+            filterFreq: 1400 + size * 800,
+            filterFreqEnd: 200,
+            filterSweep: 0.3 + size * 0.2,
+            filterQ: 0.7,
+            gain: (0.05 + size * 0.05) * sp.gain,
+            attack: 0.001,
+            decay: 0.04,
+            sustain: 0.02,
+            release: 0.25 + size * 0.35,
+            pan: sp.pan,
+            reverbSend: 0.18,
         });
     }
 
@@ -1068,95 +1282,225 @@
         });
     }
 
-    function scheduleMusicStep(stepIndex, when) {
-        var prog = music.progression[music.bar % music.progression.length];
-        var rootMidi = 45 + (Math.log(prog.root / 110.0) / Math.log(2)) * 12;
-        var chord = prog.chord;
+    function voiceInRange(tone, low, high) {
+        var n = MUSIC_ROOT + tone;
+        while (n < low) n += 12;
+        while (n > high) n -= 12;
+        return n;
+    }
 
-        // Kick-like pulse
-        if (stepIndex % 8 === 0) {
-            playOsc({
-                target: musicBus,
-                type: 'sine',
-                freq: 88,
-                freqEnd: 42,
-                sweep: 0.11,
-                gain: 0.12,
-                attack: 0.001,
-                decay: 0.03,
-                sustain: 0.02,
-                release: 0.08,
-                delay: when - ctx.currentTime,
-            });
+    function currentChord() {
+        var set = music.tense ? PROGRESSIONS.tense : PROGRESSIONS.calm;
+        return set[music.chord % set.length];
+    }
+
+    // A pad chord: two detuned saws per voice through a lowpass that slowly opens, so
+    // each chord blooms instead of switching on.
+    // Root-position voicing stacked upward from the root: no semitone clusters in the
+    // low register, where they turn to mud.
+    function padVoicing(chord) {
+        var voices = [voiceInRange(chord[0], 48, 59)];
+        for (var i = 1; i < chord.length && voices.length < 4; i++) {
+            var n = MUSIC_ROOT + chord[i];
+            while (n <= voices[voices.length - 1]) n += 12;
+            while (n - 12 > voices[voices.length - 1]) n -= 12;
+            voices.push(n);
         }
+        return voices;
+    }
 
-        // Bass groove
-        if (stepIndex % 4 === 0 || stepIndex % 7 === 3) {
-            var bassMidi = rootMidi + (stepIndex % 8 === 4 ? 7 : 0);
-            playOsc({
-                target: musicBus,
-                type: 'triangle',
-                freq: midiToHz(bassMidi),
-                freqEnd: midiToHz(bassMidi - 5),
-                sweep: 0.2,
-                gain: 0.065,
-                attack: 0.002,
-                decay: 0.04,
-                sustain: 0.03,
-                release: 0.16,
-                delay: when - ctx.currentTime,
-                filterType: 'lowpass',
-                filterFreq: 700,
-                filterQ: 1.1,
-                reverbSend: 0.05,
-            });
-        }
-
-        // Ambient pad on bar start
-        if (stepIndex === 0) {
-            for (var i = 0; i < chord.length; i++) {
+    function schedulePad(chord, when, duration, level) {
+        var voices = padVoicing(chord);
+        for (var v = 0; v < voices.length; v++) {
+            for (var d = -1; d <= 1; d += 2) {
                 playOsc({
                     target: musicBus,
-                    type: 'sine',
-                    freq: midiToHz(rootMidi + 12 + chord[i]),
-                    gain: 0.022,
-                    attack: 0.08,
-                    decay: 0.25,
-                    sustain: 0.018,
-                    release: 0.9,
+                    type: 'sawtooth',
+                    freq: midiToHz(voices[v]),
+                    detune: d * 7,
+                    gain: 0.011 * level,
+                    attack: 1.4,
+                    decay: 0.8,
+                    sustain: 0.0085 * level,
+                    hold: Math.max(0.5, duration * 0.45),
+                    release: duration * 0.55,
                     delay: when - ctx.currentTime,
-                    pan: -0.35 + i * 0.25,
-                    reverbSend: 0.32,
+                    pan: -0.45 + v * 0.3 + d * 0.08,
                     filterType: 'lowpass',
-                    filterFreq: 1400,
+                    filterFreq: 420,
+                    filterFreqEnd: 900 + music.intensity * 900,
+                    filterSweep: duration * 0.55,
+                    filterQ: 0.6,
+                    reverbSend: 0.4,
                 });
             }
         }
+    }
 
-        // Soft top arpeggio
-        if (stepIndex % 2 === 1) {
-            var arpIx = (stepIndex + music.bar) % chord.length;
-            var noteMidi = rootMidi + 24 + chord[arpIx];
+    function scheduleBass(tone, when, length, gain) {
+        var note = voiceInRange(tone, 33, 45);
+        playOsc({
+            target: musicBus,
+            type: 'sine',
+            freq: midiToHz(note),
+            gain: gain,
+            attack: 0.02,
+            decay: 0.2,
+            sustain: gain * 0.6,
+            hold: length * 0.5,
+            release: length * 0.5,
+            delay: when - ctx.currentTime,
+            filterType: 'lowpass',
+            filterFreq: 320,
+        });
+        playOsc({
+            target: musicBus,
+            type: 'triangle',
+            freq: midiToHz(note + 12),
+            gain: gain * 0.28,
+            attack: 0.01,
+            decay: 0.15,
+            sustain: gain * 0.1,
+            release: length * 0.6,
+            delay: when - ctx.currentTime,
+            filterType: 'lowpass',
+            filterFreq: 700,
+        });
+    }
+
+    function scheduleMusicStep(stepIndex, when) {
+        // Glide toward the requested intensity: a battle swells the score over a few
+        // seconds rather than slamming it on.
+        music.intensity += (music.targetIntensity - music.intensity) * 0.04;
+        var I = music.mood === 'menu' ? 0.1 : music.intensity;
+        var stepDur = 60 / music.bpm / 4;
+        var barInPhrase = music.bar % 2;
+
+        if (stepIndex === 0 && barInPhrase === 0) {
+            // Harmony may only change mode at a phrase boundary, never mid-chord.
+            music.tense = music.mood !== 'menu' && (music.tense ? I > 0.42 : I > 0.55);
+            music.chord++;
+            var chord = currentChord();
+            var phrase = stepDur * 32;
+            schedulePad(chord, when, phrase * 1.15, 0.9 + I * 0.35);
+            scheduleBass(chord[0], when, phrase * 0.9, 0.05 + I * 0.03);
+        }
+        var chordNow = currentChord();
+
+        // Bells: rare, high, lots of reverb. The sound of empty space.
+        if (stepIndex === 0 && Math.random() < (music.mood === 'menu' ? 0.35 : 0.22 * (1 - I))) {
+            var bellTone = voiceInRange(chordNow[Math.floor(Math.random() * chordNow.length)], 74, 90);
             playOsc({
                 target: musicBus,
-                type: 'triangle',
-                freq: midiToHz(noteMidi),
-                gain: 0.028,
-                attack: 0.002,
-                decay: 0.03,
-                sustain: 0.01,
-                release: 0.12,
-                delay: when - ctx.currentTime,
-                pan: rand(-0.25, 0.25),
-                reverbSend: 0.22,
-                filterType: 'lowpass',
-                filterFreq: 2600,
+                type: 'sine',
+                freq: midiToHz(bellTone),
+                gain: 0.022,
+                attack: 0.003,
+                decay: 0.2,
+                sustain: 0.006,
+                release: 2.6,
+                delay: when - ctx.currentTime + stepDur * Math.floor(Math.random() * 8),
+                pan: rand(-0.6, 0.6),
+                reverbSend: 0.7,
+                delaySend: 0.3,
             });
         }
 
-        // The percussive noise "whisper hat" layer was removed: filtered
-        // white noise reads as an intermittent hiss on many speakers. The
-        // melodic layers (kick, bass, pad, arpeggio) carry the track alone.
+        // Arpeggio: chord tones on eighths, denser and brighter as intensity rises.
+        var arpChance = stepIndex % 2 === 0 ? 0.28 + I * 0.62 : Math.max(0, I - 0.55) * 1.4;
+        if (Math.random() < arpChance) {
+            var pattern = [0, 2, 1, 3, 2, 1, 3, 0];
+            var arpIx = pattern[(stepIndex >> 1) % pattern.length] % chordNow.length;
+            var arpNote = voiceInRange(chordNow[arpIx], 62, 79) + (Math.random() < 0.18 ? 12 : 0);
+            playOsc({
+                target: musicBus,
+                type: I > 0.5 ? 'triangle' : 'sine',
+                freq: midiToHz(arpNote),
+                gain: 0.02 + I * 0.012,
+                attack: 0.003,
+                decay: 0.06,
+                sustain: 0.006,
+                release: 0.28,
+                delay: when - ctx.currentTime,
+                pan: rand(-0.35, 0.35),
+                filterType: 'lowpass',
+                filterFreq: 1800 + I * 2200,
+                reverbSend: 0.25,
+                delaySend: 0.42,
+            });
+        }
+
+        // Pulse: an eighth-note bass ostinato once the map heats up.
+        if (I > 0.34 && stepIndex % 2 === 0) {
+            var pulseGain = (I - 0.34) * 0.07;
+            playOsc({
+                target: musicBus,
+                type: 'triangle',
+                freq: midiToHz(voiceInRange(chordNow[0], 38, 49)),
+                gain: pulseGain * (stepIndex % 4 === 0 ? 1 : 0.65),
+                attack: 0.004,
+                decay: 0.05,
+                sustain: pulseGain * 0.2,
+                release: 0.14,
+                delay: when - ctx.currentTime,
+                filterType: 'lowpass',
+                filterFreq: 420 + I * 500,
+                filterQ: 2,
+            });
+        }
+
+        // Drums only when there is a fight to underscore.
+        if (I > 0.46 && (stepIndex === 0 || stepIndex === 8 || (I > 0.78 && stepIndex === 11))) {
+            playOsc({
+                target: musicBus,
+                type: 'sine',
+                freq: 92,
+                freqEnd: 40,
+                sweep: 0.12,
+                gain: 0.05 + (I - 0.46) * 0.12,
+                attack: 0.001,
+                decay: 0.04,
+                sustain: 0.02,
+                release: 0.12,
+                delay: when - ctx.currentTime,
+            });
+        }
+        if (I > 0.62 && (stepIndex === 4 || stepIndex === 12)) {
+            // Low tom rather than a snare: weight without the hiss of noise.
+            playOsc({
+                target: musicBus,
+                type: 'sine',
+                freq: 160,
+                freqEnd: 96,
+                sweep: 0.14,
+                gain: (I - 0.62) * 0.1,
+                attack: 0.001,
+                decay: 0.05,
+                sustain: 0.02,
+                release: 0.16,
+                delay: when - ctx.currentTime,
+                reverbSend: 0.2,
+            });
+        }
+
+        // Riser into the next phrase when things are dire.
+        if (I > 0.72 && barInPhrase === 1 && stepIndex === 8) {
+            playNoise({
+                target: musicBus,
+                filterType: 'bandpass',
+                filterFreq: 400,
+                filterFreqEnd: 3200,
+                filterSweep: stepDur * 7.5,
+                filterQ: 1.8,
+                gain: 0.018 * I,
+                attack: stepDur * 7,
+                decay: 0.05,
+                sustain: 0.004,
+                release: 0.3,
+                delay: when - ctx.currentTime,
+                reverbSend: 0.3,
+            });
+        }
     }
 
     function startMusic() {
@@ -1168,18 +1512,19 @@
         music.step = 0;
         music.bar = 0;
 
-        var stepDur = 60 / music.bpm / 4; // 16th notes
-        var lookAhead = 0.12;
-        var nextTime = c.currentTime + 0.05;
+        var lookAhead = 0.14;
+        var nextTime = c.currentTime + 0.06;
 
         music.timer = setInterval(function () {
             if (!music.started) return;
             var now = c.currentTime;
+            // A backgrounded tab throttles timers; skip the backlog instead of firing it.
+            if (nextTime < now - 0.5) nextTime = now + 0.05;
             while (nextTime < now + lookAhead) {
                 scheduleMusicStep(music.step % 16, nextTime);
                 music.step++;
                 if (music.step % 16 === 0) music.bar++;
-                nextTime += stepDur;
+                nextTime += 60 / music.bpm / 4;
             }
         }, 50);
     }
@@ -1190,6 +1535,22 @@
             clearInterval(music.timer);
             music.timer = null;
         }
+    }
+
+    function setMusicIntensity(v) {
+        music.targetIntensity = clamp(Number(v) || 0, 0, 1);
+    }
+
+    function setMusicMood(mood) {
+        var next = mood === 'match' ? 'match' : 'menu';
+        if (music.mood === next) return;
+        music.mood = next;
+        music.bpm = next === 'menu' ? 76 : 84;
+        if (next === 'menu') {
+            music.targetIntensity = 0.1;
+            music.intensity = 0.1;
+        }
+        if (musicDelay) musicDelay.delayTime.value = (60 / music.bpm) * 0.75;
     }
 
     global.AudioFX = {
@@ -1220,5 +1581,10 @@
         },
         startMusic: startMusic,
         stopMusic: stopMusic,
+        setMusicIntensity: setMusicIntensity,
+        setMusicMood: setMusicMood,
+        planetLost: planetLostSound,
+        distantCapture: distantCaptureSound,
+        explosion: explosionSound,
     };
 })(typeof window !== 'undefined' ? window : this);

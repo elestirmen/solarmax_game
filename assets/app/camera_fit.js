@@ -88,3 +88,57 @@ export function buildOpeningCamera(opts) {
         focusNodeIds: focusNodes.map(function (node) { return node.id; }),
     };
 }
+
+/**
+ * A camera that frames every world on the map inside the area the HUD leaves free.
+ * Used for the match-opening flyover and the overview toggle.
+ */
+export function buildOverviewCamera(opts) {
+    opts = opts && typeof opts === 'object' ? opts : {};
+    var nodes = Array.isArray(opts.nodes) ? opts.nodes : [];
+    var width = Math.max(240, Number(opts.viewportWidth) || 1280);
+    var height = Math.max(240, Number(opts.viewportHeight) || 720);
+    var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (!node || !node.pos) continue;
+        var radius = Math.max(18, Number(node.radius) || 18);
+        minX = Math.min(minX, Number(node.pos.x) - radius);
+        maxX = Math.max(maxX, Number(node.pos.x) + radius);
+        minY = Math.min(minY, Number(node.pos.y) - radius);
+        maxY = Math.max(maxY, Number(node.pos.y) + radius);
+    }
+    if (!Number.isFinite(minX)) return null;
+
+    var padding = Math.max(0, Number(opts.padding) || 48);
+    var bottomReserve = Math.max(0, Number(opts.bottomReserve) || 0);
+    var topReserve = Math.max(0, Number(opts.topReserve) || 0);
+    var rightReserve = Math.max(0, Number(opts.rightReserve) || 0);
+    var leftReserve = Math.max(0, Number(opts.leftReserve) || 0);
+    var availableWidth = Math.max(160, width - leftReserve - rightReserve);
+    var availableHeight = Math.max(160, height - topReserve - bottomReserve);
+    var spanX = Math.max(120, maxX - minX + padding * 2);
+    var spanY = Math.max(120, maxY - minY + padding * 2);
+    var minZoom = Math.max(0.1, Number(opts.minZoom) || 0.3);
+    var maxZoom = Math.max(minZoom, Number(opts.maxZoom) || 1.2);
+    var zoom = clamp(Math.min(availableWidth / spanX, availableHeight / spanY), minZoom, maxZoom);
+    var centerX = (minX + maxX) * 0.5;
+    var centerY = (minY + maxY) * 0.5;
+    return {
+        x: centerX + (rightReserve - leftReserve) / (2 * zoom),
+        y: centerY + (bottomReserve - topReserve) / (2 * zoom),
+        zoom: zoom,
+    };
+}
+
+/** Keep the camera centre within reach of the map, however far a pan or zoom pushes it. */
+export function clampCameraToMap(cam, opts) {
+    opts = opts && typeof opts === 'object' ? opts : {};
+    if (!cam) return cam;
+    var mapW = Math.max(1, Number(opts.mapWidth) || 1600);
+    var mapH = Math.max(1, Number(opts.mapHeight) || 1000);
+    var slack = Math.max(0, Number(opts.slack) || 260);
+    cam.x = clamp(Number(cam.x) || 0, -slack, mapW + slack);
+    cam.y = clamp(Number(cam.y) || 0, -slack, mapH + slack);
+    return cam;
+}

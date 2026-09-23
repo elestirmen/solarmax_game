@@ -35,7 +35,9 @@
 
 **Tek kod tabanı, çift çalışma şekli:** Simülasyon mantığı `assets/sim/` altında toplanır; istemci (Canvas 2D + `game.js`) ve çok oyunculu sunucu (`server.js`) aynı kuralları kullanarak **deterministik tick** ve **durum hash** ile senkron kalır. Kampanya, günlük meydan okuma, playlist önayarları, mutatörler ve PvE karşılaşmaları (ör. **Mega Turret**, **Relay Core**) bu çekirdeğin üzerinde modül olarak çalışır.
 
-**Son güncellemeler (ör. Mart 2026):** Haritada dönemsel **güneş patlaması** — önceden uyarı, ardından **uzaydaki filoları** vuran deterministik olay; gezegen garnizonlarına dokunmaz (`assets/sim/solar_flare.js`, yapılandırma `shared_config.js`). Mobil tarafta **Visual Viewport** ile gerçek görünür alan (`stellar_conquest.html` + `game.js` içi `--app-vvh` / `--app-vvw`), ince ayar paneli ve kampanya / güç düzenine dokunan dokunuş iyileştirmeleri.
+**Son güncelleme (Eylül 2026) — sunum geçişi:** Oyun baştan sona yeniden sahnelendi. Canvas **HiDPI/Retina** çözünürlükte çiziliyor; simülasyon 30 Hz'de kalırken filolar kareler arasında ara değerlenip 60–144 Hz'de akıyor. Filolar artık simülasyonun gerçek iniş sırasını gösteren **gemi akıntıları**; fetihte yeni sahibin rengi isabet noktasından gezegene **dalga** hâlinde yayılıyor; çarpışma, fetih ve uzayda yok olma için ışıltılı bir parçacık motoru var. Aynı efektler ve sesler online maçta da çalışıyor, çünkü tahta durumundan türetiliyorlar. Arka planda sektör tohumuna göre üretilen bulutsu ve paralaks yıldız katmanları var. Maç tüm sektörü gösteren bir açılışla başlıyor, zafer/yenilgi bir sinematikle bitiyor ve sonuç ekranında **güç payı zaman çizelgesi** yer alıyor. Ana menü canlı bir sektörün üstünde duruyor. Müzik maçın gerilimine göre katman açıp kapatıyor, efektler ekrandaki konuma göre stereo yerleşiyor. Bu değişikliklerin hiçbiri simülasyona ya da senkron hash'e dokunmuyor.
+
+**Önceki güncellemeler (ör. Mart 2026):** Haritada dönemsel **güneş patlaması** — önceden uyarı, ardından **uzaydaki filoları** vuran deterministik olay; gezegen garnizonlarına dokunmaz (`assets/sim/solar_flare.js`, yapılandırma `shared_config.js`). Mobil tarafta **Visual Viewport** ile gerçek görünür alan (`stellar_conquest.html` + `game.js` içi `--app-vvh` / `--app-vvw`), ince ayar paneli ve kampanya / güç düzenine dokunan dokunuş iyileştirmeleri.
 
 ---
 
@@ -102,6 +104,17 @@ docker compose up -d --build
 - Dinamik zorluk ayarlamalı birden fazla zorluk seviyesi
 - Bölge, taretler, tedarik, **contested** alanlar ve tehdit geometrisinden haberdar
 
+### Görsel ve ses
+
+- **Keskin ve akıcı:** HiDPI canvas; 30 Hz simülasyon kareler arasında ara değerlenerek ekran hızında çizilir
+- **Filo akıntıları:** her gemi, simülasyonun onu indireceği sırayla rotada; hızlı rotalar daha uzun ışık izi bırakır
+- **Fetih dalgası ve efektler:** isabet noktasından yayılan sahiplik rengi, isabet parlaması, kıvılcımlar, enkaz, şok halkaları
+- **Uzay:** tohumlu prosedürel bulutsu, paralaks yıldızlar, kayan yıldızlar
+- **Sinematik bitiş:** sinema bantları, belirleyici gezegene kamera yaklaşması, kazananın renginde havai fişek, sonra güç payı grafiği
+- **Uyarlanabilir müzik:** D minör üretken skor; savaş, tehdit ve gidişata göre bas nabzı, davul ve yükselen katmanlar devreye girer
+- **Konumsal ses:** fetih, kayıp, çarpışma ve patlama sesleri ekrandaki konuma göre stereo yerleşir ve ekran dışındaysa kısılır
+- **Erişilebilirlik:** `prefers-reduced-motion` açıkken sarsıntı, sinematik ve parçacık yoğunluğu azalır
+
 ### Oyun içi rehber
 
 - Bağlam rozeti ve ipucu satırı (seçim türüne göre ne yapılacağı)
@@ -133,6 +146,12 @@ assets/
     custom_map.js         JSON harita içe/dışa aktarma
     doctrine.js           Doktrin pasif/aktif kuralları
   app/                    İstemci yardımcıları (input, tick fazları, hover hedefi, başlatma akışı)
+    vfx.js                Havuzlu parçacık motoru, önbellekli ışıltı sprite'ları, gezegen efekt durumu
+    fx_director.js        Ardışık tahta durumlarından fetih / isabet / takviye / yok olma olayları
+    backdrop.js           Kare bütçeli bulutsu pişirme, döşemeli yıldız katmanları
+    menu_scene.js         Ana menünün canlı sektörü (dekoratif, simülasyonsuz)
+    match_timeline.js     Maç boyunca güç örnekleri ve sonuç grafiği
+    camera_fit.js         Açılış / genel bakış kadrajı, kamera sınırı
   net/                    online_session, network_tick
   campaign/
     levels.js             Kampanya tanımları + hedefler
@@ -161,9 +180,9 @@ e2e/                      Playwright duman testleri
 | Toplu gönderim | Ctrl + sürükle-bırak |
 | Flow aç/kapat | Sağ tık (hedefe) |
 | Savunma modu | Kendi gezegene sağ tık |
-| Kamera | Orta tuş + sürükle |
+| Kamera | Orta tuş veya boş uzayda sağ tuş + sürükle; ok tuşları |
 | Mini haritadan kamera | Mini haritaya tıkla / sürükle |
-| Zoom | Mouse tekerleği |
+| Zoom | Mouse tekerleği (imlecin olduğu noktaya) |
 
 ### Klavye Kısayolları
 
@@ -174,6 +193,8 @@ e2e/                      Playwright duman testleri
 | `U` | Seçili gezegenleri yükselt |
 | `A` | Tüm gezegenleri seç |
 | `F` | Ana gezegen ve yakın hedeflere odaklan |
+| `Space` | Tüm sektörü göster / önceki kadraja dön |
+| `←` `↑` `→` `↓` | Kamerayı kaydır |
 | `Q` | Doktrin aktif becerisi |
 | `Esc` / `P` | Duraklat / Devam |
 
@@ -264,7 +285,7 @@ Node.js yerleşik test çalıştırıcısı kullanılır — ek test framework�
 npm test
 ```
 
-`tests/` altında çekirdek simülasyon (filo, bölge, komutlar, hash, kampanya seviyeleri, playlist, misyon script, güneş patlaması, çok oyunculu oturum vb.) ve seçili UI yardımcıları kapsanır. Güncel birim testi sayısı **283** (`npm test` çıktısındaki `tests` satırı).
+`tests/` altında çekirdek simülasyon (filo, bölge, komutlar, hash, kampanya seviyeleri, playlist, misyon script, güneş patlaması, çok oyunculu oturum vb.) ve seçili UI yardımcıları kapsanır. Güncel birim testi sayısı **307** (`npm test` çıktısındaki `tests` satırı).
 
 **E2E (Playwright):**
 

@@ -35,6 +35,7 @@ export function createInputState() {
         touchEmptyAwait: false,
         touchEmptyStart: { x: 0, y: 0 },
         touchSelectNodeId: -1,
+        panKeys: { left: false, right: false, up: false, down: false },
     };
 }
 
@@ -163,8 +164,12 @@ export function attachGameInputController(opts) {
         var inside = clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom;
         inputState.pointerInsideCanvas = inside;
         if (!inside) return false;
-        var sx = (clientX - rect.left) * (canvas.width / rect.width);
-        var sy = (clientY - rect.top) * (canvas.height / rect.height);
+        // Screen coordinates are CSS pixels; the backing store may be HiDPI-scaled.
+        var logical = typeof opts.viewSize === 'function' ? opts.viewSize() : null;
+        var logicalW = logical && logical.width > 0 ? logical.width : canvas.width;
+        var logicalH = logical && logical.height > 0 ? logical.height : canvas.height;
+        var sx = (clientX - rect.left) * (logicalW / rect.width);
+        var sy = (clientY - rect.top) * (logicalH / rect.height);
         inputState.ms = { x: sx, y: sy };
         inputState.mw = opts.screenToWorld(sx, sy);
         return true;
@@ -226,12 +231,23 @@ export function attachGameInputController(opts) {
             resetHoverTrackingOnly();
             inputState.panActive = true;
             inputState.panLast = { x: e.offsetX, y: e.offsetY };
+            if (typeof opts.onCameraInput === 'function') opts.onCameraInput();
             e.preventDefault();
             return;
         }
 
         if (e.button === 2) {
             var nd = opts.hitNode(w);
+            // Right-drag on empty space pans: not every mouse has a middle button, and a
+            // right click on nothing had no meaning before.
+            if (!nd && !(typeof opts.hitHoldingFleet === 'function' && opts.hitHoldingFleet(w))) {
+                resetHoverTrackingOnly();
+                inputState.panActive = true;
+                inputState.panLast = { x: e.offsetX, y: e.offsetY };
+                if (typeof opts.onCameraInput === 'function') opts.onCameraInput();
+                e.preventDefault();
+                return;
+            }
             var selectedOwnedSources = 0;
             inputState.sel.forEach(function (sid) {
                 var sn = gameState.nodes[sid];
@@ -364,11 +380,18 @@ export function attachGameInputController(opts) {
         var w = inputState.mw;
 
         if (inputState.panActive) {
+            // Released outside the canvas: no mouseup ever reached us, so stop here
+            // instead of panning on a bare hover.
+            if (typeof e.buttons === 'number' && (e.buttons & 6) === 0) {
+                inputState.panActive = false;
+                return;
+            }
             resetHoverTrackingOnly();
             var dx = (e.offsetX - inputState.panLast.x) / gameState.cam.zoom;
             var dy = (e.offsetY - inputState.panLast.y) / gameState.cam.zoom;
             gameState.cam.x -= dx;
             gameState.cam.y -= dy;
+            if (typeof opts.clampCamera === 'function') opts.clampCamera();
             inputState.panLast = { x: e.offsetX, y: e.offsetY };
             return;
         }
@@ -418,7 +441,7 @@ export function attachGameInputController(opts) {
     }
 
     function handleMouseUp(e) {
-        if (e.button === 1) {
+        if (e.button === 1 || (e.button === 2 && inputState.panActive)) {
             inputState.panActive = false;
             return;
         }
@@ -450,10 +473,20 @@ export function attachGameInputController(opts) {
 
     function handleWheel(e) {
         if (gameState.state !== 'playing') return;
+        e.preventDefault();
+        if (typeof opts.requestZoom === 'function') {
+            // Scale by the actual wheel delta: a trackpad sends many small deltas and
+            // should glide, a notched wheel sends a few large ones and should step.
+            var dy = Number(e.deltaY) || 0;
+            if (e.deltaMode === 1) dy *= 16;
+            else if (e.deltaMode === 2) dy *= 400;
+            var factor = opts.clamp(Math.exp(-dy * 0.0018), 0.7, 1.42);
+            opts.requestZoom(factor, e.offsetX, e.offsetY);
+            return;
+        }
         var f = e.deltaY > 0 ? (1 - opts.zoomSpeed) : (1 + opts.zoomSpeed);
         gameState.cam.zoom *= f;
         gameState.cam.zoom = opts.clamp(gameState.cam.zoom, opts.zoomMin, opts.zoomMax);
-        e.preventDefault();
     }
 
     function handleTouchStart(e) {
@@ -730,6 +763,17 @@ export function attachGameInputController(opts) {
                 return;
             }
             if (opts.isInGameMenuOpen()) return;
+            if (PAN_KEYS[e.key]) {
+                inputState.panKeys[PAN_KEYS[e.key]] = true;
+                if (typeof opts.onCameraInput === 'function') opts.onCameraInput();
+                e.preventDefault();
+                return;
+            }
+            if (e.key === ' ' || e.code === 'Space') {
+                if (typeof opts.toggleOverview === 'function') opts.toggleOverview();
+                e.preventDefault();
+                return;
+            }
             if (e.key === 'a') opts.selectAllHumanNodes();
             if ((e.key === 'f' || e.key === 'F') && typeof opts.focusOpeningSector === 'function') {
                 opts.focusOpeningSector();
@@ -750,6 +794,16 @@ export function attachGameInputController(opts) {
         }
     }
 
+    function handleKeyUp(e) {
+        if (e && PAN_KEYS[e.key]) inputState.panKeys[PAN_KEYS[e.key]] = false;
+    }
+
+    function handleBlur() {
+        inputState.panKeys = { left: false, right: false, up: false, down: false };
+        inputState.panActive = false;
+    }
+
+    if (!inputState.panKeys) inputState.panKeys = { left: false, right: false, up: false, down: false };
     canvas.addEventListener('mousedown', handleMouseDown);
     canvas.addEventListener('mousemove', handleMouseMove);
     canvas.addEventListener('mouseleave', handleMouseLeave);
@@ -761,4 +815,13 @@ export function attachGameInputController(opts) {
     canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
     windowTarget.addEventListener('mousemove', handleWindowMouseMove, true);
     windowTarget.addEventListener('keydown', handleKeyDown);
+    windowTarget.addEventListener('keyup', handleKeyUp);
+    windowTarget.addEventListener('blur', handleBlur);
 }
+
+var PAN_KEYS = {
+    ArrowLeft: 'left',
+    ArrowRight: 'right',
+    ArrowUp: 'up',
+    ArrowDown: 'down',
+};

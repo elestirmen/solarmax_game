@@ -41,11 +41,16 @@ import { todayDateKey } from './assets/sim/match_manifest.js';
 import { playlistName, playlistOptionList, resolvePlaylistConfig } from './assets/sim/playlists.js';
 import { attachGameInputController, createInputState, reconcileInputStateAfterAuthoritativeSync } from './assets/app/input_controller.js';
 import { runAiAndWrapTickPhase, runCombatTickPhase, runEconomyTickPhase, runOnlineTickSyncPhase } from './assets/app/game_tick_phases.js';
-import { renderMarqueeLayer, renderMinimapLayer, renderWorldLayers } from './assets/app/render_layers.js';
+import { paintNodeCaptureRipple, paintNodeOwnerHue, renderMarqueeLayer, renderMinimapLayer, renderWorldLayers } from './assets/app/render_layers.js';
+import { MENU_SCENE_HEIGHT, MENU_SCENE_WIDTH, createMenuScene, drawMenuSceneWorld, menuSceneCamera, updateMenuScene } from './assets/app/menu_scene.js';
+import { createVfxSystem, drawVfxSystem, getGlowSprite, getHaloSprite, getNodeVfx, markNodeCapture, markNodeHit, markNodeReinforced, resetVfxSystem, updateVfxSystem, vfxBurst, vfxCapture, vfxExplosion, vfxFirework, vfxFlash, vfxImpact, vfxLaunch, vfxReinforce, vfxRing } from './assets/app/vfx.js';
+import { createFxDirector, resetFxDirector, sampleFxDirector } from './assets/app/fx_director.js';
+import { createBackdropState, drawBackdropScreen, drawBackdropWorld, drawVignette, ensureBackdrop } from './assets/app/backdrop.js';
+import { buildTimelineChart, createMatchTimeline, noteTimelineEvent, recordTimelineSample } from './assets/app/match_timeline.js';
 import { applyCampaignRunState, applyDailyChallengeRunState, applySkirmishRunState, buildCampaignLevelStartConfig, buildCustomMapStartConfig, buildDailyChallengeStartConfig, buildSkirmishStartConfig } from './assets/app/start_flow.js';
 import { applyRoomStateNetState, beginOnlineMatch, buildCreateRoomRequest, buildJoinRoomRequest, buildOnlineMatchInitOptions, buildOnlineMatchStatusText, buildRoomStateMenuPatches, computeAuthoritativeFrameIntervalMs, computeOnlineCommandTick, getSocketEndpoint, isRoomChatAvailable, resetOnlineRoomState } from './assets/net/online_session.js';
 import { canvasToViewportPoint, findHoveredNodeAtScreen } from './assets/app/hover_target.js';
-import { buildOpeningCamera } from './assets/app/camera_fit.js';
+import { buildOpeningCamera, buildOverviewCamera, clampCameraToMap } from './assets/app/camera_fit.js';
 import { HUD_ACTION_HELP_DEFAULT, buildHudContextBadge, buildHudHintText, buildNodeHoverTip } from './assets/ui/hud_assistive.js';
 import { buildHudAdvisorCard } from './assets/ui/hud_advisor.js';
 import { buildHudCoachItems, renderHudCoach } from './assets/ui/hud_coach.js';
@@ -88,7 +93,7 @@ var TICK_DT = SIM_CONSTANTS.TICK_DT, BASE_PROD = SIM_CONSTANTS.BASE_PROD, MAX_UN
     ZOOM_MIN = 0.3, ZOOM_MAX = 3.0, ZOOM_SPD = 0.1,
     MAP_W = 1600, MAP_H = 1000, MAP_PAD = 80,
     BEZ_CURV = SIM_CONSTANTS.BEZ_CURV, BEZ_SEG = SIM_CONSTANTS.BEZ_SEG, PULSE_SPD = 0.6,
-    COLORS_BG = '#080c15', COL_NEUTRAL = SHARED_NEUTRAL_COLOR, COL_FOG = SHARED_FOG_COLOR,
+    COL_NEUTRAL = SHARED_NEUTRAL_COLOR, COL_FOG = SHARED_FOG_COLOR,
     COL_GRID = 'rgba(255,255,255,0.025)', COL_GLOW = 'rgba(255,255,255,0.35)',
     PLAYER_COLORS = SHARED_PLAYER_COLORS,
     TRAIL_LEN = SIM_CONSTANTS.TRAIL_LEN, MAX_ORBIT_SQUADS = 10, MAX_ORBIT_SHIPS_PER_SQUAD = 5, ORBIT_UNITS_PER_VISIBLE_SHIP = 3, ORBIT_SPD = 0.018, ORBIT_UNIT_STEP = 14, ORBIT_MAX_RINGS = 4,
@@ -162,9 +167,10 @@ var AI_ARCHETYPES = SHARED_AI_ARCHETYPES;
 var DIFFICULTY_PRESETS = SHARED_DIFFICULTY_PRESETS;
 
 // ── SPACE BACKDROP (background) ──
-var stars = [];
-var spaceNebulas = [];
-var spaceDustBands = [];
+// Baked per sector seed in assets/app/backdrop.js; see drawScreenBackdrop below.
+var backdropState = createBackdropState();
+var menuBackdropState = createBackdropState();
+var lastFrameDt = 0;
 
 // ── SEEDED RNG ──
 function RNG(s) { this.s = s | 0; if (!this.s) this.s = 1; }
@@ -172,69 +178,6 @@ RNG.prototype.next = function () { var t = this.s += 0x6d2b79f5; t = Math.imul(t
 RNG.prototype.nextInt = function (a, b) { return a + Math.floor(this.next() * (b - a + 1)); };
 RNG.prototype.nextFloat = function (a, b) { return a + this.next() * (b - a); };
 function hashSeed(s) { var h = 0; for (var i = 0; i < s.length; i++) { h = ((h << 5) - h + s.charCodeAt(i)) | 0; } return Math.abs(h) || 1; }
-
-function seedSpaceBackdrop() {
-    var rng = new RNG(hashSeed('stellar-space-backdrop-v2'));
-    var starPalette = ['#d9e7ff', '#b7dbff', '#9fe8ff', '#ffe6bc'];
-    var nebulaPalette = [
-        { core: '#3d7cff', edge: '#10305f' },
-        { core: '#26c6da', edge: '#0a3751' },
-        { core: '#ff9f6e', edge: '#4b1f1a' },
-        { core: '#7ee081', edge: '#103d2c' }
-    ];
-    stars.length = 0;
-    spaceNebulas.length = 0;
-    spaceDustBands.length = 0;
-
-    for (var i = 0; i < 440; i++) {
-        stars.push({
-            x: rng.nextFloat(-MAP_W * 0.42, MAP_W * 1.42),
-            y: rng.nextFloat(-MAP_H * 0.42, MAP_H * 1.42),
-            r: rng.nextFloat(0.35, 1.9),
-            b: rng.nextFloat(0.22, 0.72),
-            depth: rng.nextFloat(0.74, 1.08),
-            twinkle: rng.nextFloat(0.6, 1.7),
-            phase: rng.nextFloat(0, Math.PI * 2),
-            col: starPalette[rng.nextInt(0, starPalette.length - 1)],
-            glow: rng.next() > 0.9 ? rng.nextFloat(2.4, 5.8) : 0,
-            glint: rng.next() > 0.955 ? rng.nextFloat(3, 7) : 0
-        });
-    }
-
-    for (var ni = 0; ni < 11; ni++) {
-        var nebulaTint = nebulaPalette[rng.nextInt(0, nebulaPalette.length - 1)];
-        spaceNebulas.push({
-            x: rng.nextFloat(-MAP_W * 0.18, MAP_W * 1.18),
-            y: rng.nextFloat(-MAP_H * 0.18, MAP_H * 1.18),
-            rx: rng.nextFloat(120, 280),
-            ry: rng.nextFloat(70, 170),
-            depth: rng.nextFloat(0.8, 0.96),
-            alpha: rng.nextFloat(0.16, 0.34),
-            rot: rng.nextFloat(0, Math.PI * 2),
-            phase: rng.nextFloat(0, Math.PI * 2),
-            drift: rng.nextFloat(6, 18),
-            core: nebulaTint.core,
-            edge: nebulaTint.edge
-        });
-    }
-
-    for (var di = 0; di < 7; di++) {
-        var dustTint = nebulaPalette[rng.nextInt(0, nebulaPalette.length - 1)];
-        spaceDustBands.push({
-            x: rng.nextFloat(-MAP_W * 0.22, MAP_W * 1.22),
-            y: rng.nextFloat(-MAP_H * 0.22, MAP_H * 1.22),
-            rx: rng.nextFloat(210, 420),
-            ry: rng.nextFloat(34, 72),
-            depth: rng.nextFloat(0.86, 1),
-            alpha: rng.nextFloat(0.06, 0.12),
-            rot: rng.nextFloat(0, Math.PI * 2),
-            phase: rng.nextFloat(0, Math.PI * 2),
-            color: dustTint.core
-        });
-    }
-}
-
-seedSpaceBackdrop();
 
 var planetTexCache = {};
 function buildPermTable(rnd) { var p = new Uint8Array(512); for (var i = 0; i < 256; i++) p[i] = i; for (var i = 0; i < 255; i++) { var j = i + ~~(rnd() * (256 - i)), t = p[i]; p[i] = p[j]; p[j] = t; } for (var i = 256; i < 512; i++) p[i] = p[i - 256]; return p; }
@@ -474,7 +417,14 @@ function mkFleet() {
 }  // trail: array of {x,y}, offsetL: perpendicular spread, spdVar: speed variation
 var pool = [];
 for (var i = 0; i < POOL_SZ; i++)pool.push(mkFleet());
-function acquireFleet() { for (var i = 0; i < pool.length; i++) { if (!pool[i].active) return pool[i]; } var f = mkFleet(); pool.push(f); return f; }
+function acquireFleet() {
+    var f = null;
+    for (var i = 0; i < pool.length; i++) { if (!pool[i].active) { f = pool[i]; break; } }
+    if (!f) { f = mkFleet(); pool.push(f); }
+    // A recycled fleet must not blend in from wherever its previous life ended.
+    f.lerpStamp = -1;
+    return f;
+}
 
 // ── GAME STATE ──
 var G = {
@@ -490,7 +440,7 @@ var G = {
     playlist: 'standard', doctrineId: '', doctrines: [], doctrineStates: [], encounters: [], encounterContext: {}, objectives: [], endOnObjectives: false,
     missionScript: null, missionState: null, missionFailureText: '',
     stats: { nodesCaptured: 0, fleetsSent: 0, upgrades: 0, unitsProduced: 0, doctrineActivations: 0 },
-    particles: [], turretBeams: [], fieldBeams: [], shockwaves: [], mapMode: 'random',
+    turretBeams: [], fieldBeams: [], shockwaves: [], mapMode: 'random',
     playerCapital: {}, strategicNodes: [],
     strategicPulse: { active: false, nodeId: -1, cycle: 0, phase: 0, remainingTicks: 0, announcedCycle: -1 },
     solarFlareFx: { blastFlash: 0 },
@@ -736,49 +686,184 @@ function openingCameraTarget() {
         nodes: G.nodes,
         playerIndex: G.human,
         capitalId: capitalId,
-        viewportWidth: cv.width || window.innerWidth,
-        viewportHeight: cv.height || window.innerHeight,
+        viewportWidth: view.width || window.innerWidth,
+        viewportHeight: view.height || window.innerHeight,
         compact: compact,
         bottomReserve: bottomReserve,
-        topReserve: compact && missionActive ? Math.min(220, Math.round((cv.height || window.innerHeight) * 0.28)) : (compact ? 82 : 24),
+        topReserve: compact && missionActive ? Math.min(220, Math.round((view.height || window.innerHeight) * 0.28)) : (compact ? 82 : 24),
         rightReserve: compact ? 12 : 196,
         visibleTest: function (node) { return isNodeVisibleToHuman(node); },
     });
+}
+function tweenCameraTo(target, opts) {
+    opts = opts && typeof opts === 'object' ? opts : {};
+    if (!target) return false;
+    cameraZoomAnim = null;
+    if (opts.instant === true || prefersReducedMotion) {
+        cameraFocusTween = null;
+        G.cam.x = target.x;
+        G.cam.y = target.y;
+        G.cam.zoom = target.zoom;
+        return true;
+    }
+    cameraFocusTween = {
+        fromX: G.cam.x,
+        fromY: G.cam.y,
+        fromZoom: G.cam.zoom,
+        toX: target.x,
+        toY: target.y,
+        toZoom: target.zoom,
+        startedAt: currentPerfNow() + Math.max(0, Number(opts.delay) || 0),
+        duration: Math.max(60, Number(opts.duration) || 420),
+        ease: opts.ease === 'inOut' ? 'inOut' : 'out',
+    };
+    return true;
 }
 function focusOpeningSector(opts) {
     opts = opts && typeof opts === 'object' ? opts : {};
     var target = openingCameraTarget();
     if (!target) return false;
-    var instant = opts.instant === true || prefersReducedMotion;
-    if (instant) {
-        cameraFocusTween = null;
-        G.cam.x = target.x;
-        G.cam.y = target.y;
-        G.cam.zoom = target.zoom;
-    } else {
-        cameraFocusTween = {
-            fromX: G.cam.x,
-            fromY: G.cam.y,
-            fromZoom: G.cam.zoom,
-            toX: target.x,
-            toY: target.y,
-            toZoom: target.zoom,
-            startedAt: typeof performance !== 'undefined' ? performance.now() : Date.now(),
-            duration: 420,
-        };
-    }
+    overviewReturnCamera = null;
+    tweenCameraTo(target, { instant: opts.instant === true, duration: opts.duration || 420, delay: opts.delay, ease: opts.ease });
     if (!opts.silent) showGameToast('Açılış cephesi kadraja alındı.', { durationMs: 1500 });
     return true;
 }
 function advanceCameraFocus(timestamp) {
     if (!cameraFocusTween) return;
-    var elapsed = Math.max(0, Number(timestamp) - cameraFocusTween.startedAt);
+    var elapsed = Number(timestamp) - cameraFocusTween.startedAt;
+    if (elapsed < 0) return;
     var t = clamp(elapsed / cameraFocusTween.duration, 0, 1);
-    var eased = 1 - Math.pow(1 - t, 3);
+    var eased = cameraFocusTween.ease === 'inOut'
+        ? (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2)
+        : 1 - Math.pow(1 - t, 3);
     G.cam.x = cameraFocusTween.fromX + (cameraFocusTween.toX - cameraFocusTween.fromX) * eased;
     G.cam.y = cameraFocusTween.fromY + (cameraFocusTween.toY - cameraFocusTween.fromY) * eased;
     G.cam.zoom = cameraFocusTween.fromZoom + (cameraFocusTween.toZoom - cameraFocusTween.fromZoom) * eased;
     if (t >= 1) cameraFocusTween = null;
+}
+
+// ── CAMERA INPUT ──
+// Wheel zoom eases toward a target and keeps the world point under the cursor fixed,
+// which is what makes zooming feel like reaching into the map instead of resizing it.
+var cameraZoomAnim = null;
+var overviewReturnCamera = null;
+
+function hudSafeArea() {
+    var compact = !!(window.matchMedia && window.matchMedia('(max-width: 720px), (pointer: coarse)').matches);
+    var hudRect = hud && !hud.classList.contains('hidden') && typeof hud.getBoundingClientRect === 'function' ? hud.getBoundingClientRect() : null;
+    var sidebarEl = document.getElementById('powerSidebar');
+    var sideRect = !compact && sidebarEl && !sidebarEl.classList.contains('hidden') ? sidebarEl.getBoundingClientRect() : null;
+    return {
+        compact: compact,
+        bottom: hudRect && hudRect.height > 0 ? Math.ceil(hudRect.height) + 12 : (compact ? 140 : 180),
+        right: sideRect && sideRect.width > 0 ? Math.ceil(view.width - sideRect.left) + 8 : (compact ? 8 : 0),
+        top: compact ? 64 : 16,
+        left: 12,
+    };
+}
+
+function overviewCameraTarget() {
+    var safe = hudSafeArea();
+    return buildOverviewCamera({
+        nodes: G.nodes,
+        viewportWidth: view.width,
+        viewportHeight: view.height,
+        bottomReserve: safe.bottom,
+        rightReserve: safe.right,
+        topReserve: safe.top,
+        leftReserve: safe.left,
+        padding: safe.compact ? 26 : 44,
+        minZoom: ZOOM_MIN,
+        maxZoom: 1.1,
+    });
+}
+
+function cancelAutoCamera() {
+    cameraFocusTween = null;
+    overviewReturnCamera = null;
+}
+
+function clampCamera() {
+    clampCameraToMap(G.cam, { mapWidth: MAP_W, mapHeight: MAP_H, slack: 320 });
+}
+
+function requestCameraZoom(factor, sx, sy) {
+    if (!(factor > 0)) return;
+    cancelAutoCamera();
+    var base = cameraZoomAnim ? cameraZoomAnim.target : G.cam.zoom;
+    cameraZoomAnim = {
+        target: clamp(base * factor, ZOOM_MIN, ZOOM_MAX),
+        sx: Number.isFinite(sx) ? sx : view.width * 0.5,
+        sy: Number.isFinite(sy) ? sy : view.height * 0.5,
+    };
+    if (prefersReducedMotion) advanceCameraZoom(1);
+}
+
+function advanceCameraZoom(dt) {
+    if (!cameraZoomAnim) return;
+    var anchorBefore = s2w(cameraZoomAnim.sx, cameraZoomAnim.sy);
+    var k = 1 - Math.exp(-Math.max(0, dt) * 16);
+    var next = G.cam.zoom + (cameraZoomAnim.target - G.cam.zoom) * k;
+    if (Math.abs(next - cameraZoomAnim.target) < 0.0008) next = cameraZoomAnim.target;
+    G.cam.zoom = next;
+    var anchorAfter = s2w(cameraZoomAnim.sx, cameraZoomAnim.sy);
+    G.cam.x += anchorBefore.x - anchorAfter.x;
+    G.cam.y += anchorBefore.y - anchorAfter.y;
+    clampCamera();
+    if (next === cameraZoomAnim.target) cameraZoomAnim = null;
+}
+
+function advanceKeyboardPan(dt) {
+    var keys = inp.panKeys;
+    if (!keys || (G.state !== 'playing' && G.state !== 'paused')) return;
+    var dx = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
+    var dy = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
+    if (!dx && !dy) return;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    // Screen-constant speed: panning covers the same share of the view at any zoom.
+    var speed = 720 / Math.max(0.3, G.cam.zoom);
+    G.cam.x += (dx / len) * speed * dt;
+    G.cam.y += (dy / len) * speed * dt;
+    clampCamera();
+}
+
+function toggleOverviewCamera() {
+    if (G.state !== 'playing' && G.state !== 'paused') return;
+    if (overviewReturnCamera) {
+        var back = overviewReturnCamera;
+        overviewReturnCamera = null;
+        tweenCameraTo(back, { duration: 520, ease: 'inOut' });
+        return;
+    }
+    var target = overviewCameraTarget();
+    if (!target) return;
+    var returnTo = { x: G.cam.x, y: G.cam.y, zoom: G.cam.zoom };
+    tweenCameraTo(target, { duration: 520, ease: 'inOut' });
+    overviewReturnCamera = returnTo;
+}
+
+// Match opening: the whole sector first, so the player sees where every rival sits,
+// then a glide down onto their own front. When the whole sector already fits at a
+// readable scale (most desktop screens) the overview *is* the right opening shot, and
+// the camera stays there.
+function playOpeningFlyover() {
+    var overview = overviewCameraTarget();
+    var opening = openingCameraTarget();
+    if (!opening) return;
+    if (!overview) {
+        tweenCameraTo(opening, { instant: true });
+        return;
+    }
+    if (overview.zoom >= opening.zoom * 0.86) {
+        tweenCameraTo(overview, { instant: true });
+        return;
+    }
+    if (prefersReducedMotion) {
+        tweenCameraTo(opening, { instant: true });
+        return;
+    }
+    tweenCameraTo(overview, { instant: true });
+    tweenCameraTo(opening, { delay: 1150, duration: 1600, ease: 'inOut' });
 }
 function showMatchIntro() {
     if (!matchIntroEl || G.state !== 'playing') return;
@@ -1295,7 +1380,6 @@ function initGame(seedStr, nc, diff, opts) {
         peakPower: 0,
         doctrineActivations: 0,
     };
-    G.particles = [];
     G.turretBeams = [];
     G.fieldBeams = [];
     G.shockwaves = [];
@@ -1310,6 +1394,13 @@ function initGame(seedStr, nc, diff, opts) {
         matchIntroEl.setAttribute('aria-hidden', 'true');
     }
     screenShake.mag = 0; screenShake.ox = 0; screenShake.oy = 0;
+    fxMatchSerial++;
+    resetVfxSystem(vfx);
+    resetFxDirector(fxDirector);
+    lastFxLaunchAt = {};
+    matchTimeline = createMatchTimeline();
+    lastCaptureByOwner = {};
+    finishEndCinematic();
     resetOrbitalVisuals();
     for (var i = 0; i < pool.length; i++) { pool[i].active = false; pool[i].trail = []; }
     G.fleets = [];
@@ -1679,49 +1770,47 @@ function dispatch(owner, srcIds, tgtId, pct) {
 }
 
 // ── COMBAT ──
+// Legacy effect entry points. Their tuning was authored in pixels per 30 Hz tick with
+// drag per tick; the effect system runs in world units per second with drag per 1/60 s,
+// so the numbers are converted here and every existing effect keeps its character.
 function spawnParticles(x, y, count, color, isCapture, opts) {
     opts = opts || {};
-    var dirX = Number(opts.dirX);
-    var dirY = Number(opts.dirY);
-    var dirLen = Math.sqrt(dirX * dirX + dirY * dirY);
-    var hasDir = Number.isFinite(dirLen) && dirLen > 0.0001;
-    var baseAngle = hasDir ? Math.atan2(dirY, dirX) : 0;
-    var spread = Number(opts.spread);
-    if (!Number.isFinite(spread) || spread <= 0) spread = Math.PI * 2;
-    var speedMin = Number(opts.speedMin);
-    var speedMax = Number(opts.speedMax);
-    if (!Number.isFinite(speedMin)) speedMin = 2;
-    if (!Number.isFinite(speedMax)) speedMax = 6;
-    var lifeMin = Number(opts.lifeMin);
-    var lifeMax = Number(opts.lifeMax);
-    if (!Number.isFinite(lifeMin)) lifeMin = 0.4;
-    if (!Number.isFinite(lifeMax)) lifeMax = 0.7;
-    var radiusScale = Number(opts.radiusScale);
-    if (!Number.isFinite(radiusScale) || radiusScale <= 0) radiusScale = 1;
-    var drag = Number(opts.drag);
-    if (!Number.isFinite(drag) || drag <= 0 || drag > 1) drag = 0.94;
-    var glow = Number(opts.glow);
-    if (!Number.isFinite(glow) || glow < 0) glow = isCapture ? 0.55 : 0.28;
-    for (var i = 0; i < count; i++) {
-        var a = hasDir
-            ? baseAngle + (Math.random() - 0.5) * spread
-            : (Math.PI * 2 * i) / Math.max(1, count) + Math.random() * 0.5;
-        var spd = speedMin + Math.random() * Math.max(0, speedMax - speedMin);
-        var life = lifeMin + Math.random() * Math.max(0, lifeMax - lifeMin);
-        G.particles.push({
-            x: x,
-            y: y,
-            vx: Math.cos(a) * spd,
-            vy: Math.sin(a) * spd,
-            drag: drag,
-            life: life,
-            maxLife: life,
-            col: color || '#fff',
-            glow: glow,
-            r: (isCapture ? 3 : 1.5) * radiusScale,
-        });
+    function num(value, fallback) {
+        value = Number(value);
+        return Number.isFinite(value) ? value : fallback;
     }
-    if (G.particles.length > 120) G.particles = G.particles.slice(-100);
+    var speedMin = num(opts.speedMin, 2);
+    var speedMax = num(opts.speedMax, 6);
+    var lifeMin = num(opts.lifeMin, 0.4);
+    var lifeMax = num(opts.lifeMax, 0.7);
+    var radiusScale = num(opts.radiusScale, 1);
+    if (radiusScale <= 0) radiusScale = 1;
+    var drag = num(opts.drag, 0.94);
+    if (drag <= 0 || drag > 1) drag = 0.94;
+    var glow = num(opts.glow, isCapture ? 0.55 : 0.28);
+    var burst = {
+        color: color || '#ffffff',
+        count: count,
+        dirX: Number(opts.dirX),
+        dirY: Number(opts.dirY),
+        spread: num(opts.spread, 0) > 0 ? Number(opts.spread) : Math.PI * 2,
+        speedMin: speedMin * 30,
+        speedMax: speedMax * 30,
+        lifeMin: lifeMin,
+        lifeMax: lifeMax,
+        size: (isCapture ? 2.1 : 1.25) * radiusScale,
+        drag: Math.sqrt(drag),
+        len: 0.035,
+    };
+    vfxBurst(vfx, x, y, burst);
+    if (glow > 0.3) {
+        burst.sparks = false;
+        burst.count = Math.max(1, Math.round(count * glow * 0.45));
+        burst.speedMin *= 0.45;
+        burst.speedMax *= 0.55;
+        burst.size *= 1.3;
+        vfxBurst(vfx, x, y, burst);
+    }
 }
 
 function spawnWormholeTeleportVfx(srcNode, tgtNode, owner) {
@@ -1828,19 +1917,13 @@ function enqueueShockwave(x, y, opts) {
     opts = opts || {};
     var life = Number(opts.life);
     if (!Number.isFinite(life) || life <= 0) life = 0.24;
-    G.shockwaves.push({
-        x: Number(x) || 0,
-        y: Number(y) || 0,
-        radius: Math.max(0, Number(opts.radius) || 8),
-        grow: Math.max(1, Number(opts.grow) || 18),
-        life: life,
-        maxLife: life,
-        col: opts.color || '#ffffff',
-        alpha: Math.max(0, Number(opts.alpha) || 0.3),
-        fillAlpha: Math.max(0, Number(opts.fillAlpha) || 0),
-        lineWidth: Math.max(0.8, Number(opts.lineWidth) || 1.4),
-    });
-    if (G.shockwaves.length > 80) G.shockwaves = G.shockwaves.slice(-72);
+    var radius = Math.max(0, Number(opts.radius) || 8);
+    var grow = Math.max(1, Number(opts.grow) || 18);
+    var color = opts.color || '#ffffff';
+    var alpha = Math.max(0, Number(opts.alpha) || 0.3);
+    var fillAlpha = Math.max(0, Number(opts.fillAlpha) || 0);
+    vfxRing(vfx, Number(x) || 0, Number(y) || 0, radius, radius + grow, color, life * 1.25, Math.min(1, alpha * 1.7));
+    if (fillAlpha > 0) vfxFlash(vfx, Number(x) || 0, Number(y) || 0, radius + grow * 0.6, color, life, Math.min(0.9, fillAlpha * 3));
 }
 
 // ── SCREEN SHAKE ──
@@ -1867,6 +1950,376 @@ function advanceScreenShake(dt) {
     var ang = Math.random() * Math.PI * 2;
     screenShake.ox = Math.cos(ang) * screenShake.mag;
     screenShake.oy = Math.sin(ang) * screenShake.mag;
+}
+
+// ── VISUAL EFFECTS ──
+var vfx = createVfxSystem({
+    capacity: (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ? 1400 : 2600,
+    reducedMotion: prefersReducedMotion,
+});
+var fxDirector = createFxDirector();
+var fxMatchSerial = 0;
+var lastFxLaunchAt = {};
+var matchTimeline = createMatchTimeline();
+var lastCaptureByOwner = {};
+
+function noteMatchMoment(ev) {
+    if (!ev || ev.type !== 'capture') return;
+    lastCaptureByOwner[ev.toOwner] = ev.nodeId;
+    if (ev.toOwner === G.human) noteTimelineEvent(matchTimeline, { tick: G.tick, type: 'gain', owner: ev.toOwner });
+    else if (ev.fromOwner === G.human) noteTimelineEvent(matchTimeline, { tick: G.tick, type: 'loss', owner: ev.toOwner });
+}
+
+function fxOwnerColor(owner) {
+    return owner >= 0 && G.players[owner] ? G.players[owner].color : COL_NEUTRAL;
+}
+
+function fxPointVisible(x, y, owner) {
+    if (!G.tune || !G.tune.fogEnabled) return true;
+    if (owner === G.human) return true;
+    return fleetVis({ owner: owner, x: x, y: y }, G.human, G.nodes);
+}
+
+// Stereo position of a world point on screen, -1 (left edge) .. 1 (right edge), and how
+// far outside the view it is (0 on screen). Sounds from off-screen fights are quieter.
+function fxScreenAudio(x, y) {
+    var sx = (x - G.cam.x) * G.cam.zoom;
+    var sy = (y - G.cam.y) * G.cam.zoom;
+    var halfW = Math.max(1, view.width * 0.5);
+    var halfH = Math.max(1, view.height * 0.5);
+    var pan = clamp(sx / halfW, -1, 1) * 0.75;
+    var outside = Math.max(0, Math.abs(sx) / halfW - 1, Math.abs(sy) / halfH - 1);
+    return { pan: pan, gain: clamp(1 - outside * 0.8, 0.25, 1) };
+}
+
+function processFxEvents(events) {
+    if (!events || !events.length) return;
+    var authoritative = !!(net.online && net.authoritativeEnabled);
+    var now = currentPerfNow();
+    for (var i = 0; i < events.length; i++) {
+        var ev = events[i];
+        if (!ev) continue;
+        if (ev.type === 'capture') {
+            var capNode = G.nodes[ev.nodeId];
+            // A world the player just lost may already sit outside their vision; they
+            // still need to see and hear it go.
+            if (!capNode || (!isNodeVisibleToHuman(capNode) && ev.fromOwner !== G.human)) continue;
+            var toColor = fxOwnerColor(ev.toOwner);
+            var fromColor = ev.fromOwner >= 0 ? fxOwnerColor(ev.fromOwner) : COL_NEUTRAL;
+            var capRadius = (Number(capNode.radius) || 18) * nodeVisualScale(capNode, G.tick);
+            var humanWon = ev.toOwner === G.human;
+            var humanLost = ev.fromOwner === G.human;
+            vfxCapture(vfx, capNode.pos.x, capNode.pos.y, capRadius, toColor, fromColor, ev.dirX, ev.dirY, humanWon || humanLost ? 1.15 : 0.8);
+            markNodeCapture(vfx, ev.nodeId, fromColor, toColor, ev.dirX, ev.dirY);
+            var capAudio = fxScreenAudio(capNode.pos.x, capNode.pos.y);
+            if (humanWon) {
+                addScreenShake(3.5);
+                if (typeof AudioFX !== 'undefined' && typeof AudioFX.capture === 'function') AudioFX.capture({ pan: capAudio.pan, gain: capAudio.gain });
+            } else if (humanLost) {
+                addScreenShake(5);
+                if (typeof AudioFX !== 'undefined' && typeof AudioFX.planetLost === 'function') AudioFX.planetLost({ pan: capAudio.pan, gain: capAudio.gain });
+            } else if (typeof AudioFX !== 'undefined' && typeof AudioFX.distantCapture === 'function') {
+                AudioFX.distantCapture({ pan: capAudio.pan, gain: capAudio.gain * 0.7 });
+            }
+            noteMatchMoment(ev);
+        } else if (ev.type === 'impact') {
+            var hitNode = G.nodes[ev.nodeId];
+            if (!hitNode || !isNodeVisibleToHuman(hitNode)) continue;
+            var atkColor = fxOwnerColor(ev.owner);
+            var strength = clamp(Math.sqrt(Math.max(1, ev.count)) / 4, 0.25, 1.4);
+            vfxImpact(vfx, ev.x, ev.y, atkColor, ev.dirX, ev.dirY, strength);
+            markNodeHit(vfx, ev.nodeId, atkColor, ev.dirX, ev.dirY, strength);
+            if (ev.owner === G.human || ev.targetOwner === G.human) {
+                var hitAudio = fxScreenAudio(ev.x, ev.y);
+                if (typeof AudioFX !== 'undefined' && typeof AudioFX.combat === 'function') AudioFX.combat({ pan: hitAudio.pan, gain: hitAudio.gain, intensity: strength });
+                noteCombatHeat(ev.targetOwner === G.human ? 1.4 * strength : strength);
+            }
+        } else if (ev.type === 'reinforce') {
+            var homeNode = G.nodes[ev.nodeId];
+            if (!homeNode || !isNodeVisibleToHuman(homeNode)) continue;
+            var homeColor = fxOwnerColor(ev.owner);
+            var homeRadius = (Number(homeNode.radius) || 18) * nodeVisualScale(homeNode, G.tick);
+            vfxReinforce(vfx, homeNode.pos.x, homeNode.pos.y, homeRadius, homeColor, clamp(ev.count / 20, 0.2, 1));
+            markNodeReinforced(vfx, ev.nodeId, homeColor, clamp(ev.count / 20, 0.2, 1));
+        } else if (ev.type === 'destroyed') {
+            if (!fxPointVisible(ev.x, ev.y, ev.owner)) continue;
+            vfxExplosion(vfx, ev.x, ev.y, fxOwnerColor(ev.owner), clamp(Math.sqrt(Math.max(1, ev.count)) / 3, 0.35, 1.8));
+            if (ev.owner === G.human || ev.count >= 6) {
+                var boomAudio = fxScreenAudio(ev.x, ev.y);
+                if (typeof AudioFX !== 'undefined' && typeof AudioFX.explosion === 'function') AudioFX.explosion({ pan: boomAudio.pan, gain: boomAudio.gain * (ev.owner === G.human ? 1 : 0.6), size: clamp(ev.count / 20, 0.2, 1) });
+            }
+        } else if (ev.type === 'attrition') {
+            // A local match already draws the exact turret and field hits; an online
+            // client does not simulate combat, so this is its only damage feedback.
+            if (!authoritative || !fxPointVisible(ev.x, ev.y, ev.owner)) continue;
+            vfxBurst(vfx, ev.x, ev.y, { color: fxOwnerColor(ev.owner), count: 3 + Math.min(6, ev.count), speedMin: 40, speedMax: 150, lifeMin: 0.15, lifeMax: 0.35, size: 1.1, drag: 0.88 });
+        } else if (ev.type === 'launch') {
+            // The local player already gets an instant launch puff when the order is
+            // given; this is for everyone else, so the board reads as alive.
+            if (ev.owner === G.human || !fxPointVisible(ev.x, ev.y, ev.owner)) continue;
+            var launchKey = ev.srcId + ':' + ev.owner;
+            if (now - (lastFxLaunchAt[launchKey] || -9999) < 140) continue;
+            lastFxLaunchAt[launchKey] = now;
+            vfxLaunch(vfx, ev.x, ev.y, fxOwnerColor(ev.owner), ev.dirX, ev.dirY, clamp(Math.sqrt(Math.max(1, ev.count)) / 5, 0.25, 1));
+        }
+    }
+}
+
+// ── END OF MATCH ──
+// The result screen waits for a short cinematic: letterbox bars, the camera pushing in
+// on the decisive world, fireworks in the winner's colour over their sector, and the
+// verdict written across the board. Then the report fades in over the frozen map.
+var endCinematic = null;
+
+function beginEndCinematic() {
+    var won = G.winner === G.human;
+    var focusNode = null;
+    var winnerNodeId = lastCaptureByOwner[G.winner];
+    if (winnerNodeId !== undefined && G.nodes[winnerNodeId]) focusNode = G.nodes[winnerNodeId];
+    if (!focusNode && G.winner >= 0) focusNode = preferredCameraNodeForPlayer(G.winner);
+    endCinematic = {
+        startedAt: currentPerfNow(),
+        duration: prefersReducedMotion ? 350 : 2900,
+        won: won,
+        winner: G.winner,
+        color: G.winner >= 0 && G.players[G.winner] ? G.players[G.winner].color : '#ffffff',
+        nextBurstAt: 0,
+        bursts: 0,
+    };
+    if (goOv) goOv.classList.add('cinematic-pending');
+    if (prefersReducedMotion) return;
+    var bars = $('cinematicBars');
+    if (bars) bars.classList.add('active');
+    if (focusNode) {
+        tweenCameraTo({
+            x: focusNode.pos.x,
+            y: focusNode.pos.y,
+            zoom: clamp(Math.max(G.cam.zoom * 1.3, 1.05), ZOOM_MIN, 1.7),
+        }, { duration: 2300, ease: 'inOut' });
+    }
+    addScreenShake(won ? 3 : 6);
+}
+
+function advanceEndCinematic() {
+    if (!endCinematic) return;
+    var now = currentPerfNow();
+    var elapsed = now - endCinematic.startedAt;
+    var maxBursts = endCinematic.won ? 10 : 4;
+    if (!prefersReducedMotion && elapsed > 350 && now >= endCinematic.nextBurstAt && endCinematic.bursts < maxBursts) {
+        var owned = [];
+        for (var i = 0; i < G.nodes.length; i++) {
+            if (G.nodes[i] && G.nodes[i].owner === endCinematic.winner) owned.push(G.nodes[i]);
+        }
+        var pick = owned.length ? owned[Math.floor(Math.random() * owned.length)] : null;
+        if (pick) {
+            var spread = (Number(pick.radius) || 18) * 2.2;
+            var bx = pick.pos.x + (Math.random() - 0.5) * spread;
+            var by = pick.pos.y + (Math.random() - 0.5) * spread;
+            vfxFirework(vfx, bx, by, endCinematic.color);
+            if (typeof AudioFX !== 'undefined' && typeof AudioFX.explosion === 'function') {
+                var boom = fxScreenAudio(bx, by);
+                AudioFX.explosion({ pan: boom.pan, gain: boom.gain * 0.5, size: 0.35 });
+            }
+        }
+        endCinematic.bursts++;
+        endCinematic.nextBurstAt = now + 220 + Math.random() * 200;
+    }
+    if (elapsed >= endCinematic.duration) finishEndCinematic();
+}
+
+function finishEndCinematic() {
+    endCinematic = null;
+    if (goOv) goOv.classList.remove('cinematic-pending');
+    var bars = document.getElementById('cinematicBars');
+    if (bars) bars.classList.remove('active');
+}
+
+function drawEndCinematicTitle(ctx) {
+    if (!endCinematic || prefersReducedMotion) return;
+    var t = (currentPerfNow() - endCinematic.startedAt) / 1000;
+    var fadeIn = clamp((t - 0.25) / 0.45, 0, 1);
+    var fadeOut = 1 - clamp((t - 2.35) / 0.5, 0, 1);
+    var alpha = fadeIn * fadeIn * (3 - 2 * fadeIn) * fadeOut;
+    if (alpha <= 0.01) return;
+    var title = endCinematic.won ? 'ZAFER' : 'MAĞLUBİYET';
+    var size = clamp(view.width * 0.085, 38, 108);
+    ctx.save();
+    ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+    ctx.globalAlpha = alpha;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '900 ' + size.toFixed(0) + 'px Orbitron, Outfit, sans-serif';
+    if ('letterSpacing' in ctx) ctx.letterSpacing = (size * 0.12).toFixed(0) + 'px';
+    var y = view.height * 0.42 - (1 - fadeIn) * 14;
+    ctx.shadowColor = endCinematic.won ? hexToRgba(endCinematic.color, 0.9) : 'rgba(255,70,70,0.85)';
+    ctx.shadowBlur = size * 0.45;
+    ctx.fillStyle = endCinematic.won ? '#ffffff' : '#ffd6d6';
+    ctx.fillText(title, view.width * 0.5, y);
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = alpha * 0.8;
+    ctx.font = '600 ' + Math.round(size * 0.2) + 'px Outfit, sans-serif';
+    if ('letterSpacing' in ctx) ctx.letterSpacing = (size * 0.05).toFixed(0) + 'px';
+    ctx.fillStyle = '#c8d6e5';
+    ctx.fillText(endCinematic.won ? 'SEKTÖR KONTROLÜ SENDE' : 'SEKTÖR KAYBEDİLDİ', view.width * 0.5, y + size * 0.78);
+    ctx.restore();
+}
+
+function gameOverFleetAlpha() {
+    if (G.state !== 'gameOver') return 1;
+    if (!endCinematic) return 0;
+    return clamp(1 - (currentPerfNow() - endCinematic.startedAt) / 900, 0, 1);
+}
+
+function renderGameOverSummary() {
+    var won = G.winner === G.human;
+    var panel = goOv ? goOv.querySelector('.gameover-panel') : null;
+    if (panel) {
+        panel.classList.toggle('is-victory', won);
+        panel.classList.toggle('is-defeat', !won);
+    }
+    var eyebrow = $('gameOverEyebrow');
+    if (eyebrow) eyebrow.textContent = 'SEKTÖR ' + G.seed + '  ·  ' + formatMatchTime(G.tick, TICK_RATE);
+
+    var highlightsEl = $('gameOverHighlights');
+    if (highlightsEl) {
+        while (highlightsEl.firstChild) highlightsEl.removeChild(highlightsEl.firstChild);
+        var ownedNow = countOwnedNodes(G.human);
+        var highlights = [
+            { label: 'Süre', value: formatMatchTime(G.tick, TICK_RATE) },
+            { label: 'Fethedilen', value: String(G.stats.nodesCaptured || 0) },
+            { label: 'Gezegen', value: ownedNow + '/' + G.nodes.length },
+            { label: 'Tepe güç', value: String(Math.round(G.stats.peakPower || 0)) },
+        ];
+        for (var i = 0; i < highlights.length; i++) {
+            var card = document.createElement('div');
+            card.className = 'gameover-stat';
+            var value = document.createElement('span');
+            value.className = 'gameover-stat-value';
+            value.textContent = highlights[i].value;
+            var label = document.createElement('span');
+            label.className = 'gameover-stat-label';
+            label.textContent = highlights[i].label;
+            card.appendChild(value);
+            card.appendChild(label);
+            highlightsEl.appendChild(card);
+        }
+    }
+
+    recordTimelineSample(matchTimeline, G.tick, G.powerByPlayer, G.players.length);
+    var chartEl = $('gameOverChart');
+    var chartBody = $('gameOverChartBody');
+    var chartLegend = $('gameOverChartLegend');
+    var chartTime = $('gameOverChartTime');
+    if (!chartEl || !chartBody) return;
+    var chart = buildTimelineChart(matchTimeline, { width: 480, height: 110 });
+    var showChart = chart.lines.length > 0 && chart.durationTicks >= TICK_RATE * 5;
+    chartEl.classList.toggle('hidden', !showChart);
+    while (chartBody.firstChild) chartBody.removeChild(chartBody.firstChild);
+    if (chartLegend) while (chartLegend.firstChild) chartLegend.removeChild(chartLegend.firstChild);
+    if (!showChart) return;
+    if (chartTime) chartTime.textContent = formatMatchTime(G.tick, TICK_RATE);
+    var NS = 'http://www.w3.org/2000/svg';
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + chart.width + ' ' + (chart.height + 8));
+    svg.setAttribute('preserveAspectRatio', 'none');
+    for (var g = 1; g < 4; g++) {
+        var grid = document.createElementNS(NS, 'line');
+        grid.setAttribute('x1', '0');
+        grid.setAttribute('x2', String(chart.width));
+        grid.setAttribute('y1', String(chart.height * g / 4));
+        grid.setAttribute('y2', String(chart.height * g / 4));
+        grid.setAttribute('class', 'chart-grid');
+        svg.appendChild(grid);
+    }
+    // The player's own line goes last so it is always on top.
+    var ordered = chart.lines.slice().sort(function (a, b) {
+        return (a.player === G.human ? 1 : 0) - (b.player === G.human ? 1 : 0);
+    });
+    for (var li = 0; li < ordered.length; li++) {
+        var line = ordered[li];
+        var color = G.players[line.player] ? G.players[line.player].color : '#ffffff';
+        var poly = document.createElementNS(NS, 'polyline');
+        poly.setAttribute('points', line.points);
+        poly.setAttribute('stroke', color);
+        poly.setAttribute('color', color);
+        if (line.player === G.human) poly.setAttribute('class', 'is-human');
+        svg.appendChild(poly);
+    }
+    for (var mi = 0; mi < chart.markers.length; mi++) {
+        var marker = chart.markers[mi];
+        var dot = document.createElementNS(NS, 'circle');
+        dot.setAttribute('cx', marker.x.toFixed(1));
+        dot.setAttribute('cy', String(chart.height + 4));
+        dot.setAttribute('r', '2.4');
+        dot.setAttribute('class', marker.type === 'gain' ? 'chart-marker-gain' : 'chart-marker-loss');
+        svg.appendChild(dot);
+    }
+    chartBody.appendChild(svg);
+    if (chartLegend) {
+        for (var pi = 0; pi < G.players.length; pi++) {
+            var item = document.createElement('span');
+            item.textContent = labelForPlayer(pi);
+            item.style.setProperty('--swatch', G.players[pi].color);
+            chartLegend.appendChild(item);
+        }
+    }
+}
+
+// ── ADAPTIVE MUSIC ──
+// The score follows the match: recent fighting the player is part of, enemy ships
+// inbound on the player's worlds, and how badly the sector is going. Sampled a few
+// times a second; the audio engine glides between levels on its own.
+var musicHeat = 0;
+var musicIntensityClock = 0;
+
+function noteCombatHeat(amount) {
+    musicHeat = Math.min(3, musicHeat + Math.max(0, Number(amount) || 0) * 0.12);
+}
+
+function updateMusicIntensity(dt) {
+    musicHeat *= Math.exp(-Math.max(0, dt) / 5);
+    musicIntensityClock += dt;
+    if (musicIntensityClock < 0.25) return;
+    musicIntensityClock = 0;
+    if (typeof AudioFX === 'undefined' || typeof AudioFX.setMusicIntensity !== 'function') return;
+    if (G.state !== 'playing') return;
+    var inbound = 0, garrison = 0;
+    for (var i = 0; i < G.fleets.length; i++) {
+        var fleet = G.fleets[i];
+        if (!fleet || !fleet.active || fleet.holding || fleet.owner === G.human) continue;
+        var target = G.nodes[fleet.tgtId];
+        if (target && target.owner === G.human) inbound += Math.max(0, Number(fleet.count) || 0);
+    }
+    for (var n = 0; n < G.nodes.length; n++) {
+        if (G.nodes[n] && G.nodes[n].owner === G.human) garrison += Math.max(0, Number(G.nodes[n].units) || 0);
+    }
+    var threat = inbound / (garrison + 25);
+    var totalPower = 0, humanPower = 0;
+    for (var key in G.powerByPlayer) {
+        if (!Object.prototype.hasOwnProperty.call(G.powerByPlayer, key)) continue;
+        var value = Math.max(0, Number(G.powerByPlayer[key]) || 0);
+        totalPower += value;
+        if (Number(key) === G.human) humanPower = value;
+    }
+    var share = totalPower > 0 ? humanPower / totalPower : 0.5;
+    var desperate = share < 0.22 ? (0.22 - share) * 2.2 : 0;
+    var openingCalm = G.tick < TICK_RATE * 40 ? 0.12 : 0;
+    AudioFX.setMusicIntensity(clamp(0.16 + Math.min(0.5, musicHeat * 0.32) + Math.min(0.42, threat * 0.85) + desperate - openingCalm, 0, 1));
+}
+
+function stepFrameVisuals(rawDt) {
+    if (G.state === 'playing' && G.tick - matchTimeline.lastTick >= TICK_RATE) {
+        recordTimelineSample(matchTimeline, G.tick, G.powerByPlayer, G.players.length);
+    }
+    advanceEndCinematic();
+    if (G.state === 'playing' || G.state === 'gameOver') {
+        processFxEvents(sampleFxDirector(fxDirector, { key: fxMatchSerial + ':' + G.seed, nodes: G.nodes, fleets: G.fleets }));
+    }
+    var fxDt = 0;
+    if (G.state === 'playing') fxDt = rawDt * Math.max(1, Number(G.speed) || 1);
+    else if (G.state === 'gameOver' || G.state === 'mainMenu') fxDt = rawDt;
+    if (fxDt > 0) updateVfxSystem(vfx, fxDt);
+    updateMusicIntensity(rawDt);
 }
 
 var lastUpgradeFeedbackSoundAt = -99999;
@@ -2234,19 +2687,14 @@ function gameTick(runtimeOpts) {
             defenseMultiplier: function () {
                 return 1;
             },
-            spawnParticles: spawnParticles,
-            enqueueShockwave: enqueueShockwave,
+            // Arrival effects, sounds and the capture jolt are presented by the fx
+            // director from the board state (processFxEvents), which is also what an
+            // online client sees - so the sim's own arrival bursts are not drawn here.
+            spawnParticles: function () {},
+            enqueueShockwave: function () {},
             stepHoldingFleetDecay: stepHoldingFleetDecay,
             showGameToast: showGameToast,
-            playArrivalAudio: function (kind) {
-                // Only fired for battles the human is involved in (see fleet_step.js).
-                // Capture gets a small, single jolt; ordinary combat gets none,
-                // so a sustained battle never turns into a constant rumble.
-                if (kind === 'capture') addScreenShake(3.5);
-                if (typeof AudioFX === 'undefined') return;
-                if (kind === 'capture' && typeof AudioFX.capture === 'function') AudioFX.capture();
-                else if (kind === 'combat' && typeof AudioFX.combat === 'function') AudioFX.combat();
-            },
+            playArrivalAudio: function () {},
             stepFlowLinks: stepFlowLinks,
             dispatch: dispatch,
         },
@@ -2284,6 +2732,20 @@ function checkEnd() {
     if (resolved.gameOver) {
         G.winner = resolved.winnerIndex;
         G.state = 'gameOver';
+        return;
+    }
+    // A local player who has been knocked out has nothing left to decide; ending here
+    // spares them watching the AIs finish each other off. Online matches keep running
+    // for everyone still in them.
+    if (!net.online && G.players[G.human] && G.players[G.human].alive === false) {
+        var leader = -1, leaderPower = -1;
+        for (var ai = 0; ai < resolved.aliveIndices.length; ai++) {
+            var idx = resolved.aliveIndices[ai];
+            var power = Number(G.powerByPlayer && G.powerByPlayer[idx]) || 0;
+            if (power > leaderPower) { leader = idx; leaderPower = power; }
+        }
+        G.winner = leader;
+        G.state = 'gameOver';
     }
 }
 
@@ -2296,139 +2758,31 @@ function blendHex(a, b, t) { var ca = hexRgb(a), cb = hexRgb(b); if (!ca || !cb)
 
 // ── RENDERING ──
 function drawScreenBackdrop(ctx, cv, tick) {
-    var baseGrad = ctx.createLinearGradient(0, 0, 0, cv.height);
-    baseGrad.addColorStop(0, '#091322');
-    baseGrad.addColorStop(0.55, COLORS_BG);
-    baseGrad.addColorStop(1, '#04070d');
-    ctx.fillStyle = baseGrad;
-    ctx.fillRect(0, 0, cv.width, cv.height);
-
-    ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-
-    var rimA = ctx.createRadialGradient(cv.width * 0.18, cv.height * 0.2, 0, cv.width * 0.18, cv.height * 0.2, Math.max(cv.width, cv.height) * 0.75);
-    rimA.addColorStop(0, 'rgba(66, 135, 245, 0.22)');
-    rimA.addColorStop(0.42, 'rgba(37, 92, 180, 0.12)');
-    rimA.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = rimA;
-    ctx.fillRect(0, 0, cv.width, cv.height);
-
-    var rimB = ctx.createRadialGradient(cv.width * 0.82, cv.height * 0.78, 0, cv.width * 0.82, cv.height * 0.78, Math.max(cv.width, cv.height) * 0.7);
-    rimB.addColorStop(0, 'rgba(255, 148, 88, 0.16)');
-    rimB.addColorStop(0.38, 'rgba(110, 43, 23, 0.12)');
-    rimB.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    ctx.fillStyle = rimB;
-    ctx.fillRect(0, 0, cv.width, cv.height);
-
-    var aurora = ctx.createLinearGradient(0, cv.height * (0.15 + Math.sin(tick * 0.003) * 0.015), cv.width, cv.height * 0.85);
-    aurora.addColorStop(0, 'rgba(40, 118, 188, 0)');
-    aurora.addColorStop(0.3, 'rgba(40, 118, 188, 0.06)');
-    aurora.addColorStop(0.7, 'rgba(52, 182, 172, 0.05)');
-    aurora.addColorStop(1, 'rgba(52, 182, 172, 0)');
-    ctx.fillStyle = aurora;
-    ctx.fillRect(0, 0, cv.width, cv.height);
-    ctx.restore();
-
-    var vignette = ctx.createRadialGradient(cv.width * 0.5, cv.height * 0.5, Math.min(cv.width, cv.height) * 0.18, cv.width * 0.5, cv.height * 0.5, Math.max(cv.width, cv.height) * 0.78);
-    vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
-    vignette.addColorStop(0.68, 'rgba(2, 4, 9, 0.16)');
-    vignette.addColorStop(1, 'rgba(2, 3, 7, 0.56)');
-    ctx.fillStyle = vignette;
-    ctx.fillRect(0, 0, cv.width, cv.height);
+    ensureBackdrop(backdropState, { seed: G.seed, mapWidth: MAP_W, mapHeight: MAP_H, nebulaWidth: backdropNebulaWidth() });
+    drawBackdropScreen(ctx, backdropState, {
+        width: view.width,
+        height: view.height,
+        cam: G.cam,
+        dt: G.state === 'paused' ? 0 : lastFrameDt,
+        motion: !prefersReducedMotion,
+    });
 }
 
-function projectBackdropPoint(x, y, depth) {
-    return {
-        x: x + G.cam.x * (1 - depth),
-        y: y + G.cam.y * (1 - depth)
-    };
-}
-
-function drawBackdropEllipse(ctx, x, y, rx, ry, rotation, colorStops, alpha, composite) {
-    ctx.save();
-    if (composite) ctx.globalCompositeOperation = composite;
-    ctx.globalAlpha = alpha;
-    ctx.translate(x, y);
-    ctx.rotate(rotation);
-    ctx.scale(rx, ry);
-    var grad = ctx.createRadialGradient(0, 0, 0.04, 0, 0, 1);
-    for (var i = 0; i < colorStops.length; i++) grad.addColorStop(colorStops[i].stop, colorStops[i].color);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(0, 0, 1, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+// Phones get a coarser nebula: it is soft gas upscaled anyway, and half the texels halve
+// the bake.
+function backdropNebulaWidth() {
+    return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ? 380 : 520;
 }
 
 function drawWorldBackdrop(ctx, tick, hw, hh) {
-    for (var di = 0; di < spaceDustBands.length; di++) {
-        var band = spaceDustBands[di];
-        var bandOffset = Math.sin(tick * 0.002 + band.phase) * band.rx * 0.03;
-        var bandPt = projectBackdropPoint(band.x + bandOffset, band.y + Math.cos(tick * 0.0016 + band.phase) * band.ry * 0.16, band.depth);
-        if (Math.abs(bandPt.x - G.cam.x) > hw + band.rx + 80 || Math.abs(bandPt.y - G.cam.y) > hh + band.ry + 80) continue;
-        drawBackdropEllipse(ctx, bandPt.x, bandPt.y, band.rx, band.ry, band.rot, [
-            { stop: 0, color: hexToRgba(blendHex(band.color, '#ffffff', 0.22), 0.95) },
-            { stop: 0.45, color: hexToRgba(band.color, 0.36) },
-            { stop: 1, color: hexToRgba(band.color, 0) }
-        ], band.alpha, 'screen');
-    }
-
-    for (var ni = 0; ni < spaceNebulas.length; ni++) {
-        var nebula = spaceNebulas[ni];
-        var driftX = Math.sin(tick * 0.0014 + nebula.phase) * nebula.drift;
-        var driftY = Math.cos(tick * 0.001 + nebula.phase * 1.7) * nebula.drift * 0.6;
-        var nebulaPt = projectBackdropPoint(nebula.x + driftX, nebula.y + driftY, nebula.depth);
-        if (Math.abs(nebulaPt.x - G.cam.x) > hw + nebula.rx + 120 || Math.abs(nebulaPt.y - G.cam.y) > hh + nebula.ry + 120) continue;
-
-        drawBackdropEllipse(ctx, nebulaPt.x, nebulaPt.y, nebula.rx, nebula.ry, nebula.rot, [
-            { stop: 0, color: hexToRgba(blendHex(nebula.core, '#ffffff', 0.18), 0.78) },
-            { stop: 0.35, color: hexToRgba(nebula.core, 0.34) },
-            { stop: 0.74, color: hexToRgba(nebula.edge, 0.2) },
-            { stop: 1, color: hexToRgba(nebula.edge, 0) }
-        ], nebula.alpha, 'screen');
-
-        drawBackdropEllipse(ctx, nebulaPt.x - nebula.rx * 0.14, nebulaPt.y - nebula.ry * 0.08, nebula.rx * 0.44, nebula.ry * 0.34, nebula.rot * 0.85, [
-            { stop: 0, color: hexToRgba('#ffffff', 0.34) },
-            { stop: 0.4, color: hexToRgba(blendHex(nebula.core, '#ffffff', 0.45), 0.24) },
-            { stop: 1, color: 'rgba(255,255,255,0)' }
-        ], nebula.alpha * 0.58, 'lighter');
-    }
-
-    ctx.save();
-    for (var si = 0; si < stars.length; si++) {
-        var star = stars[si];
-        var starPt = projectBackdropPoint(star.x, star.y, star.depth);
-        if (Math.abs(starPt.x - G.cam.x) > hw + star.glow + 30 || Math.abs(starPt.y - G.cam.y) > hh + star.glow + 30) continue;
-        var twinkle = 0.56 + 0.44 * Math.sin(tick * 0.024 * star.twinkle + star.phase);
-        var alpha = star.b * twinkle;
-        if (star.glow > 0) {
-            ctx.beginPath();
-            ctx.arc(starPt.x, starPt.y, star.glow, 0, Math.PI * 2);
-            ctx.fillStyle = hexToRgba(star.col, alpha * 0.08);
-            ctx.fill();
-        }
-        if (star.r < 1) {
-            var side = Math.max(1, star.r * 1.3);
-            ctx.fillStyle = hexToRgba(star.col, alpha);
-            ctx.fillRect(starPt.x - side * 0.5, starPt.y - side * 0.5, side, side);
-        } else {
-            ctx.beginPath();
-            ctx.arc(starPt.x, starPt.y, star.r, 0, Math.PI * 2);
-            ctx.fillStyle = hexToRgba(star.col, alpha);
-            ctx.fill();
-        }
-        if (star.glint > 0) {
-            ctx.strokeStyle = hexToRgba(star.col, alpha * 0.24);
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(starPt.x - star.glint, starPt.y);
-            ctx.lineTo(starPt.x + star.glint, starPt.y);
-            ctx.moveTo(starPt.x, starPt.y - star.glint * 0.72);
-            ctx.lineTo(starPt.x, starPt.y + star.glint * 0.72);
-            ctx.stroke();
-        }
-    }
-    ctx.restore();
+    drawBackdropWorld(ctx, backdropState, {
+        cam: G.cam,
+        dt: lastFrameDt,
+        tick: tick,
+        halfWidth: hw,
+        halfHeight: hh,
+        glowSprite: getGlowSprite,
+    });
 }
 
 function traceRoundedPill(ctx, x, y, w, h) {
@@ -2965,73 +3319,132 @@ function drawGateStation(ctx, n, col, tick) {
     ctx.restore();
 }
 
-function drawRocketShape(ctx, x, y, dirX, dirY, col, flicker, alpha, scale, bank, throttle) {
-    var nX = -dirY, nY = dirX;
-    scale = (scale || 1) * 1.25;
-    alpha = alpha === undefined ? 1 : alpha;
-    bank = clamp(Number(bank) || 0, -1, 1);
-    throttle = clamp(Number(throttle) || 1, 0.2, 1.3);
+// ── SHIPS ──
+// Every ship on the board goes through a batch: engine glows are stamped from one cached
+// sprite, all light streaks go into one stroked path and all hulls into one filled path.
+// A swarm of forty ships costs about as much as the old renderer spent on six, which is
+// what allows fleets to finally look like fleets.
+var SHIP_BATCH_MAX = 4096;
+// Share of the per-fleet ship budget actually drawn this frame; render() lowers it when
+// the board is crowded so a late-game swarm cannot tank the frame rate.
+var fleetDetailScale = 1;
+var FLEET_SHIP_BUDGET = 1900;
+var shipBatch = {
+    n: 0,
+    x: new Float32Array(SHIP_BATCH_MAX),
+    y: new Float32Array(SHIP_BATCH_MAX),
+    dx: new Float32Array(SHIP_BATCH_MAX),
+    dy: new Float32Array(SHIP_BATCH_MAX),
+    s: new Float32Array(SHIP_BATCH_MAX),
+    a: new Float32Array(SHIP_BATCH_MAX),
+    streak: new Float32Array(SHIP_BATCH_MAX),
+};
+var shipHullColorCache = {};
 
-    var flameLen = (2.7 + flicker * 1.8) * scale * (0.72 + throttle * 0.48);
-    var flameWidth = (0.82 + flicker * 0.52) * scale * (0.82 + throttle * 0.22);
-    var bankShift = bank * 0.95 * scale;
-    var bx = x - dirX * flameLen + nX * bankShift * 0.32, by = y - dirY * flameLen + nY * bankShift * 0.32;
+function shipHullColor(col) {
+    if (shipHullColorCache[col]) return shipHullColorCache[col];
+    var hull = col && col.indexOf('#') === 0 ? blendHex(col, '#ffffff', 0.3) : '#dfe8f5';
+    shipHullColorCache[col] = hull;
+    return hull;
+}
+
+function shipBatchPush(x, y, dirX, dirY, size, alpha, streak) {
+    if (shipBatch.n >= SHIP_BATCH_MAX || !(alpha > 0.02)) return;
+    var i = shipBatch.n++;
+    shipBatch.x[i] = x;
+    shipBatch.y[i] = y;
+    shipBatch.dx[i] = dirX;
+    shipBatch.dy[i] = dirY;
+    shipBatch.s[i] = size;
+    shipBatch.a[i] = alpha;
+    shipBatch.streak[i] = streak || 0;
+}
+
+function traceShipHulls(ctx, minAlpha, maxAlpha) {
+    var any = false;
+    ctx.beginPath();
+    for (var i = 0; i < shipBatch.n; i++) {
+        var a = shipBatch.a[i];
+        if (a < minAlpha || a >= maxAlpha) continue;
+        var x = shipBatch.x[i], y = shipBatch.y[i], dx = shipBatch.dx[i], dy = shipBatch.dy[i], sz = shipBatch.s[i];
+        var nx = -dy, ny = dx;
+        ctx.moveTo(x + dx * sz * 1.9, y + dy * sz * 1.9);
+        ctx.lineTo(x - dx * sz * 1.15 + nx * sz * 1.15, y - dy * sz * 1.15 + ny * sz * 1.15);
+        ctx.lineTo(x - dx * sz * 0.5, y - dy * sz * 0.5);
+        ctx.lineTo(x - dx * sz * 1.15 - nx * sz * 1.15, y - dy * sz * 1.15 - ny * sz * 1.15);
+        ctx.closePath();
+        any = true;
+    }
+    return any;
+}
+
+function shipBatchFlush(ctx, col, opts) {
+    var n = shipBatch.n;
+    if (!n) return;
+    opts = opts || {};
+    var alphaScale = opts.alphaScale === undefined ? 1 : clamp(Number(opts.alphaScale) || 0, 0, 1);
+    if (alphaScale <= 0.01) { shipBatch.n = 0; return; }
+    var glowMul = (opts.glow === undefined ? 1 : opts.glow) * alphaScale;
+    var streakMul = (opts.streak === undefined ? 1 : opts.streak) * alphaScale;
+    var baseCol = col && col.indexOf('#') === 0 ? col : '#c8d6e5';
+    var hull = opts.hullColor || shipHullColor(baseCol);
+    var zoom = Math.max(0.2, Number(G.cam && G.cam.zoom) || 1);
+    var i;
 
     ctx.save();
-    ctx.globalAlpha = alpha;
-
-    ctx.beginPath();
-    ctx.moveTo(x - dirX * 0.4 * scale + nX * (flameWidth + Math.max(0, bank) * 0.38 * scale), y - dirY * 0.4 * scale + nY * (flameWidth + Math.max(0, bank) * 0.38 * scale));
-    ctx.lineTo(bx, by);
-    ctx.lineTo(x - dirX * 0.4 * scale - nX * (flameWidth + Math.max(0, -bank) * 0.38 * scale), y - dirY * 0.4 * scale - nY * (flameWidth + Math.max(0, -bank) * 0.38 * scale));
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(255,145,70,' + (0.16 + throttle * 0.1 + flicker * 0.16) + ')';
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(bx, by, (1.1 + flicker * 0.9) * scale, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,210,130,' + (0.12 + throttle * 0.12 + flicker * 0.16) + ')';
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(bx, by, (2.1 + throttle * 1.4 + flicker * 0.8) * scale, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,170,90,' + (0.05 + throttle * 0.08) + ')';
-    ctx.fill();
-
-    var noseX = x + dirX * 1.85 * scale + nX * bankShift * 0.08, noseY = y + dirY * 1.85 * scale + nY * bankShift * 0.08;
-    var leftSpan = (1.08 + Math.max(0, bank) * 0.58) * scale;
-    var rightSpan = (1.08 + Math.max(0, -bank) * 0.58) * scale;
-    var leftBack = (1.34 - Math.max(0, -bank) * 0.22) * scale;
-    var rightBack = (1.34 - Math.max(0, bank) * 0.22) * scale;
-    var leftX = x - dirX * leftBack + nX * leftSpan, leftY = y - dirY * leftBack + nY * leftSpan;
-    var rightX = x - dirX * rightBack - nX * rightSpan, rightY = y - dirY * rightBack - nY * rightSpan;
-
-    ctx.beginPath();
-    ctx.arc(x + nX * bankShift * 0.16, y + nY * bankShift * 0.16, 4.3 * scale, 0, Math.PI * 2);
-    ctx.fillStyle = hexToRgba(col, 0.2);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(noseX, noseY);
-    ctx.lineTo(leftX, leftY);
-    ctx.lineTo(rightX, rightY);
-    ctx.closePath();
-    ctx.fillStyle = col;
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.moveTo(x - dirX * 0.15 * scale + nX * (0.2 + bank * 0.26) * scale, y - dirY * 0.15 * scale + nY * (0.2 + bank * 0.26) * scale);
-    ctx.lineTo(noseX - dirX * 0.58 * scale, noseY - dirY * 0.58 * scale);
-    ctx.strokeStyle = 'rgba(255,255,255,' + (0.2 + throttle * 0.24) + ')';
-    ctx.lineWidth = 0.95 * scale;
-    ctx.lineCap = 'round';
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(noseX, noseY, 0.7 * scale, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255,255,255,0.9)';
-    ctx.fill();
+    ctx.globalCompositeOperation = 'lighter';
+    if (streakMul > 0) {
+        // Two passes fake a taper: a long faint wake, and a short bright core by the
+        // engine. A per-ship gradient would look the same and cost a gradient per ship.
+        for (var pass = 0; pass < 2; pass++) {
+            var share = pass === 0 ? 1 : 0.42;
+            var anyStreak = false;
+            ctx.beginPath();
+            for (i = 0; i < n; i++) {
+                var len = shipBatch.streak[i] * share;
+                if (len <= 0.5) continue;
+                var bx = shipBatch.x[i] - shipBatch.dx[i] * shipBatch.s[i] * 0.7;
+                var by = shipBatch.y[i] - shipBatch.dy[i] * shipBatch.s[i] * 0.7;
+                ctx.moveTo(bx, by);
+                ctx.lineTo(bx - shipBatch.dx[i] * len, by - shipBatch.dy[i] * len);
+                anyStreak = true;
+            }
+            if (!anyStreak) continue;
+            ctx.lineCap = 'round';
+            if (pass === 0) {
+                ctx.strokeStyle = hexToRgba(baseCol, 0.2 * streakMul);
+                ctx.lineWidth = Math.max(1.2 / zoom, 1.9);
+            } else {
+                ctx.strokeStyle = hexToRgba(blendHex(baseCol, '#ffffff', 0.4), 0.42 * streakMul);
+                ctx.lineWidth = Math.max(0.7 / zoom, 1);
+            }
+            ctx.stroke();
+        }
+    }
+    var glow = glowMul > 0 ? getGlowSprite(baseCol) : null;
+    if (glow) {
+        for (i = 0; i < n; i++) {
+            var g = shipBatch.s[i] * 3.1;
+            ctx.globalAlpha = Math.min(1, shipBatch.a[i] * 0.62 * glowMul);
+            ctx.drawImage(glow, shipBatch.x[i] - shipBatch.dx[i] * shipBatch.s[i] * 0.55 - g, shipBatch.y[i] - shipBatch.dy[i] * shipBatch.s[i] * 0.55 - g, g * 2, g * 2);
+        }
+    }
     ctx.restore();
+
+    ctx.save();
+    ctx.fillStyle = hull;
+    // Three alpha bands keep the depth fade of long formations while staying three fills.
+    if (traceShipHulls(ctx, 0.78, 9)) { ctx.globalAlpha = 0.96 * alphaScale; ctx.fill(); }
+    if (traceShipHulls(ctx, 0.5, 0.78)) { ctx.globalAlpha = 0.7 * alphaScale; ctx.fill(); }
+    if (traceShipHulls(ctx, 0, 0.5)) { ctx.globalAlpha = 0.42 * alphaScale; ctx.fill(); }
+    ctx.restore();
+    shipBatch.n = 0;
+}
+
+// World size for a ship so it never shrinks below a few screen pixels when zoomed out.
+function shipWorldSize(base) {
+    var zoom = Math.max(0.2, Number(G.cam && G.cam.zoom) || 1);
+    return Math.max(base, 1.25 / zoom);
 }
 
 function drawFleetRocket(ctx, f, col, tick, renderState) {
@@ -3041,16 +3454,11 @@ function drawFleetRocket(ctx, f, col, tick, renderState) {
     renderState = renderState && typeof renderState === 'object' ? renderState : getFleetRenderState(f);
     var cp = { x: f.cpx, y: f.cpy };
     var launchT = clamp(typeof f.launchT === 'number' ? f.launchT : 0, 0, 0.2);
-    var trail = f.trail || [];
-    var tl = trail.length;
-    var trailScale = clamp(Number(f.trailScale) || 1, 0.85, 1.5);
     var routeVisual = clamp((Number(f.routeSpeedMult) || 1) * (Number(f.spdVar) || 1), 0.85, 2);
     var hitFlash = clamp(Number(f.hitFlash) || 0, 0, 0.8);
     var hitJitter = clamp(Number(f.hitJitter) || 0, 0, 1.4);
     var hitDirX = Number.isFinite(f.hitDirX) ? f.hitDirX : 0;
     var hitDirY = Number.isFinite(f.hitDirY) ? f.hitDirY : 0;
-    var throttle = clamp(Number(f.throttle) || (0.74 + Math.max(0, routeVisual - 1) * 0.18), 0.2, 1.28);
-    var leadBank = clamp(Number(f.bank) || 0, -1, 1);
     var jitterPhase = tick * 18 + (f.id || 0) * 1.37;
     var hitShake = hitJitter * hitFlash;
     var fleetX = Number(renderState.x);
@@ -3061,38 +3469,14 @@ function drawFleetRocket(ctx, f, col, tick, renderState) {
     if (!Number.isFinite(fleetT)) fleetT = Number(f.t) || 0;
     var renderX = fleetX + hitDirX * Math.sin(jitterPhase) * hitShake * 0.75 - hitDirY * Math.cos(jitterPhase * 0.9) * hitShake * 0.45;
     var renderY = fleetY + hitDirY * Math.sin(jitterPhase) * hitShake * 0.75 + hitDirX * Math.cos(jitterPhase * 0.9) * hitShake * 0.45;
-    var shipCol = hitFlash > 0 ? blendHex(col, '#ffffff', Math.min(0.6, hitFlash * 0.72)) : col;
-    var trailAlphaBoost = clamp(0.92 + Math.max(0, routeVisual - 1) * 0.65 + (trailScale - 1) * 0.45 + hitFlash * 0.28, 0.85, 1.7);
-    var trailWidthBoost = clamp(0.95 + (trailScale - 1) * 0.85, 0.9, 1.5);
-    if (tl > 0) {
-        var prev = trail[0];
-        for (var i = 1; i < tl; i++) {
-            var curr = trail[i];
-            var t = i / tl;
-            ctx.beginPath();
-            ctx.moveTo(prev.x, prev.y);
-            ctx.lineTo(curr.x, curr.y);
-            ctx.strokeStyle = hexToRgba(col, (0.04 + t * 0.18) * trailAlphaBoost);
-            ctx.lineWidth = (0.6 + t * 1.6) * trailWidthBoost;
-            ctx.lineCap = 'round';
-            ctx.stroke();
-            prev = curr;
-        }
-        ctx.beginPath();
-        ctx.moveTo(prev.x, prev.y);
-        ctx.lineTo(renderX, renderY);
-        ctx.strokeStyle = hexToRgba(col, 0.28 * trailAlphaBoost);
-        ctx.lineWidth = 2.3 * trailWidthBoost;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-    }
 
     var dirX = 1, dirY = 0;
+    var trail = f.trail || [];
     if (Number.isFinite(f.headingX) && Number.isFinite(f.headingY)) {
         dirX = f.headingX;
         dirY = f.headingY;
-    } else if (tl > 0) {
-        var from = trail[tl - 1];
+    } else if (trail.length > 0) {
+        var from = trail[trail.length - 1];
         dirX = fleetX - from.x;
         dirY = fleetY - from.y;
     } else {
@@ -3102,38 +3486,40 @@ function drawFleetRocket(ctx, f, col, tick, renderState) {
     var dLen = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
     dirX /= dLen; dirY /= dLen;
 
-    var phase = tick * 0.28 + f.srcId * 0.9 + f.tgtId * 0.6 + (f.id || 0) * 0.17 + f.offsetL * 0.08;
-    var flicker = 0.5 + 0.5 * Math.sin(phase);
+    // Light streaks scale with speed, so a Relay-boosted or wormhole-adjacent fleet
+    // visibly moves faster than one crawling out of a gravity well.
+    var streakLen = 4 + routeVisual * 5 + Math.min(4, Math.sqrt(count) * 0.5);
+    var leadSize = shipWorldSize(2.25 + Math.min(0.8, Math.sqrt(count) * 0.07));
     if (hitFlash > 0.01) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = gameOverFleetAlpha();
         ctx.beginPath();
-        ctx.arc(renderX, renderY, (6.5 + hitShake * 3.2) * trailScale, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(255,255,255,' + (0.08 + hitFlash * 0.18) + ')';
+        ctx.arc(renderX, renderY, 7 + hitShake * 3.2, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255,255,255,' + (0.06 + hitFlash * 0.16) + ')';
         ctx.fill();
+        ctx.restore();
     }
-    drawRocketShape(ctx, renderX, renderY, dirX, dirY, shipCol, flicker, 1, 1, leadBank, throttle + hitFlash * 0.18);
+    shipBatchPush(renderX, renderY, dirX, dirY, leadSize, 1, streakLen * 1.35);
 
+    // The sim lands a fleet one ship at a time, spacingT apart along the route, so a
+    // fleet is really a stream: ship k is at t - k * spacingT, and ships still at t < 0
+    // have not left the source yet. Drawing it that way means the board shows exactly
+    // when each ship will arrive - a big attack pours in, it does not teleport in.
     var supportCount = Math.max(0, Math.floor(count) - 1);
     if (supportCount > 0) {
         var spacingT = getFleetUnitSpacingT(f);
-        var visibleSupportCount = Math.min(supportCount, Math.max(1, Math.min(18, Math.round(Math.sqrt(count) * 3.4))));
-        var swarmLaneCount = Math.max(2, Math.min(6, Math.round(Math.sqrt(visibleSupportCount * 0.9))));
-        var swarmWingGap = Math.min(11.5, 4.4 + Math.sqrt(visibleSupportCount) * 1.08 + Math.abs(f.offsetL) * 0.035);
-        var swarmPush = Math.min(5, 1.6 + Math.sqrt(count) * 0.28);
+        var budget = Math.max(1, Math.round(Math.min(64, 6 + Math.sqrt(count) * 5.2) * fleetDetailScale));
+        var visibleSupportCount = Math.min(supportCount, budget);
         var visualStep = supportCount / visibleSupportCount;
+        var streamWidth = Math.min(15, 3.5 + Math.sqrt(count) * 1.05);
+        var supportSize = shipWorldSize(1.55);
+        var fleetSeed = (f.id || 0) * 7.13 + (f.srcId || 0) * 1.7;
         for (var vi = 0; vi < visibleSupportCount; vi++) {
-            var unitIndex = Math.min(supportCount, Math.round(vi * visualStep) + 1);
-            var row = Math.floor(vi / swarmLaneCount);
-            var rowStart = row * swarmLaneCount;
-            var rowCount = Math.min(swarmLaneCount, visibleSupportCount - rowStart);
-            var lane = vi % swarmLaneCount;
-            var centeredLane = rowCount <= 1 ? 0 : lane - (rowCount - 1) * 0.5;
-            var jitter = hashMix(G.seed, f.id || 0, unitIndex, supportCount);
-            var driftNoise = hashMix(G.seed + 31, f.srcId + unitIndex, f.tgtId, f.id || 0);
-            var depthT = (row + 1) * spacingT * 0.55 + (driftNoise - 0.5) * spacingT * 0.28;
-            var tUnit = fleetT - depthT;
-            if (tUnit <= 0) continue;
+            var unitIndex = Math.min(supportCount, Math.max(1, Math.round((vi + 1) * visualStep)));
+            var tUnit = fleetT - unitIndex * spacingT;
+            if (tUnit <= 0) break;
             var curveT = launchT + (1 - launchT) * clamp(tUnit, 0, 0.999);
-
             var pt = bezPt(routeStart, cp, routeTarget, curveT);
             var pt2 = bezPt(routeStart, cp, routeTarget, Math.min(1, curveT + 0.01));
             var udx = pt2.x - pt.x, udy = pt2.y - pt.y;
@@ -3141,20 +3527,25 @@ function drawFleetRocket(ctx, f, col, tick, renderState) {
             udx /= ulen; udy /= ulen;
             var unx = -udy, uny = udx;
 
-            var settlePhase = tick * 0.045 + unitIndex * 0.37 + driftNoise * Math.PI * 2;
-            var microDrift = Math.sin(settlePhase) * (0.18 + row * 0.04);
-            var offsetL = centeredLane * swarmWingGap + (jitter - 0.5) * swarmWingGap * 0.18 + microDrift;
-            var pushBack = row * swarmPush + (driftNoise - 0.5) * swarmPush * 0.22;
-            var fade = Math.min(1, curveT * 5) * Math.min(1, (1 - curveT) * 5);
-            var sx = pt.x + unx * offsetL * fade - udx * pushBack * fade;
-            var sy = pt.y + uny * offsetL * fade - udy * pushBack * fade;
-            var localFlicker = 0.5 + 0.5 * Math.sin(phase + unitIndex * 0.33);
-            var alpha = clamp(0.9 - row * 0.08 - vi * 0.004, 0.32, 0.9);
-            var supportScale = clamp(0.76 - row * 0.04, 0.56, 0.76);
-            var supportBank = leadBank * clamp(1 - row * 0.12, 0.26, 0.92) + (driftNoise - 0.5) * 0.02;
-            drawRocketShape(ctx, sx, sy, udx, udy, shipCol, localFlicker, alpha, supportScale, supportBank, throttle * 0.94 + hitFlash * 0.12);
+            var jitter = hashMix(G.seed, f.id || 0, unitIndex, 3);
+            var driftNoise = hashMix(G.seed + 31, f.srcId + unitIndex, f.tgtId, f.id || 0);
+            // The stream narrows to a point where it leaves the source and where it
+            // lands, and breathes a little in between.
+            var fade = Math.min(1, curveT * 6) * Math.min(1, (1 - curveT) * 7);
+            var weave = Math.sin(tick * 0.05 + unitIndex * 0.9 + fleetSeed) * 1.1;
+            var offsetL = ((jitter - 0.5) * streamWidth + weave) * fade;
+            var along = (driftNoise - 0.5) * 3.2;
+            var sx = pt.x + unx * offsetL + udx * along;
+            var sy = pt.y + uny * offsetL + udy * along;
+            var alpha = 0.62 + driftNoise * 0.34;
+            shipBatchPush(sx, sy, udx, udy, supportSize * (0.82 + jitter * 0.3), alpha, streakLen * (0.55 + driftNoise * 0.45));
         }
     }
+    shipBatchFlush(ctx, col, {
+        hullColor: hitFlash > 0 ? blendHex(shipHullColor(col), '#ffffff', Math.min(0.7, hitFlash * 0.8)) : null,
+        glow: 1 + hitFlash * 0.6,
+        alphaScale: gameOverFleetAlpha(),
+    });
 }
 
 function drawHoldingFleet(ctx, fleet, col, tick, selected, renderState) {
@@ -3207,10 +3598,10 @@ function drawHoldingFleet(ctx, fleet, col, tick, selected, renderState) {
         var depth = (Math.abs(ratio - 0.5) * -3.4) + Math.sin(tick * 0.02 + i * 1.7 + (fleet.id || 0)) * 1.1;
         var shipX = x + nX * lateral - dir.x * depth;
         var shipY = y + nY * lateral - dir.y * depth;
-        var shipScale = i === Math.floor(shipCount / 2) ? 0.72 : 0.58;
-        var shipAlpha = i === Math.floor(shipCount / 2) ? 0.96 : 0.72;
-        drawRocketShape(ctx, shipX, shipY, dir.x, dir.y, col, 0.5 + 0.5 * Math.sin(tick * 0.06 + i * 0.8 + fleet.id), shipAlpha, shipScale, 0, 0.6);
+        var isFlagship = i === Math.floor(shipCount / 2);
+        shipBatchPush(shipX, shipY, dir.x, dir.y, shipWorldSize(isFlagship ? 2.1 : 1.65), isFlagship ? 0.96 : 0.74, 0);
     }
+    shipBatchFlush(ctx, col, { glow: 0.75 + pulse * 0.25, streak: 0, alphaScale: gameOverFleetAlpha() });
 
     if (selected) {
         var bracketR = formationRadius + 6;
@@ -3386,15 +3777,19 @@ function drawOrbitalTrack(ctx, node, frame, col, frontPass, alpha, width) {
     ctx.restore();
 }
 
-function drawOrbitalSquadron(ctx, node, squad, col, tick, frontPass) {
+function pushOrbitalSquadron(ctx, node, squad, col, tick, frontPass) {
     if (!squad || squad.presence <= 0.04) return;
 
     var baseCol = col && col.indexOf('#') === 0 ? col : '#c8d6e5';
     var frame = getOrbitalFrame(node, squad, tick);
     var lead = orbitalPoint(node, frame, frame.angle);
     var shipIsFront = lead.localY >= 0;
-    var arcAlpha = (frontPass ? 0.14 : 0.06) * squad.presence + (node.defense ? 0.02 : 0);
-    drawOrbitalTrack(ctx, node, frame, baseCol, frontPass, arcAlpha, frontPass ? 1.05 : 0.85);
+    // Only the inner lanes keep a visible track: enough to read "these ships are in
+    // orbit" without turning a big garrison into a gyroscope of ellipses.
+    if (squad.lane < 2) {
+        var arcAlpha = (frontPass ? 0.1 : 0.045) * squad.presence + (node.defense ? 0.03 : 0);
+        drawOrbitalTrack(ctx, node, frame, baseCol, frontPass, arcAlpha, frontPass ? 1 : 0.8);
+    }
     if (shipIsFront !== frontPass) return;
 
     var tangent = orbitalTangent(frame, frame.angle);
@@ -3406,38 +3801,33 @@ function drawOrbitalSquadron(ctx, node, squad, col, tick, frontPass) {
     var spread = squad.wingSpread * leadScale * 2.75 * formationTightness;
     var trailGap = leadScale * 4.35 * (node.defense ? 0.8 : 1);
     var radialGap = leadScale * 2.7 * squad.radialLag;
-    var shipAlpha = (frontPass ? 0.8 : 0.38) * squad.presence;
-    var shipCol = frontPass ? blendHex(baseCol, '#ffffff', 0.08 + squad.presence * 0.08) : blendHex(baseCol, '#8fa3bf', 0.24);
-    var radialLean = clamp(lead.localY / Math.max(1, frame.ry), -1, 1);
-    var bank = clamp(frame.orbitDir * (0.18 + squad.bankBias) + radialLean * 0.14, -0.68, 0.68);
-    var throttle = clamp(squad.throttleBias + (frontPass ? 0.08 : -0.03) + (node.defense ? 0.05 : 0), 0.55, 1.15);
-    var flickerBase = tick * 0.32 + squad.phase + squad.slot * 0.73;
+    // Ships behind the planet are dimmer: the cheapest depth cue there is.
+    var shipAlpha = (frontPass ? 0.92 : 0.46) * squad.presence;
     var members = Math.max(1, squad.members);
-    var formation = [
-        { back: 0, lateral: 0, radial: 0, scale: 1 },
-        { back: 1.05, lateral: 1, radial: 0.34, scale: 0.82 },
-        { back: 1.05, lateral: -1, radial: -0.34, scale: 0.82 },
-        { back: 1.95, lateral: 0, radial: 0.16, scale: 0.74 },
-        { back: 2.15, lateral: 1.6, radial: 0.52, scale: 0.64 },
-        { back: 2.15, lateral: -1.6, radial: -0.52, scale: 0.64 }
-    ];
-
-    if (frontPass) {
-        ctx.beginPath();
-        ctx.arc(lead.x, lead.y, leadScale * 6.2, 0, Math.PI * 2);
-        ctx.fillStyle = hexToRgba(baseCol, 0.08 * squad.presence);
-        ctx.fill();
-    }
+    var baseSize = shipWorldSize(leadScale * 3.6);
+    var formation = ORBITAL_FORMATION;
 
     for (var mi = 0; mi < members && mi < formation.length; mi++) {
         var form = formation[mi];
         var px = lead.x - dirX * trailGap * form.back + nX * spread * form.lateral + radial.x * radialGap * form.radial;
         var py = lead.y - dirY * trailGap * form.back + nY * spread * form.lateral + radial.y * radialGap * form.radial;
-        var scale = leadScale * form.scale;
-        var alpha = shipAlpha * (1 - mi * 0.08);
-        var flicker = 0.5 + 0.5 * Math.sin(flickerBase + mi * 0.57);
-        drawRocketShape(ctx, px, py, dirX, dirY, shipCol, flicker, alpha, scale, bank * (1 - mi * 0.18), throttle - mi * 0.04);
+        shipBatchPush(px, py, dirX, dirY, baseSize * form.scale, shipAlpha * (1 - mi * 0.08), frontPass ? 5.5 : 3);
     }
+}
+
+var ORBITAL_FORMATION = [
+    { back: 0, lateral: 0, radial: 0, scale: 1 },
+    { back: 1.05, lateral: 1, radial: 0.34, scale: 0.84 },
+    { back: 1.05, lateral: -1, radial: -0.34, scale: 0.84 },
+    { back: 1.95, lateral: 0, radial: 0.16, scale: 0.76 },
+    { back: 2.15, lateral: 1.6, radial: 0.52, scale: 0.68 },
+    { back: 2.15, lateral: -1.6, radial: -0.52, scale: 0.68 }
+];
+
+function drawOrbitalSquadrons(ctx, node, squads, col, tick, frontPass) {
+    if (!squads || !squads.length) return;
+    for (var i = 0; i < squads.length; i++) pushOrbitalSquadron(ctx, node, squads[i], col, tick, frontPass);
+    shipBatchFlush(ctx, col, { glow: frontPass ? 0.8 : 0.4, streak: frontPass ? 0.7 : 0.35 });
 }
 
 function fillTerritoryCircleSet(ctx, territories, color, alpha, expand) {
@@ -3600,13 +3990,18 @@ function drawTerritories(ctx, tick) {
         var territories = byOwner[ownerKey];
         var color = G.players[owner] ? G.players[owner].color : COL_NEUTRAL;
         var fillAlpha = owner === G.human ? 0.085 : 0.052;
-        var layer = ensureTerritoryLayerCanvas(ctx.canvas.width, ctx.canvas.height);
+        // Territory is a soft wash, so the layer is rendered at half the CSS resolution
+        // and stretched back up: a quarter of the fill cost, and the upscale gives the
+        // border the feathered edge it should have had anyway.
+        var layerScale = 0.5;
+        var layer = ensureTerritoryLayerCanvas(Math.ceil(view.width * layerScale), Math.ceil(view.height * layerScale));
         if (!layer) continue;
 
         function prepareLayer() {
             layer.setTransform(1, 0, 0, 1, 0, 0);
             layer.clearRect(0, 0, territoryLayerCanvas.width, territoryLayerCanvas.height);
-            layer.translate(ctx.canvas.width / 2, ctx.canvas.height / 2);
+            layer.setTransform(layerScale, 0, 0, layerScale, 0, 0);
+            layer.translate(view.width / 2 + screenShake.ox, view.height / 2 + screenShake.oy);
             layer.scale(G.cam.zoom, G.cam.zoom);
             layer.translate(-G.cam.x, -G.cam.y);
         }
@@ -3616,7 +4011,7 @@ function drawTerritories(ctx, tick) {
             ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.globalCompositeOperation = 'screen';
             ctx.globalAlpha = alpha;
-            ctx.drawImage(territoryLayerCanvas, 0, 0);
+            ctx.drawImage(territoryLayerCanvas, 0, 0, territoryLayerCanvas.width, territoryLayerCanvas.height, 0, 0, ctx.canvas.width, ctx.canvas.height);
             ctx.restore();
         }
 
@@ -3632,10 +4027,10 @@ function drawTerritories(ctx, tick) {
 function drawSolarFlareScreenOverlay(ctx, cv, tick) {
     if ((G.state !== 'playing' && G.state !== 'paused') || !G.mechanics || !G.mechanics.solarFlare) return;
     var frame = getSolarFlareFrame(tick, G.seed, solarFlareCfg());
-    var w = cv.width;
-    var h = cv.height;
+    var w = view.width;
+    var h = view.height;
     ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
     if (frame.phase === 'warn') {
         var u = Number(frame.warnProgress) || 0;
         var pulse = 0.14 + 0.1 * Math.sin(tick * 0.38) + u * 0.38;
@@ -3659,11 +4054,86 @@ function drawSolarFlareScreenOverlay(ctx, cv, tick) {
     ctx.restore();
 }
 
+// ── MENU SCENE ──
+var menuScene = createMenuScene();
+var menuSceneHooks = {
+    impact: function (x, y, owner, dirX, dirY) {
+        vfxImpact(vfx, x, y, fxOwnerColor(owner), dirX, dirY, 0.45);
+    },
+    capture: function (planet, fromOwner, toOwner, dirX, dirY) {
+        var fromColor = fromOwner >= 0 ? fxOwnerColor(fromOwner) : COL_NEUTRAL;
+        var toColor = fxOwnerColor(toOwner);
+        vfxCapture(vfx, planet.x, planet.y, planet.r, toColor, fromColor, dirX, dirY, 0.9);
+        markNodeCapture(vfx, planet.id, fromColor, toColor, dirX, dirY);
+    },
+    reinforce: function (planet, owner) {
+        vfxReinforce(vfx, planet.x, planet.y, planet.r, fxOwnerColor(owner), 0.5);
+    },
+};
+var menuSceneHelpers = {
+    colorFor: function (owner) { return owner >= 0 ? PLAYER_COLORS[owner % PLAYER_COLORS.length] : COL_NEUTRAL; },
+    planetTexture: function (id, r) { return getPlanetTexture(id, r, 'core'); },
+    haloSprite: getHaloSprite,
+    paintHue: paintNodeOwnerHue,
+    paintRipple: paintNodeCaptureRipple,
+    nodeVfx: function (id) { return getNodeVfx(vfx, id); },
+    shipPush: function (x, y, dx, dy, size, alpha, streak) { shipBatchPush(x, y, dx, dy, shipWorldSize(size), alpha, streak); },
+    shipFlush: function (layerCtx, color, opts) { shipBatchFlush(layerCtx, color, opts); },
+};
+
+function renderMenuScene(dt) {
+    updateMenuScene(menuScene, prefersReducedMotion ? dt * 0.35 : dt, menuSceneHooks);
+    var cam = menuSceneCamera(menuScene, view.width, view.height);
+    var savedCam = G.cam;
+    // Ship and effect helpers size themselves off G.cam.zoom; lend them the menu camera.
+    G.cam = cam;
+    try {
+        drawMenuSceneFrame(cam, dt);
+    } finally {
+        G.cam = savedCam;
+    }
+}
+
+function drawMenuSceneFrame(cam, dt) {
+    ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+    ensureBackdrop(menuBackdropState, { seed: 20260923, mapWidth: MENU_SCENE_WIDTH, mapHeight: MENU_SCENE_HEIGHT, nebulaWidth: backdropNebulaWidth() });
+    drawBackdropScreen(ctx, menuBackdropState, { width: view.width, height: view.height, cam: cam, dt: dt, motion: !prefersReducedMotion });
+    ctx.save();
+    ctx.translate(view.width / 2, view.height / 2);
+    ctx.scale(cam.zoom, cam.zoom);
+    ctx.translate(-cam.x, -cam.y);
+    drawBackdropWorld(ctx, menuBackdropState, {
+        cam: cam,
+        dt: dt,
+        tick: menuScene.time * TICK_RATE,
+        halfWidth: view.width / 2 / cam.zoom,
+        halfHeight: view.height / 2 / cam.zoom,
+        glowSprite: getGlowSprite,
+    });
+    drawMenuSceneWorld(ctx, menuScene, menuSceneHelpers);
+    drawVfxSystem(vfx, ctx, { zoom: cam.zoom });
+    ctx.restore();
+    drawVignette(ctx, view.width, view.height, 1.1);
+}
+
+function updateFleetDetailScale() {
+    var estimate = 0;
+    for (var i = 0; i < G.fleets.length; i++) {
+        var fleet = G.fleets[i];
+        if (!fleet || !fleet.active || fleet.holding) continue;
+        estimate += Math.min(64, 6 + Math.sqrt(Math.max(1, Number(fleet.count) || 1)) * 5.2);
+    }
+    var budget = (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) ? FLEET_SHIP_BUDGET * 0.55 : FLEET_SHIP_BUDGET;
+    fleetDetailScale = estimate > budget ? clamp(budget / estimate, 0.3, 1) : 1;
+}
+
 function render(ctx, cv, tick) {
     pruneSelectedFleetIds();
+    updateFleetDetailScale();
+    ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
     drawScreenBackdrop(ctx, cv, tick);
     ctx.save();
-    ctx.translate(cv.width / 2 + screenShake.ox, cv.height / 2 + screenShake.oy);
+    ctx.translate(view.width / 2 + screenShake.ox, view.height / 2 + screenShake.oy);
     ctx.scale(G.cam.zoom, G.cam.zoom);
     ctx.translate(-G.cam.x, -G.cam.y);
     renderWorldLayers({
@@ -3699,7 +4169,7 @@ function render(ctx, cv, tick) {
             clamp: clamp,
             strategicPulseAppliesToNode: strategicPulseAppliesToNode,
             getNodeOrbitalSquads: getNodeOrbitalSquads,
-            drawOrbitalSquadron: drawOrbitalSquadron,
+            drawOrbitalSquadrons: drawOrbitalSquadrons,
             drawTurretStation: drawTurretStation,
             drawGateStation: drawGateStation,
             nodeTypeOf: nodeTypeOf,
@@ -3712,9 +4182,17 @@ function render(ctx, cv, tick) {
             getNodeUpgradeProgress: getNodeUpgradeProgress,
             isNodeUpgradePending: isNodeUpgradePending,
             isDispatchAllowed: isDispatchAllowed,
+            getNodeVfx: function (nodeId) { return getNodeVfx(vfx, nodeId); },
+            fleetAlpha: gameOverFleetAlpha,
+            getHaloSprite: getHaloSprite,
+            getGlowSprite: getGlowSprite,
+            drawVfx: function (layerCtx, bounds) {
+                drawVfxSystem(vfx, layerCtx, { zoom: G.cam.zoom, bounds: bounds });
+            },
         },
     });
     ctx.restore();
+    drawVignette(ctx, view.width, view.height, 0.8);
 
     renderMinimapLayer({
         minimapCanvas: document.getElementById('minimapCanvas'),
@@ -3737,6 +4215,7 @@ function render(ctx, cv, tick) {
         },
     });
     drawSolarFlareScreenOverlay(ctx, cv, G.tick);
+    drawEndCinematicTitle(ctx);
     renderMarqueeLayer({
         ctx: ctx,
         inputState: inp,
@@ -3777,7 +4256,7 @@ function drawMapFeature(ctx, tick) {
         var bx = barrier.x;
         var zoom = Math.max(0.001, G.cam.zoom || 1);
         var viewPad = 48 / zoom;
-        var halfViewH = (cv.height * 0.5) / zoom;
+        var halfViewH = (view.height * 0.5) / zoom;
         var minY = G.cam.y - halfViewH - viewPad;
         var maxY = G.cam.y + halfViewH + viewPad;
         var openForHuman = controlsBarrierForOwner({ barrier: barrier, owner: G.human, nodes: G.nodes });
@@ -3986,18 +4465,20 @@ function drawMapFeature(ctx, tick) {
 
 // ── INPUT ──
 var inp = createInputState();
-function s2w(sx, sy) { return { x: (sx - cv.width / 2) / G.cam.zoom + G.cam.x, y: (sy - cv.height / 2) / G.cam.zoom + G.cam.y }; }
+function s2w(sx, sy) { return { x: (sx - view.width / 2) / G.cam.zoom + G.cam.x, y: (sy - view.height / 2) / G.cam.zoom + G.cam.y }; }
 function touchScreenPos(touch) {
     var r = cv.getBoundingClientRect();
     return {
-        x: (touch.clientX - r.left) * (cv.width / r.width),
-        y: (touch.clientY - r.top) * (cv.height / r.height),
+        x: (touch.clientX - r.left) * (view.width / r.width),
+        y: (touch.clientY - r.top) * (view.height / r.height),
     };
 }
 function screenMidpoint(a, b) { return { x: (a.x + b.x) * 0.5, y: (a.y + b.y) * 0.5 }; }
 function screenDistance(a, b) { var dx = b.x - a.x, dy = b.y - a.y; return Math.sqrt(dx * dx + dy * dy); }
 function beginTouchPinch(a, b) {
     var center = screenMidpoint(a, b);
+    cancelAutoCamera();
+    cameraZoomAnim = null;
     inp.pinchActive = true;
     inp.pinchStartDist = Math.max(1, screenDistance(a, b));
     inp.pinchStartZoom = G.cam.zoom;
@@ -4009,8 +4490,9 @@ function updateTouchPinch(a, b) {
     var center = screenMidpoint(a, b);
     var distNow = Math.max(1, screenDistance(a, b));
     G.cam.zoom = clamp(inp.pinchStartZoom * (distNow / Math.max(1, inp.pinchStartDist)), ZOOM_MIN, ZOOM_MAX);
-    G.cam.x = inp.pinchWorldCenter.x - (center.x - cv.width / 2) / G.cam.zoom;
-    G.cam.y = inp.pinchWorldCenter.y - (center.y - cv.height / 2) / G.cam.zoom;
+    G.cam.x = inp.pinchWorldCenter.x - (center.x - view.width / 2) / G.cam.zoom;
+    G.cam.y = inp.pinchWorldCenter.y - (center.y - view.height / 2) / G.cam.zoom;
+    clampCamera();
 }
 function hitNode(wp) { for (var i = 0; i < G.nodes.length; i++) { var n = G.nodes[i]; if (dist(wp, n.pos) <= n.radius * nodeVisualScale(n, G.tick) + 5) return n; } return null; }
 function hitNodeForTouch(wp) {
@@ -4287,6 +4769,11 @@ function applyCommandModeTarget(nodeId) {
 
 // ── DOM ──
 var cv = document.getElementById('gameCanvas'), ctx = cv.getContext('2d');
+var minimapWrapperEl = document.getElementById('minimap');
+// Everything the game reasons about - camera maths, hit tests, HUD placement - is in CSS
+// pixels. The backing store is `view.dpr` times larger so the map stays sharp on HiDPI
+// screens; render() applies that scale once, so no drawing code has to know about it.
+var view = { width: cv.width || window.innerWidth || 1, height: cv.height || window.innerHeight || 1, dpr: 1 };
 var $ = function (id) { return document.getElementById(id); };
 var mainMenu = $('mainMenu'), pauseOv = $('pauseOverlay'), goOv = $('gameOverOverlay'), hud = $('hud'), tunePanel = $('tuningPanel'), tuneOpen = $('tuneOpenBtn');
 var seedIn = $('seedInput'), rndSeedBtn = $('randomSeedBtn'), ncIn = $('nodeCountInput'), ncLbl = $('nodeCountLabel'), diffSel = $('difficultySelect');
@@ -4611,15 +5098,39 @@ function saveUiPrefs() {
 }
 function applyAudioPreference() {
     if (typeof AudioFX === 'undefined') return;
+    // Touching AudioFX creates the AudioContext; before a gesture the browser would only
+    // create it suspended and complain. noteAudioGesture() re-applies on the first input.
+    if (!audioGestureSeen && G.state === 'mainMenu') return;
     AudioFX.setSfxVolume(uiPrefs.audioEnabled ? DEFAULT_SFX_VOLUME : 0);
     var musicOn = uiPrefs.audioEnabled && uiPrefs.musicEnabled !== false;
     AudioFX.setMusicVolume(musicOn ? DEFAULT_MUSIC_VOLUME : 0);
+    if (typeof AudioFX.setMusicMood === 'function') {
+        AudioFX.setMusicMood(G.state === 'playing' || G.state === 'paused' ? 'match' : 'menu');
+    }
     if (!musicOn) {
         AudioFX.stopMusic();
-    } else if (G.state === 'playing' || G.state === 'paused') {
+    } else if (G.state === 'playing' || G.state === 'paused' || (G.state === 'mainMenu' && audioGestureSeen)) {
         AudioFX.startMusic();
     }
 }
+// Browsers refuse to start audio before the first user gesture; the menu theme waits
+// for it instead of creating a context that would only be suspended.
+var audioGestureSeen = false;
+function noteAudioGesture() {
+    if (audioGestureSeen) return;
+    audioGestureSeen = true;
+    window.removeEventListener('pointerdown', noteAudioGesture, true);
+    window.removeEventListener('keydown', noteAudioGesture, true);
+    if (G.state === 'mainMenu') applyAudioPreference();
+}
+window.addEventListener('pointerdown', noteAudioGesture, true);
+window.addEventListener('keydown', noteAudioGesture, true);
+// A soft tick for every interface button: buttons that answer feel like controls.
+document.addEventListener('click', function (e) {
+    var target = e.target && e.target.closest ? e.target.closest('button, .send-quick-btn, summary') : null;
+    if (!target || target.disabled) return;
+    if (typeof AudioFX !== 'undefined' && typeof AudioFX.click === 'function' && uiPrefs.audioEnabled) AudioFX.click();
+}, true);
 function syncAudioToggleButton() {
     if (!audioToggleBtn) return;
     audioToggleBtn.textContent = uiPrefs.audioEnabled ? 'Ses: Açık' : 'Ses: Kapalı';
@@ -4645,8 +5156,8 @@ function setHudActionTip(text) {
 function screenNodePos(node) {
     if (!node || !node.pos) return null;
     return {
-        x: (node.pos.x - G.cam.x) * G.cam.zoom + cv.width * 0.5,
-        y: (node.pos.y - G.cam.y) * G.cam.zoom + cv.height * 0.5,
+        x: (node.pos.x - G.cam.x) * G.cam.zoom + view.width * 0.5,
+        y: (node.pos.y - G.cam.y) * G.cam.zoom + view.height * 0.5,
     };
 }
 function hoveredNodeAtScreen(screenPos) {
@@ -4655,7 +5166,7 @@ function hoveredNodeAtScreen(screenPos) {
         nodes: G.nodes,
         screenPos: screenPos,
         camera: G.cam,
-        viewport: { width: cv.width, height: cv.height },
+        viewport: { width: view.width, height: view.height },
         visibilityTest: isNodeVisibleToHuman,
         radiusScaleFn: function (node) { return nodeVisualScale(node, G.tick); },
         extraRadius: 8,
@@ -4794,7 +5305,7 @@ function positionNodeHoverTip(screenPos) {
     screenPos = screenPos && typeof screenPos === 'object' ? screenPos : {};
     var rect = cv.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return;
-    var vp = canvasToViewportPoint(screenPos, rect, { width: cv.width, height: cv.height });
+    var vp = canvasToViewportPoint(screenPos, rect, { width: view.width, height: view.height });
     var margin = 14;
     nodeHoverTip.style.position = 'fixed';
     nodeHoverTip.style.left = '0px';
@@ -5753,6 +6264,12 @@ function humanGameOverStatRows() {
         { label: 'Doktrin aktivasyonu', value: G.stats.doctrineActivations || 0 },
     ];
     if (G.stats.gateCaptures > 0) rows.push({ label: 'GATE fetih', value: G.stats.gateCaptures });
+    // A zero for a mechanic this match never switched on is noise, not a statistic.
+    rows = rows.filter(function (row, index) {
+        if (index < 2) return true;
+        var text = String(row.value);
+        return !(text === '0' || text === '0s' || text === '0%');
+    });
 
     var missionRows = currentCampaignObjectiveRows();
     for (var i = 0; i < missionRows.length; i++) {
@@ -5786,11 +6303,66 @@ function getAuthoritativeRenderBlend() {
     return clamp((currentPerfNow() - frameAt) / interval, 0, 1);
 }
 
+// The sim steps at TICK_RATE; the screen refreshes at 60-144 Hz. Rendering one tick
+// behind and blending toward the latest state is what turns 30 discrete hops a second
+// into continuous motion. Nothing here is read back by the sim or the sync hash.
+var localRenderAlpha = 1;
+var renderTick = 0;
+
+function snapshotFleetRenderOrigins() {
+    for (var i = 0; i < G.fleets.length; i++) {
+        var fleet = G.fleets[i];
+        if (!fleet || !fleet.active) continue;
+        fleet.lerpFromX = Number(fleet.x) || 0;
+        fleet.lerpFromY = Number(fleet.y) || 0;
+        fleet.lerpFromT = Number(fleet.t) || 0;
+        fleet.lerpStamp = G.tick;
+    }
+}
+
+function advanceRenderClock(rawDt, authoritative) {
+    if (G.state === 'playing') {
+        if (authoritative) {
+            var blend = getAuthoritativeRenderBlend();
+            renderTick = Math.max(0, G.tick - 1 + blend);
+            localRenderAlpha = 1;
+        } else {
+            localRenderAlpha = clamp(acc / TICK_DT, 0, 1);
+            renderTick = Math.max(0, G.tick - 1 + localRenderAlpha);
+        }
+    } else if (G.state === 'gameOver') {
+        // Keep the board alive under the result screen: orbits and glows keep moving.
+        localRenderAlpha = 1;
+        renderTick += (Number(rawDt) || 0) * TICK_RATE;
+    } else if (G.state !== 'paused') {
+        localRenderAlpha = 1;
+        renderTick = G.tick;
+    }
+}
+
 function getFleetRenderState(fleet) {
     if (!fleet || typeof fleet !== 'object') return { x: 0, y: 0, t: 0 };
     var targetX = Number(fleet.x) || 0;
     var targetY = Number(fleet.y) || 0;
     var targetT = Number(fleet.t) || 0;
+    if (!(net.online && net.authoritativeEnabled)) {
+        if (fleet.lerpStamp === G.tick - 1 && localRenderAlpha < 1) {
+            var lerpT = Number(fleet.lerpFromT);
+            // A partial arrival re-poses the fleet onto its next ship, which moves `t`
+            // backwards; blending across that would drag the lead ship out of the planet.
+            if (Number.isFinite(lerpT) && targetT >= lerpT) {
+                var a = localRenderAlpha;
+                var lx = Number(fleet.lerpFromX) || 0;
+                var ly = Number(fleet.lerpFromY) || 0;
+                return {
+                    x: lx + (targetX - lx) * a,
+                    y: ly + (targetY - ly) * a,
+                    t: lerpT + (targetT - lerpT) * a,
+                };
+            }
+        }
+        return { x: targetX, y: targetY, t: targetT };
+    }
     var fromX = Number(fleet.renderFromX);
     var fromY = Number(fleet.renderFromY);
     var fromT = Number(fleet.renderFromT);
@@ -5956,18 +6528,6 @@ function advanceTransientVisuals(dt) {
         if (!visualFleet) continue;
         visualFleet.hitFlash = Math.max(0, (Number(visualFleet.hitFlash) || 0) - dt * 2.8);
         visualFleet.hitJitter = Math.max(0, (Number(visualFleet.hitJitter) || 0) - dt * 3.6);
-    }
-    for (var pi = G.particles.length - 1; pi >= 0; pi--) {
-        var particle = G.particles[pi];
-        particle.x += particle.vx;
-        particle.y += particle.vy;
-        var drag = Number(particle.drag);
-        if (Number.isFinite(drag) && drag > 0 && drag < 1) {
-            particle.vx *= drag;
-            particle.vy *= drag;
-        }
-        particle.life -= dt;
-        if (particle.life <= 0) G.particles.splice(pi, 1);
     }
     for (var bi = G.turretBeams.length - 1; bi >= 0; bi--) {
         G.turretBeams[bi].life -= dt;
@@ -6340,22 +6900,44 @@ function resize() {
         w = Math.max(1, Math.round(vv.width));
         h = Math.max(1, Math.round(vv.height));
     }
-    cv.width = w;
-    cv.height = h;
+    var dpr = preferredCanvasDpr(w, h, coarse);
+    var backingW = Math.max(1, Math.round(w * dpr));
+    var backingH = Math.max(1, Math.round(h * dpr));
+    view.width = w;
+    view.height = h;
+    view.dpr = dpr;
+    // Assigning a canvas dimension clears and reallocates it even when the value is
+    // unchanged, and the visual viewport fires on every scroll - so only touch it on change.
+    if (cv.width !== backingW) cv.width = backingW;
+    if (cv.height !== backingH) cv.height = backingH;
     syncInputLayoutHints();
     syncHudLayoutMode();
+}
+function preferredCanvasDpr(w, h, coarse) {
+    var raw = Number(window.devicePixelRatio) || 1;
+    // Past 2x the eye gains little and the fill cost keeps climbing; phones get a lower
+    // ceiling because their GPUs are the ones that drop frames first.
+    var dpr = clamp(raw, 1, coarse ? 2 : 2.5);
+    var budget = coarse ? 2.6e6 : 5.2e6;
+    var pixels = Math.max(1, w * h);
+    if (pixels * dpr * dpr > budget) dpr = Math.max(1, Math.sqrt(budget / pixels));
+    return Math.round(dpr * 100) / 100;
 }
 function moveCameraFromMinimap(clientX, clientY) {
     if (!minimapCanvasEl || (G.state !== 'playing' && G.state !== 'paused')) return false;
     var rect = minimapCanvasEl.getBoundingClientRect();
     if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-    var internalW = 140, internalH = 90;
-    var scale = Math.min(internalW / MAP_W, internalH / MAP_H);
-    var offsetX = (internalW - MAP_W * scale) * 0.5;
-    var offsetY = (internalH - MAP_H * scale) * 0.5;
-    var px = ((Number(clientX) - rect.left) / rect.width) * internalW;
-    var py = ((Number(clientY) - rect.top) / rect.height) * internalH;
-    cameraFocusTween = null;
+    // Same projection renderMinimapLayer draws with (CSS pixels, 5 px inset), so the
+    // camera lands exactly where the player clicked.
+    var pad = 5;
+    var scale = Math.min((rect.width - pad * 2) / MAP_W, (rect.height - pad * 2) / MAP_H);
+    if (!(scale > 0)) return false;
+    var offsetX = (rect.width - MAP_W * scale) * 0.5;
+    var offsetY = (rect.height - MAP_H * scale) * 0.5;
+    var px = Number(clientX) - rect.left;
+    var py = Number(clientY) - rect.top;
+    cancelAutoCamera();
+    cameraZoomAnim = null;
     G.cam.x = clamp((px - offsetX) / scale, 0, MAP_W);
     G.cam.y = clamp((py - offsetY) / scale, 0, MAP_H);
     return true;
@@ -6555,6 +7137,7 @@ function syncChatMeta() {
 
 function showUI(st) {
     if (st !== 'playing') inGameMenuOpen = false;
+    if (st !== 'gameOver') finishEndCinematic();
     // Ana menü / game over vb. çıkışta tuningOpen sıfırlanmazsa, sonraki showUI('playing')
     // yanlışlıkla tuning panelini açar (mobilde alt sayfa neredeyse tam ekran).
     if (st !== 'playing' && st !== 'paused') {
@@ -6567,8 +7150,13 @@ function showUI(st) {
     var ig = st === 'playing' || st === 'paused';
     hud.classList.toggle('hidden', !ig);
     if (powerSidebar) powerSidebar.classList.toggle('hidden', !ig);
+    // Only the match render loop unhides the minimap; outside a match nothing else would
+    // hide it, and the menu's translucent veil would show the last match's map.
+    if (!ig && minimapWrapperEl) minimapWrapperEl.classList.add('hidden');
     syncChatUiVisibility(st);
     if (st === 'mainMenu') {
+        // Effects from the match that just ended live in its coordinates, not the menu's.
+        if (prevSt !== 'mainMenu') resetVfxSystem(vfx);
         setMenuPanel(net.roomCode ? 'multiplayer' : 'hub', { keepOverlay: true });
         applyMenuStateToInputs();
         refreshCampaignUI();
@@ -6588,11 +7176,15 @@ function showUI(st) {
     syncHudAssistiveText();
     syncHudLayoutMode();
     refreshCampaignMissionPanels();
+    // Menu theme on the way out of a match, battle score on the way in.
+    if (st === 'mainMenu' || st === 'playing') applyAudioPreference();
     if (st === 'playing' && !openingCameraApplied) {
         openingCameraApplied = true;
+        // Frame the camera now (reading the HUD rect forces the layout it needs), so the
+        // first rendered frame is already the opening shot rather than a one-frame jump.
+        playOpeningFlyover();
         requestAnimationFrame(function () {
             if (G.state !== 'playing') return;
-            focusOpeningSector({ instant: true, silent: true });
             showMatchIntro();
         });
     }
@@ -7913,6 +8505,7 @@ if (menuFogCb) menuFogCb.addEventListener('change', function () { tuneFogCb.chec
 // ── CANVAS MOUSE ──
 attachGameInputController({
     canvas: cv,
+    viewSize: function () { return view; },
     windowTarget: window,
     gameState: G,
     inputState: inp,
@@ -7984,6 +8577,10 @@ attachGameInputController({
     focusOpeningSector: function () {
         focusOpeningSector();
     },
+    requestZoom: requestCameraZoom,
+    onCameraInput: cancelAutoCamera,
+    clampCamera: clampCamera,
+    toggleOverview: toggleOverviewCamera,
     audioSelect: function () {
         if (typeof AudioFX !== 'undefined') AudioFX.select();
     },
@@ -7991,8 +8588,15 @@ attachGameInputController({
 
 // ── GAME LOOP ──
 var acc = 0, lastT = 0, prevSt = 'mainMenu';
+// Opt-in handle for automated visual checks (?debug in the URL). Everything it exposes
+// is already reachable from devtools; it just saves a test from reverse-engineering it.
+if (typeof location !== 'undefined' && /[?&]debug(?:[=&]|$)/.test(location.search || '')) {
+    window.__stellar = { G: G, view: view, vfx: vfx, dispatch: dispatch, applyPlayerCommand: applyPlayerCommand };
+}
 function loop(ts) {
+    var frameWorkStart = window.__stellar ? currentPerfNow() : 0;
     var rawDt = Math.min((ts - lastT) / 1000, 0.1); lastT = ts;
+    lastFrameDt = rawDt;
     if (G.state !== prevSt) {
         showUI(G.state); if (G.state === 'gameOver') {
             if (nextLevelBtn) nextLevelBtn.style.display = 'none';
@@ -8040,6 +8644,8 @@ function loop(ts) {
                 }
             }
             if (goStatsEl) renderStatRows(goStatsEl, humanGameOverStatRows());
+            renderGameOverSummary();
+            beginEndCinematic();
             if (typeof AudioFX !== 'undefined') { AudioFX.stopMusic(); G.winner === G.human ? AudioFX.victory() : AudioFX.defeat(); }
             checkAchievements();
             var rematchBtn = document.getElementById('rematchBtn');
@@ -8058,9 +8664,11 @@ function loop(ts) {
             if (net.authoritativeReady) maybeSendOnlinePing();
         } else {
             acc += rawDt * G.speed;
-            while (acc >= TICK_DT) { gameTick(); acc -= TICK_DT; }
+            while (acc >= TICK_DT) { snapshotFleetRenderOrigins(); gameTick(); acc -= TICK_DT; }
         }
     }
+    advanceRenderClock(rawDt, net.online && net.authoritativeEnabled && G.state === 'playing');
+    stepFrameVisuals(rawDt);
     if (G.state === 'playing' || G.state === 'paused') {
         var pulseNode = G.strategicPulse ? G.nodes[G.strategicPulse.nodeId] : null;
         hudTick.textContent = buildHudTickText({
@@ -8116,8 +8724,15 @@ function loop(ts) {
     syncNodeHoverTip();
     if (G.state === 'playing' || G.state === 'paused') updatePowerSidebar();
     advanceScreenShake(rawDt);
-    advanceCameraFocus(ts);
-    if (G.state !== 'mainMenu') render(ctx, cv, G.tick);
+    advanceCameraFocus(currentPerfNow());
+    advanceCameraZoom(rawDt);
+    advanceKeyboardPan(rawDt);
+    if (G.state !== 'mainMenu') render(ctx, view, renderTick);
+    else renderMenuScene(rawDt);
+    if (window.__stellar) {
+        var frameWork = currentPerfNow() - frameWorkStart;
+        window.__stellar.frameMs = window.__stellar.frameMs ? window.__stellar.frameMs * 0.95 + frameWork * 0.05 : frameWork;
+    }
     requestAnimationFrame(loop);
 }
 showUI('mainMenu');

@@ -271,6 +271,11 @@ function drawWormholeTeleportBeam(ctx, beam, lifeAlpha, ownerColor, tick, helper
 function drawFleetsAndBeamsLayer(ctx, game, tick, inputState, hw, hh, constants, helpers) {
     var fhw = hw + 30;
     var fhh = hh + 30;
+    // Once the match is decided the frozen fleets dissolve instead of hanging mid-flight.
+    var fleetAlpha = typeof helpers.fleetAlpha === 'function' ? helpers.fleetAlpha() : 1;
+    if (fleetAlpha <= 0.01) return;
+    ctx.save();
+    ctx.globalAlpha = fleetAlpha;
     for (var i = 0; i < game.fleets.length; i++) {
         var fleet = game.fleets[i];
         if (!fleet.active) continue;
@@ -289,6 +294,7 @@ function drawFleetsAndBeamsLayer(ctx, game, tick, inputState, hw, hh, constants,
         if ((Number.isFinite(renderState.t) ? renderState.t : fleet.t) <= 0) continue;
         helpers.drawFleetRocket(ctx, fleet, col, tick, renderState);
     }
+    ctx.restore();
 
     for (var bi = 0; bi < game.turretBeams.length; bi++) {
         var beam = game.turretBeams[bi];
@@ -357,7 +363,7 @@ function drawFleetsAndBeamsLayer(ctx, game, tick, inputState, hw, hh, constants,
 // fall back to a translucent tint instead of flooding the disc with flat colour.
 var nodeHueBlendMode = null;
 
-function paintNodeOwnerHue(ctx, x, y, radius, color, strength) {
+export function paintNodeOwnerHue(ctx, x, y, radius, color, strength) {
     if (!color || color.indexOf('#') !== 0 || radius <= 0) return;
     if (nodeHueBlendMode === null) {
         var previous = ctx.globalCompositeOperation;
@@ -380,7 +386,48 @@ function paintNodeOwnerHue(ctx, x, y, radius, color, strength) {
     ctx.restore();
 }
 
-function drawNodesLayer(ctx, game, tick, constants, helpers) {
+// A captured world does not flip colour in one frame: the new owner's hue floods out
+// from the point the fleet hit, behind a bright wavefront, so the eye can follow what
+// happened even in a crowded battle.
+export function paintNodeCaptureRipple(ctx, x, y, radius, capture) {
+    var u = Math.max(0, Math.min(1, capture.age / Math.max(0.001, capture.duration)));
+    var eased = 1 - Math.pow(1 - u, 2.2);
+    var ox = x - (capture.dirX || 0) * radius * 0.85;
+    var oy = y - (capture.dirY || 0) * radius * 0.85;
+    var wave = eased * radius * 2.15;
+    paintNodeOwnerHue(ctx, x, y, radius, capture.fromColor, 0.9);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, radius - 1.1, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.beginPath();
+    ctx.arc(ox, oy, Math.max(0.1, wave), 0, Math.PI * 2);
+    ctx.clip();
+    if (nodeHueBlendMode) {
+        ctx.globalCompositeOperation = 'color';
+        ctx.globalAlpha = 0.9;
+    } else {
+        ctx.globalAlpha = 0.36;
+    }
+    ctx.fillStyle = capture.toColor;
+    ctx.fillRect(x - radius, y - radius, radius * 2, radius * 2);
+    ctx.restore();
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, radius + 0.5, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.beginPath();
+    ctx.arc(ox, oy, Math.max(0.1, wave), 0, Math.PI * 2);
+    ctx.lineWidth = Math.max(1.2, radius * 0.16 * (1 - u));
+    ctx.strokeStyle = 'rgba(255,255,255,' + (0.75 * (1 - u)) + ')';
+    ctx.stroke();
+    ctx.restore();
+}
+
+function drawNodesLayer(ctx, game, tick, constants, helpers, inputState) {
+    var hoverId = inputState && inputState.pointerInsideCanvas && !inputState.dragActive && !inputState.marqActive ? inputState.hoverNodeId : -1;
     var getNodeVisualScale = typeof helpers.getNodeVisualScale === 'function' ? helpers.getNodeVisualScale : function () { return 1; };
     var getNodeUpgradeProgress = typeof helpers.getNodeUpgradeProgress === 'function' ? helpers.getNodeUpgradeProgress : function () { return 0; };
     var isNodeUpgradePending = typeof helpers.isNodeUpgradePending === 'function' ? helpers.isNodeUpgradePending : function () { return false; };
@@ -413,6 +460,39 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
         else {
             var ls2 = game.fog.ls[game.human][n.id];
             dUnits = ls2.tick >= 0 ? '' + ls2.units : '?';
+        }
+
+        var nfx = typeof helpers.getNodeVfx === 'function' ? helpers.getNodeVfx(n.id) : null;
+        var nodeSeen = vis || n.owner === game.human;
+        // Owner aura. Additive, so overlapping auras of one empire merge into a glow
+        // that reads as territory before the territory layer is even looked at.
+        if (nodeSeen && typeof helpers.getHaloSprite === 'function' && n.kind !== 'gate') {
+            var haloCol = n.owner >= 0 && col && col.indexOf('#') === 0 ? col : '#9aa3b2';
+            var halo = helpers.getHaloSprite(haloCol);
+            if (halo) {
+                var haloR = drawRadius * (n.owner >= 0 ? 3.1 : 2.3);
+                var haloAlpha = n.owner >= 0 ? (n.owner === game.human ? 0.4 : 0.34) : 0.1;
+                if (nfx) haloAlpha += nfx.reinforce * 0.22 + (nfx.capture ? 0.35 * (1 - nfx.capture.age / nfx.capture.duration) : 0);
+                if (n.selected && n.owner === game.human) haloAlpha += 0.12;
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = Math.min(1, haloAlpha);
+                ctx.drawImage(halo, n.pos.x - haloR, n.pos.y - haloR, haloR * 2, haloR * 2);
+                ctx.restore();
+            }
+        }
+
+        if (n.id === hoverId && !n.selected) {
+            // Instant hover response; the detailed card still waits for its dwell time.
+            ctx.save();
+            ctx.beginPath();
+            ctx.arc(n.pos.x, n.pos.y, drawRadius + 5, 0, Math.PI * 2);
+            ctx.strokeStyle = 'rgba(255,255,255,0.42)';
+            ctx.lineWidth = 1.3;
+            ctx.setLineDash([3, 4]);
+            ctx.lineDashOffset = -tick * 0.4;
+            ctx.stroke();
+            ctx.restore();
         }
 
         if (n.selected && n.owner === game.human) {
@@ -612,7 +692,7 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             hasOrbiters = orbitalSquads.length > 0;
         }
         if (hasOrbiters) {
-            for (var osi = 0; osi < orbitalSquads.length; osi++) helpers.drawOrbitalSquadron(ctx, drawNode, orbitalSquads[osi], col, tick, false);
+            helpers.drawOrbitalSquadrons(ctx, drawNode, orbitalSquads, col, tick, false);
         }
 
         var tdef = helpers.nodeTypeOf(n);
@@ -702,7 +782,8 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
                 ctx.restore();
             }
             if ((vis || n.owner === game.human) && n.owner >= 0 && col && col.indexOf('#') === 0) {
-                paintNodeOwnerHue(ctx, n.pos.x, n.pos.y, drawRadius, col, 0.9);
+                if (nfx && nfx.capture) paintNodeCaptureRipple(ctx, n.pos.x, n.pos.y, drawRadius, nfx.capture);
+                else paintNodeOwnerHue(ctx, n.pos.x, n.pos.y, drawRadius, col, 0.9);
                 ctx.save();
                 ctx.beginPath();
                 ctx.arc(n.pos.x, n.pos.y, drawRadius, 0, Math.PI * 2);
@@ -807,11 +888,27 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
             }
         }
 
-        if (hasOrbiters) {
-            for (var osj = 0; osj < orbitalSquads.length; osj++) helpers.drawOrbitalSquadron(ctx, drawNode, orbitalSquads[osj], col, tick, true);
+        if (nodeSeen && nfx && nfx.hit > 0.01 && typeof helpers.getGlowSprite === 'function') {
+            // Impact light on the side the attack came from.
+            var hitSprite = helpers.getGlowSprite(nfx.hitColor);
+            if (hitSprite) {
+                var rimX = n.pos.x - nfx.hitDirX * drawRadius * 0.8;
+                var rimY = n.pos.y - nfx.hitDirY * drawRadius * 0.8;
+                var hitR = drawRadius * (0.9 + nfx.hit * 0.9);
+                ctx.save();
+                ctx.globalCompositeOperation = 'lighter';
+                ctx.globalAlpha = Math.min(1, nfx.hit * 0.75);
+                ctx.drawImage(hitSprite, rimX - hitR, rimY - hitR, hitR * 2, hitR * 2);
+                ctx.restore();
+            }
         }
 
-        ctx.font = 'bold ' + Math.max(11, drawRadius * 0.5) + 'px Outfit,sans-serif';
+        if (hasOrbiters) {
+            helpers.drawOrbitalSquadrons(ctx, drawNode, orbitalSquads, col, tick, true);
+        }
+
+        var bumpK = nfx && nfx.bump > 0 ? 1 + Math.sin(Math.min(1, nfx.bump) * Math.PI * 0.5) * 0.3 * nfx.bump : 1;
+        ctx.font = 'bold ' + (Math.max(11, drawRadius * 0.5) * bumpK).toFixed(1) + 'px Outfit,sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         var unitFill = '#fff';
@@ -836,7 +933,10 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
         ctx.shadowBlur = 0;
 
         if (vis || n.owner === game.human) {
-            helpers.drawTypeBadge(ctx, drawNode, helpers.nodeTypeOf(n));
+            // With node classes switched off every world is a Core, and a "C" on each one
+            // is noise; the badge only earns its place when classes differ.
+            var classesOn = !game.mechanics || game.mechanics.nodeTypes !== false || n.kind !== 'core';
+            if (classesOn) helpers.drawTypeBadge(ctx, drawNode, helpers.nodeTypeOf(n));
             if (n.level > 1 || upgrading) {
                 var levelText = upgrading ? ('UP ' + Math.round(upgradeProgress * 100) + '%') : ('L' + n.level);
                 ctx.font = 'bold 9px Outfit,sans-serif';
@@ -862,21 +962,8 @@ function drawNodesLayer(ctx, game, tick, constants, helpers) {
 }
 
 function drawParticleLayer(ctx, game, tick, inputState, constants, helpers) {
-    for (var pi = 0; pi < game.particles.length; pi++) {
-        var p = game.particles[pi];
-        var alpha = p.life / p.maxLife;
-        if ((p.glow || 0) > 0) {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.r * (1.8 + p.glow), 0, Math.PI * 2);
-            ctx.fillStyle = helpers.hexToRgba(p.col, alpha * p.glow * 0.45);
-            ctx.fill();
-        }
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = helpers.hexToRgba(p.col, alpha);
-        ctx.fill();
-    }
-
+    // Particles live in the effect system (assets/app/vfx.js). What remains here are the
+    // shockwaves an authoritative server snapshot carries, and the drag-send preview.
     for (var swi = 0; swi < game.shockwaves.length; swi++) {
         var wave = game.shockwaves[swi];
         var lifeAlpha = helpers.clamp(wave.life / Math.max(wave.maxLife, 0.0001), 0, 1);
@@ -1047,7 +1134,15 @@ export function renderWorldLayers(opts) {
     drawDefenseRangeLayer(ctx, game, tick, constants, helpers);
     drawFlowLinksLayer(ctx, game, constants, helpers);
     drawFleetsAndBeamsLayer(ctx, game, tick, inputState, hw, hh, constants, helpers);
-    drawNodesLayer(ctx, game, tick, constants, helpers);
+    drawNodesLayer(ctx, game, tick, constants, helpers, inputState);
+    if (typeof helpers.drawVfx === 'function') {
+        helpers.drawVfx(ctx, {
+            minX: game.cam.x - hw,
+            maxX: game.cam.x + hw,
+            minY: game.cam.y - hh,
+            maxY: game.cam.y + hh,
+        });
+    }
     drawParticleLayer(ctx, game, tick, inputState, constants, helpers);
 }
 
