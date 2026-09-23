@@ -1025,6 +1025,17 @@ app.get('/index.html', (_req, res) => {
 if (!HAS_DIST_BUILD) {
     app.get('/game.js', (_req, res) => sendPublicFile(res, 'game.js'));
 }
+// Site icons live in public/, which Vite copies into dist/ on build. Browsers ask for
+// /favicon.ico on their own even without a <link>, so these must answer at the root.
+const ICON_ROOT = HAS_DIST_BUILD ? DIST_DIR : path.join(__dirname, 'public');
+['favicon.ico', 'favicon.svg', 'apple-touch-icon.png'].forEach((name) => {
+    app.get('/' + name, (_req, res) => {
+        res.setHeader('Cache-Control', 'public, max-age=604800');
+        res.sendFile(path.join(ICON_ROOT, name), (err) => {
+            if (err && !res.headersSent) res.status(err.statusCode || 404).end();
+        });
+    });
+});
 app.get('/healthz', (_req, res) => {
     res.json({ ok: true, rooms: rooms.size });
 });
