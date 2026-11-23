@@ -804,6 +804,9 @@ function startRoomMatch(room) {
     room.lastResultTick = 0;
     resetRoomSimulation(room);
 
+    room.players.sort((a, b) => (a.index || 0) - (b.index || 0));
+    room.players.forEach((player, position) => { player.index = position; });
+
     const players = room.players.map(p => ({ socketId: p.socketId, name: p.name, index: p.index }));
     const aiPlayers = [];
     for (let ai = 0; ai < room.matchManifest.aiCount; ai++) {

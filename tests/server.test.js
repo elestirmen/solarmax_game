@@ -274,6 +274,45 @@ test('started 1v1 room stays resumable after a disconnect and token resume resto
     stopRoomSimulation(room);
 });
 
+test('rematch after a mid-match leave keeps player indices contiguous and aligned with node owners', function () {
+    resetServerState();
+    var room = createRoom({ seed: 'rematch-index', aiCount: 1 });
+    room.hostId = 's0';
+    room.players = [
+        { socketId: 's0', name: 'Host', index: 0 },
+        { socketId: 's1', name: 'Leaver', index: 1 },
+        { socketId: 's2', name: 'Closer', index: 2 },
+    ];
+    socketToRoom.set('s0', room.code);
+    socketToRoom.set('s1', room.code);
+    socketToRoom.set('s2', room.code);
+    startRoomMatch(room);
+    stopRoomSimulation(room);
+
+    cleanupPlayer('s1');
+    room.started = false;
+    room.startedAt = 0;
+    room.rematchVotes = new Set();
+    room.resultReports = new Map();
+    room.resultCommitted = false;
+    startRoomMatch(room);
+    stopRoomSimulation(room);
+
+    var indices = room.matchPlayers.map(function (player) { return player.index; });
+    assert.deepEqual(indices, [0, 1, 2]);
+    assert.equal(new Set(indices).size, indices.length);
+
+    room.matchPlayers.forEach(function (player, position) {
+        var capitalId = room.serverSim.state.playerCapital[position];
+        var capitalNode = capitalId !== undefined ? room.serverSim.state.nodes[capitalId] : null;
+        assert.equal(
+            capitalNode && capitalNode.owner,
+            player.index,
+            'player at roster position ' + position + ' (index ' + player.index + ') must own its capital nodes'
+        );
+    });
+});
+
 test('custom rooms derive player cap and authoritative snapshot from uploaded map', function () {
     resetServerState();
     var room = createRoom({
